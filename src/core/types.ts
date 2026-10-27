@@ -11,6 +11,8 @@ export type VaultStatus = 'unlocked' | 'locked' | 'unauthenticated' | 'unavailab
 export interface VaultClient {
   status(): Promise<VaultStatus>
   getLogin(item: string): Promise<Credentials>
+  unlock(password: string): Promise<boolean>
+  lock(): Promise<void>
 }
 export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
 export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke'; domain: string; result: string }

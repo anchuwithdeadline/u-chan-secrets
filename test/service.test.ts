@@ -29,7 +29,7 @@ beforeEach(async () => {
   events = []
   vaultStatus = 'unlocked'
   chrome = true
-  vault = { status: async () => vaultStatus, getLogin: vi.fn(async () => ({ username: 'u', password: 'hunter2' })) }
+  vault = { status: async () => vaultStatus, unlock: async () => true, lock: async () => {}, getLogin: vi.fn(async () => ({ username: 'u', password: 'hunter2' })) }
   approve = vi.fn(async (_t: string, _l: string[]) => true)
   const browser: BrowserProvider = { withPage: (fn) => fn({} as never), connected: async () => chrome }
   fill.impl = async (getCreds) => { await getCreds(); return { status: 'logged_in' } }

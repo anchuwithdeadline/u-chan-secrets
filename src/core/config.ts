@@ -8,7 +8,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     home,
     allowlistPath: join(home, 'allowlist.json'),
     auditPath: join(home, 'audit.log'),
-    sessionPath: join(home, 'bw-session'),
+    bwDataDir: join(home, 'bw-data'),
     chromeProfile: join(home, 'chrome-profile'),
     cdpEndpoint: env.U_CHAN_CDP ?? 'http://127.0.0.1:9222',
   }

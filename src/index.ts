@@ -15,7 +15,7 @@ import { createMcpServer } from './mcp/server.js'
 // stdout is the MCP channel: log only to stderr.
 const cfg = loadConfig()
 const core = new CoreService({
-  vault: new BitwardenVault({ sessionPath: cfg.sessionPath }),
+  vault: new BitwardenVault({ dataDir: cfg.bwDataDir, idleLockMs: 43200000 }),
   allowlist: new AllowlistStore(cfg.allowlistPath),
   approver: new WindowsDialogApprover(),
   audit: new FileAuditLog(cfg.auditPath),
