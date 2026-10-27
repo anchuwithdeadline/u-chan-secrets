@@ -10,7 +10,7 @@ import type { AuditEvent } from '../src/core/types.js'
 
 let dir: string
 let events: AuditEvent[]
-let vault: { unlock: ReturnType<typeof vi.fn>; lock: ReturnType<typeof vi.fn>; verify: ReturnType<typeof vi.fn> }
+let vault: { status: ReturnType<typeof vi.fn>; unlock: ReturnType<typeof vi.fn>; lock: ReturnType<typeof vi.fn>; verify: ReturnType<typeof vi.fn> }
 let approver: { askPassword: ReturnType<typeof vi.fn>; ask: ReturnType<typeof vi.fn> }
 let limiter: AttemptLimiter
 let settings: SettingsStore
@@ -25,7 +25,7 @@ const make = (platform: NodeJS.Platform = 'win32') =>
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ucs-ctl-'))
   events = []
-  vault = { unlock: vi.fn(async () => true), lock: vi.fn(async () => {}), verify: vi.fn(async () => true) }
+  vault = { status: vi.fn(async () => 'locked'), unlock: vi.fn(async () => true), lock: vi.fn(async () => {}), verify: vi.fn(async () => true) }
   approver = { askPassword: vi.fn(async () => 'pw'), ask: vi.fn(async () => true) }
   limiter = new AttemptLimiter()
   settings = new SettingsStore(join(dir, 'settings.json'))
@@ -60,6 +60,16 @@ describe('control: unlock', () => {
     const reset = vi.spyOn(limiter, 'reset')
     await make().unlock()
     expect(reset).toHaveBeenCalled()
+  })
+})
+
+describe('control: unlock when unauthenticated', () => {
+  it('returns the login message without prompting or counting', async () => {
+    vault.status.mockResolvedValue('unauthenticated')
+    const fail = vi.spyOn(limiter, 'fail')
+    expect(await make().unlock()).toEqual({ ok: false, message: 'not logged in to Bitwarden — run u-chan install' })
+    expect(approver.askPassword).not.toHaveBeenCalled()
+    expect(fail).not.toHaveBeenCalled()
   })
 })
 
@@ -113,5 +123,32 @@ describe('control: importV1', () => {
     expect((await allowlist.list()).map((x) => x.domain)).toEqual(['a.com'])
     expect(approver.ask).toHaveBeenCalledTimes(2)
     expect(events[0]).toMatchObject({ action: 'import', result: 'imported 1 of 2' })
+  })
+})
+
+describe('control: importV1 sanitizing', () => {
+  const base = { domain: 'a.com', hosts: ['a.com'], loginUrl: 'https://a.com/login', item: 'a' }
+  it('stores only known fields and shows valid selectors', async () => {
+    const out = await make().importV1([{ ...base, evil: 1, selectors: { username: '#u\n', bogus: 'x', password: 5 } }])
+    expect(out.message).toBe('imported 1 of 1')
+    const [stored] = await allowlist.list()
+    expect(stored).toEqual({ ...base, selectors: { username: '#u' } })
+    expect(approver.ask.mock.calls[0][1]).toContain('Selectors: username=#u')
+  })
+  it('drops selectors with no valid keys', async () => {
+    await make().importV1([{ ...base, selectors: { bogus: 'x', password: 5 } }])
+    expect((await allowlist.list())[0].selectors).toBeUndefined()
+    expect((approver.ask.mock.calls[0][1] as string[]).some((l) => l.startsWith('Selectors'))).toBe(false)
+  })
+  it('rejects http loginUrl without asking', async () => {
+    expect(await make().importV1([{ ...base, loginUrl: 'http://a.com/login' }])).toEqual({ ok: true, message: 'imported 0 of 1' })
+    expect(approver.ask).not.toHaveBeenCalled()
+  })
+  it('cleans hosts in dialog and storage', async () => {
+    await make().importV1([{ ...base, hosts: ['a.com', 'ev‮il.com\n', '‮'] }])
+    expect(await allowlist.list()).toEqual([{ ...base, hosts: ['a.com', 'evil.com'] }])
+    const lines = approver.ask.mock.calls[0][1] as string[]
+    expect(lines.join('|')).not.toMatch(/[‮\n]/)
+    expect(lines).toContain('Hosts: a.com, evil.com')
   })
 })

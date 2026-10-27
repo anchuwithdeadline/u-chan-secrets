@@ -1,4 +1,4 @@
-import { buildEntry, normalizeDomain } from './allowlist.js'
+import { buildEntry, clean, cleanSelectors, normalizeDomain, selectorsLine } from './allowlist.js'
 import type { AllowlistStore } from './allowlist.js'
 import { redact } from './redact.js'
 import {
@@ -22,9 +22,6 @@ export interface CoreDeps {
   login: LoginRunner
   mode: () => Promise<ApprovalMode>
 }
-
-/** Strips control, format (e.g. bidi overrides), line- and paragraph-separator characters (incl. \r \n \t). */
-const clean = (s: string): string => String(s ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
 
 /** Normalized domain for lookups/audit; throws on unusable input. */
 function domainOf(input: string): string {
@@ -89,17 +86,15 @@ export class CoreService implements CoreApi {
       const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
       let entry = buildEntry(d, clean(loginUrl), clean(item), existing)
-      const sel = Object.fromEntries(
-        Object.entries(selectors ?? {}).flatMap(([k, v]) => (typeof v === 'string' && clean(v) ? [[k, clean(v)]] : [])),
-      ) as Selectors
-      if (Object.keys(sel).length) entry = { ...entry, selectors: sel }
+      const sel = cleanSelectors(selectors)
+      if (sel) entry = { ...entry, selectors: sel }
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
         'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,
         `Login URL: ${new URL(entry.loginUrl).href}`,
         `Bitwarden item: ${entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
-        ...(Object.keys(sel).length ? [`Selectors: ${Object.entries(sel).map(([k, v]) => `${k}=${v}`).join(', ')}`] : []),
+        ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
       await this.deps.allowlist.upsert(entry)

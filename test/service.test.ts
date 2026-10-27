@@ -145,6 +145,16 @@ describe('requestAllow', () => {
     expect(lines).toContain('Selectors: username=#e')
     expect((await store.list())[0].selectors).toEqual({ username: '#e' })
   })
+  it('drops unknown selector keys', async () => {
+    await svc.requestAllow('example.com', 'https://example.com/login', 'ex', { username: '#e', evil: 'x' } as never)
+    expect((await store.list())[0].selectors).toEqual({ username: '#e' })
+  })
+  it('shows kept selectors when re-requesting without any', async () => {
+    await store.upsert({ ...entry, selectors: { password: '#p' } })
+    await svc.requestAllow('example.com', 'https://example.com/login', 'ex')
+    expect(approve.mock.calls[0][1]).toContain('Selectors: password=#p')
+    expect((await store.list())[0].selectors).toEqual({ password: '#p' })
+  })
   it('rejects http without asking', async () => {
     const out = await svc.requestAllow('example.com', 'http://example.com/login', 'ex')
     expect(out.ok).toBe(false)

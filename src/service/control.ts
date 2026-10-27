@@ -1,15 +1,14 @@
-import { buildEntry, isValidEntry } from '../core/allowlist.js'
+import { buildEntry, clean, cleanSelectors, isValidEntry, normalizeDomain, selectorsLine } from '../core/allowlist.js'
 import type { AllowlistStore } from '../core/allowlist.js'
-import type { BitwardenVault } from '../core/vault.js'
+import { LOGIN_MSG, type BitwardenVault } from '../core/vault.js'
 import { redact } from '../core/redact.js'
-import { UserFacingError, type ApprovalMode, type AuditEvent, type AuditLog, type ControlApi, type ToolResult } from '../core/types.js'
+import { UserFacingError, type AllowEntry, type ApprovalMode, type AuditEvent, type AuditLog, type ControlApi, type ToolResult } from '../core/types.js'
 import type { AttemptLimiter } from './attempts.js'
 import type { PolicyApprover } from './policy-approver.js'
 import type { SettingsStore } from './settings.js'
 
 const BLOCKED = 'too many wrong passwords — try again in 15 minutes'
 const TITLE = 'U-Chan Secrets'
-const clean = (s: string): string => String(s ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
 
 interface Deps {
   vault: BitwardenVault
@@ -60,6 +59,7 @@ export class ControlService implements ControlApi {
 
   unlock(): Promise<ToolResult> {
     return this.guarded('unlock', async () => {
+      if ((await this.d.vault.status()) === 'unauthenticated') return { ok: false, message: LOGIN_MSG }
       const refused = await this.checkedPassword(['Unlock the vault'], (pw) => this.d.vault.unlock(pw))
       return refused ?? { ok: true, message: 'unlocked' }
     })
@@ -89,9 +89,13 @@ export class ControlService implements ControlApi {
       const valid = entries.filter(isValidEntry)
       let imported = 0
       for (const e of valid) {
-        let entry
+        let entry: AllowEntry
         try {
-          entry = buildEntry(e.domain, clean(e.loginUrl), clean(e.item), e)
+          entry = buildEntry(clean(e.domain), clean(e.loginUrl), clean(e.item))
+          const extra = e.hosts.map((h) => normalizeDomain(clean(h))).filter(Boolean)
+          entry = { ...entry, hosts: [...new Set([...entry.hosts, ...extra])] }
+          const selectors = cleanSelectors((e as { selectors?: unknown }).selectors)
+          if (selectors) entry = { ...entry, selectors }
         } catch {
           continue
         }
@@ -101,6 +105,7 @@ export class ControlService implements ControlApi {
           `Login URL: ${new URL(entry.loginUrl).href}`,
           `Bitwarden item: ${entry.item}`,
           `Hosts: ${entry.hosts.join(', ')}`,
+          ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
         ])
         if (!ok) continue
         await this.d.allowlist.upsert(entry)

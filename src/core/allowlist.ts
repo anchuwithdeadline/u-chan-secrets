@@ -66,6 +66,26 @@ export function isValidEntry(e: unknown): e is AllowEntry {
   )
 }
 
+/** Strips control, format (e.g. bidi overrides), line- and paragraph-separator characters (CR, LF, tab included). */
+export const clean = (s: string): string => String(s ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
+
+const SELECTOR_KEYS = ['username', 'password', 'submit', 'otp'] as const
+
+/** Only the four known keys with non-empty string values, cleaned. */
+export function cleanSelectors(raw: unknown): AllowEntry['selectors'] {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const o = raw as Record<string, unknown>
+  const out: NonNullable<AllowEntry['selectors']> = {}
+  for (const k of SELECTOR_KEYS) {
+    const v = o[k]
+    if (typeof v === 'string' && clean(v)) out[k] = clean(v)
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+export const selectorsLine = (s: NonNullable<AllowEntry['selectors']>): string =>
+  `Selectors: ${Object.entries(s).map(([k, v]) => `${k}=${v}`).join(', ')}`
+
 /** Exact, case-insensitive hostname match over https only. No wildcards. */
 export function isHostAllowed(entry: AllowEntry, url: string): boolean {
   let u: URL
