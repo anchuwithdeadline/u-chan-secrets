@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { createMcpServer } from '../src/mcp/server.js'
+import { createMcpServer, withPlaywrightStatus } from '../src/mcp/server.js'
+import type { PlaywrightCheck } from '../src/core/doctor.js'
 
 type Core = Parameters<typeof createMcpServer>[0]
 
@@ -56,5 +57,57 @@ describe('mcp server', () => {
     expect(args).toEqual(['a.com', 'https://a.com/l', 'A'])
     expect(r.isError).toBe(true)
     expect(r.content).toEqual([{ type: 'text', text: 'internal error' }])
+  })
+
+  it('request_allow accepts selectors', async () => {
+    let args: unknown[] = []
+    const c = await connect({ requestAllow: async (...a: unknown[]) => { args = a; return { ok: true, message: 'approved' } } } as Partial<Core>)
+    const selectors = { username: '#u', password: '#p', submit: 'button', otp: '#otp' }
+    const r = await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l', item: 'A', selectors } })
+    expect(r.isError).toBe(false)
+    expect(args).toEqual(['a.com', 'https://a.com/l', 'A', selectors])
+    const bad = await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l', item: 'A', selectors: { evil: 'x' } } })
+    expect(bad.isError).toBe(true)
+  })
+
+  it('instructions point to the U-Chan window and u-chan unlock', async () => {
+    const lines = ((await connect({})).getInstructions() ?? '').split('\n')
+    expect(lines.slice(-2)).toEqual([
+      'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a U-Chan window.',
+      'If login fails, call status: a locked vault means the user must run u-chan unlock themselves. If login says "needs you", ask the user to sign in by hand.',
+    ])
+    expect(lines.join('\n')).not.toMatch(/Windows dialog|unlock\.ps1/)
+  })
+})
+
+describe('withPlaywrightStatus', () => {
+  const base = (ok: boolean, message: string) => ({
+    login: async () => ({ ok: true, message: 'x' }),
+    requestAllow: async () => ({ ok: true, message: 'x' }),
+    revoke: async () => ({ ok: true, message: 'x' }),
+    listAllowed: async () => ({ ok: true, message: 'x' }),
+    status: async () => ({ ok, message }),
+  })
+  it('appends the Playwright MCP state exactly as V1 did', async () => {
+    let pw: PlaywrightCheck = 'missing'
+    const core = withPlaywrightStatus(base(true, 'vault: unlocked; mode: easy'), async () => pw)
+    expect(await core.status()).toEqual({
+      ok: false,
+      message: 'vault: unlocked; mode: easy; playwright: missing --cdp-endpoint (using its own Chrome; restart the AI session)',
+    })
+    pw = 'ok'
+    expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: shared chrome' })
+    pw = 'not_found'
+    expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: not found' })
+    pw = 'unknown'
+    expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: unknown' })
+  })
+  it('keeps a failing service status failing', async () => {
+    const core = withPlaywrightStatus(base(false, 'vault: locked; mode: easy'), async () => 'ok')
+    expect(await core.status()).toEqual({ ok: false, message: 'vault: locked; mode: easy; playwright: shared chrome' })
+  })
+  it('exposes only the CoreApi methods', () => {
+    const core = withPlaywrightStatus({ ...base(true, ''), unlock: async () => ({ ok: true, message: '' }) } as never, async () => 'ok')
+    expect(Object.keys(core).sort()).toEqual(['listAllowed', 'login', 'requestAllow', 'revoke', 'status'])
   })
 })
