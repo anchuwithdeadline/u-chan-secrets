@@ -65,15 +65,14 @@ export function startIpcServer(
       }
       for (const f of frames) {
         chain = chain.then(async () => {
+          const id = isObj(f) && Number.isInteger(f.id) ? (f.id as number) : 0
           let res: Response
           try {
             const allowed = opts.authorize ? await opts.authorize(socket) : true
-            if (!allowed) {
-              const id = isObj(f) && Number.isInteger(f.id) ? (f.id as number) : 0
-              res = { id, ok: false, message: 'caller not allowed' }
-            } else res = await dispatch(api, f)
+            if (!allowed) res = { id, ok: false, message: 'caller not allowed' }
+            else res = await dispatch(api, f)
           } catch {
-            res = { id: 0, ok: false, message: 'internal error' }
+            res = { id, ok: false, message: 'internal error' }
           }
           if (!socket.destroyed) socket.write(encode(res))
         })

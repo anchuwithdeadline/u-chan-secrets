@@ -27,12 +27,13 @@ afterEach(() => { servers.splice(0).forEach(s => s.close()) })
 
 const raw = (p: string, data: string | Buffer) =>
   new Promise<{ text: string; closed: boolean }>(resolve => {
+    let mine = false
     const s = net.connect(p)
     let text = ''
     s.on('data', d => { text += d })
-    s.on('close', () => resolve({ text, closed: true }))
+    s.on('close', () => resolve({ text, closed: !mine }))
     s.on('error', () => {})
-    s.on('connect', () => { s.write(data); setTimeout(() => { s.destroy() }, 300) })
+    s.on('connect', () => { s.write(data); setTimeout(() => { mine = true; s.destroy() }, 300) })
   })
 
 describe('ipc', () => {
@@ -67,6 +68,13 @@ describe('ipc', () => {
     expect(JSON.parse((await raw(p, '{"id":2,"method":"login","params":{"domain":5}}\n')).text).message).toBe('bad request')
     expect(api.login).not.toHaveBeenCalled()
     expect(await new IpcClient(p).status()).toEqual({ ok: true, message: 'status' })
+  })
+
+  it('authorize throwing answers promptly with the frame id', async () => {
+    const api = fakeApi()
+    const c = new IpcClient(await start(api, { authorize: async () => { throw new Error('boom') } }), { timeoutMs: 2000 })
+    expect(await c.status()).toEqual({ ok: false, message: 'internal error' })
+    expect(api.status).not.toHaveBeenCalled()
   })
 
   it('reports service down', async () => {
