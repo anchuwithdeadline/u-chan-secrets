@@ -6,7 +6,9 @@ import { AllowlistStore } from './core/allowlist.js'
 import { BitwardenVault } from './core/vault.js'
 import { WindowsDialogApprover } from './core/approver.js'
 import { FileAuditLog } from './core/audit.js'
-import { CdpBrowserProvider } from './core/browser.js'
+import { fileURLToPath } from 'node:url'
+import { CdpBrowserProvider, startChromeScript } from './core/browser.js'
+import { checkPlaywrightNow } from './core/doctor.js'
 import { CoreService } from './core/service.js'
 import { createMcpServer } from './mcp/server.js'
 
@@ -17,7 +19,10 @@ const core = new CoreService({
   allowlist: new AllowlistStore(cfg.allowlistPath),
   approver: new WindowsDialogApprover(),
   audit: new FileAuditLog(cfg.auditPath),
-  browser: new CdpBrowserProvider(cfg.cdpEndpoint),
+  browser: new CdpBrowserProvider(cfg.cdpEndpoint, {
+    launch: startChromeScript(fileURLToPath(new URL('../scripts/start-chrome.ps1', import.meta.url))),
+  }),
+  playwright: () => checkPlaywrightNow(),
 })
 
 let version = '0.1.0'
