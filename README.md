@@ -82,7 +82,7 @@ Call `revoke(domain)`, or delete the entry from `allowlist.json`.
 
 ## Threat model (v1)
 
-U-Chan protects against accidental leaks: in the normal flow the password never enters the chat or the model's context. It does not protect against an AI that is tricked into, or deliberately tries, extracting the password (running `bw` itself, editing the allowlist or log, faking a click on the dialog). Details: section 5b of `docs/specs/2026-10-27-u-chan-secrets-design.md` (in Vietnamese).
+U-Chan protects against accidental leaks: in the normal flow the password never enters the chat or the model's context. It does not protect against an AI that is tricked into, or deliberately tries, extracting the password (running `bw` itself, editing the allowlist or log, faking a click on the dialog). Details: section 5b of `docs/specs/2026-10-27-u-chan-secrets-design.md`.
 
 ## End-to-end check
 

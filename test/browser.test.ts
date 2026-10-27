@@ -68,7 +68,7 @@ describe('CdpBrowserProvider', () => {
   })
   it('gives a user-facing error when launch never brings CDP up', async () => {
     const p = new CdpBrowserProvider(`http://127.0.0.1:${await freePort()}`, { launch: async () => {}, launchTimeoutMs: 1000 })
-    await expect(p.withPage(async () => 1)).rejects.toThrow(/không tự mở được Chrome/)
+    await expect(p.withPage(async () => 1)).rejects.toThrow(/could not start Chrome/)
   })
   it('reports Chrome not running as a user-facing error', async () => {
     const p = new CdpBrowserProvider(`http://127.0.0.1:${await freePort()}`)

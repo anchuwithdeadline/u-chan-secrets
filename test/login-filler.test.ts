@@ -61,11 +61,11 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
   })
   it('fails on a 2FA step when the item has no TOTP', async () => {
-    expect((await run('/otp')).outcome).toEqual({ status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' })
+    expect((await run('/otp')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP' })
   })
   it('fails when the TOTP code is rejected, without leaking the seed', async () => {
     const r = await run('/otp', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
-    expect(r.outcome).toEqual({ status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: '2FA code rejected (wrong TOTP in Bitwarden?)' })
     expect(JSON.stringify(r.outcome)).not.toContain('GEZDGNBVGY3TQOJQ')
   })
   it('fills a TOTP field that sits in the password form', async () => {
@@ -74,11 +74,11 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
   })
   it('fails an inline 2FA form when the item has no TOTP', async () => {
-    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' })
+    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP' })
   })
   it('reports password-or-code on a rejected inline 2FA form', async () => {
     const r = await run('/otp-inline', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
-    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (sai mật khẩu hoặc mã 2FA?)' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (wrong password or 2FA code?)' })
   })
   it('handles two-step form', async () => {
     expect((await run('/two-step')).outcome.status).toBe('logged_in')

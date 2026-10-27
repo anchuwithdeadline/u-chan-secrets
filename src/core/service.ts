@@ -26,7 +26,7 @@ export interface CoreDeps {
 
 const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
   ok: 'shared chrome',
-  missing: 'thiếu --cdp-endpoint (đang dùng Chrome riêng, khởi động lại phiên AI)',
+  missing: 'missing --cdp-endpoint (using its own Chrome; restart the AI session)',
   not_found: 'not found',
   unknown: 'unknown',
 }
@@ -78,7 +78,7 @@ export class CoreService implements CoreApi {
     const secrets: string[] = []
     return this.guarded('login', domain, secrets, async () => {
       const entry = await this.deps.allowlist.get(domainOf(domain))
-      if (!entry) throw new UserFacingError('domain chưa được cho phép — dùng request_allow')
+      if (!entry) throw new UserFacingError('domain is not allowlisted — use request_allow')
       const getCreds = async () => {
         const c = await this.deps.vault.getLogin(entry.item)
         secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
@@ -98,10 +98,10 @@ export class CoreService implements CoreApi {
       const existing = await this.deps.allowlist.get(d)
       const entry = buildEntry(d, clean(loginUrl), clean(item), existing)
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
-        'Cho phép AI đăng nhập?',
+        'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,
         `Login URL: ${new URL(entry.loginUrl).href}`,
-        `Item Bitwarden: ${entry.item}`,
+        `Bitwarden item: ${entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
@@ -115,14 +115,14 @@ export class CoreService implements CoreApi {
       const removed = await this.deps.allowlist.remove(domainOf(domain))
       return removed
         ? { result: { ok: true, message: 'revoked' }, audit: 'ok' }
-        : { result: { ok: false, message: 'domain không có trong allowlist' }, audit: 'not found' }
+        : { result: { ok: false, message: 'domain is not in the allowlist' }, audit: 'not found' }
     })
   }
 
   listAllowed(): Promise<ToolResult> {
     return this.guarded(undefined, '', [], async () => {
       const all = await this.deps.allowlist.list()
-      if (all.length === 0) return { result: { ok: true, message: 'allowlist trống' }, audit: '' }
+      if (all.length === 0) return { result: { ok: true, message: 'allowlist is empty' }, audit: '' }
       const message = all.map((e) => `${e.domain} — ${e.item} — ${e.hosts.join(', ')}`).join('\n')
       return { result: { ok: true, message }, audit: '' }
     })
@@ -132,7 +132,7 @@ export class CoreService implements CoreApi {
     return this.guarded(undefined, '', [], async () => {
       const vault = await this.deps.vault.status()
       const chrome = await this.deps.browser.connected()
-      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected (login sẽ tự mở)'}`
+      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected (login will start it)'}`
       const pw = await this.deps.playwright?.()
       if (pw) message += `; playwright: ${PLAYWRIGHT_MSG[pw]}`
       const ok = vault === 'unlocked' && pw !== 'missing'

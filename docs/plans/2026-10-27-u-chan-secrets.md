@@ -2,33 +2,33 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** MCP server local cho Claude Code: AI gọi `login(domain)`, U-Chan Secrets lấy email/mật khẩu từ Bitwarden và điền vào Chrome dùng chung với Playwright MCP — mật khẩu không bao giờ đi vào context của model.
+**Goal:** a local MCP server for Claude Code: the AI calls `login(domain)`, and U-Chan Secrets fetches the email/password from Bitwarden and fills them into the Chrome shared with Playwright MCP — the password never enters the model's context.
 
-**Architecture:** Hai lớp. `src/core/` (vault, allowlist, approval, audit, điền form, `CoreService`) không biết gì về MCP; `src/mcp/` là adapter mỏng chuyển tool call sang `CoreService`. Mọi phụ thuộc của core đi qua interface trong `src/core/types.ts` để sau này core có thể chạy thành process/service riêng (IPC) mà adapter không đổi. Chrome chạy với `--remote-debugging-port`; cả Playwright MCP và U-Chan Secrets kết nối qua CDP nên phiên đăng nhập dùng chung.
+**Architecture:** Two layers. `src/core/` (vault, allowlist, approval, audit, form filling, `CoreService`) knows nothing about MCP; `src/mcp/` is a thin adapter that forwards tool calls to `CoreService`. Every core dependency goes through an interface in `src/core/types.ts`, so the core can later run as a separate process/service (IPC) without changing the adapter. Chrome runs with `--remote-debugging-port`; both Playwright MCP and U-Chan Secrets connect over CDP, so the signed-in session is shared.
 
-**Tech Stack:** Node ≥ 20, TypeScript (ESM), `@modelcontextprotocol/sdk`, `playwright`, `zod`, `vitest`. Bitwarden CLI (`bw`) cài sẵn trên máy. Windows PowerShell 5.1 cho hộp thoại duyệt.
+**Tech Stack:** Node ≥ 20, TypeScript (ESM), `@modelcontextprotocol/sdk`, `playwright`, `zod`, `vitest`. Bitwarden CLI (`bw`) installed on the machine. Windows PowerShell 5.1 for the approval dialog.
 
 **Spec:** `docs/specs/2026-10-27-u-chan-secrets-design.md`
 
 ## Global Constraints
 
-- Tên sản phẩm hiển thị: `U-Chan Secrets`; package/thư mục: `u-chan-secrets`.
-- Mật khẩu không bao giờ xuất hiện trong: tool result, error message, audit log, stdout/stderr của server. stdout dành riêng cho MCP stdio — mọi log khác ra stderr và cũng phải không có secret.
-- Chỉ điền credential khi hostname hiện tại của trang nằm trong `entry.hosts` (so khớp chính xác, không wildcard), kiểm tra lại trước **mỗi** lần điền.
-- `loginUrl` phải là `https:`.
-- AI không có tool liệt kê item trong vault.
-- `revoke` không cần duyệt; thêm/sửa entry chỉ qua `requestAllow` + hộp thoại Windows.
-- Thư mục dữ liệu: `process.env.U_CHAN_HOME` hoặc mặc định `%APPDATA%\u-chan-secrets`. Bên trong: `allowlist.json`, `audit.log`, `bw-session`, `chrome-profile\`.
-- CDP endpoint: `process.env.U_CHAN_CDP` hoặc mặc định `http://127.0.0.1:9222`.
-- Chrome dùng profile riêng `<U_CHAN_HOME>\chrome-profile`, không phải profile hằng ngày.
+- Display name: `U-Chan Secrets`; package/folder: `u-chan-secrets`.
+- The password never appears in: a tool result, an error message, the audit log, the server's stdout/stderr. stdout is reserved for MCP stdio — all other logging goes to stderr and must also be secret-free.
+- Credentials are filled only when the page's current hostname is in `entry.hosts` (exact match, no wildcard), re-checked before **every** fill.
+- `loginUrl` must be `https:`.
+- The AI has no tool to list vault items.
+- `revoke` needs no approval; adding/changing an entry goes only through `requestAllow` + the Windows dialog.
+- Data directory: `process.env.U_CHAN_HOME`, default `%APPDATA%\u-chan-secrets`. Inside: `allowlist.json`, `audit.log`, `bw-session`, `chrome-profile\`.
+- CDP endpoint: `process.env.U_CHAN_CDP`, default `http://127.0.0.1:9222`.
+- Chrome uses its own profile `<U_CHAN_HOME>\chrome-profile`, not the everyday profile.
 
 ## Review Focus
 
-1. **Vault đang khoá / session hết hạn** → `login` trả `failed: vault locked — chạy scripts/unlock.ps1`, không crash, không lộ session. (Task 3, Task 6)
-2. **Trang login redirect sang host không có trong `hosts`** (phishing, SSO lạ) → không điền gì, trả `failed: unexpected host <host>`. (Task 5)
-3. **Sai mật khẩu** → form login vẫn còn sau submit → trả `failed`, không báo `ok`. (Task 5)
-4. **Đã đăng nhập sẵn** (loginUrl redirect thẳng vào dashboard, không có ô mật khẩu) → trả `ok: already logged in`, không lấy credential. (Task 5, Task 6)
-5. **Item không tồn tại hoặc nhiều item trùng tên trong Bitwarden** → `failed: item not found` / `failed: multiple items match, dùng item id`, không lộ dữ liệu item. (Task 3)
+1. **Vault locked / session expired** → `login` returns `failed: vault locked — run scripts/unlock.ps1`, no crash, no session leak. (Task 3, Task 6)
+2. **Login page redirects to a host not in `hosts`** (phishing, unknown SSO) → nothing is filled, returns `failed: unexpected host <host>`. (Task 5)
+3. **Wrong password** → the login form is still there after submit → return `failed`, never `ok`. (Task 5)
+4. **Already signed in** (loginUrl redirects straight to the dashboard, no password field) → return `ok: already logged in` without fetching credentials. (Task 5, Task 6)
+5. **Item missing, or several items with the same name in Bitwarden** → `failed: item not found` / `failed: multiple items match, use the item id`, without leaking item data. (Task 3)
 
 ---
 
@@ -51,23 +51,23 @@
   export interface AuditLog { record(event: AuditEvent): Promise<void> }
   export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke'; domain: string; result: string }
   export type ToolResult = { ok: boolean; message: string }
-  export class UserFacingError extends Error {}   // message an toàn để trả cho AI
+  export class UserFacingError extends Error {}   // message that is safe to return to the AI
   ```
 - Produces (`config.ts`): `export function loadConfig(env = process.env): { home: string; allowlistPath: string; auditPath: string; sessionPath: string; chromeProfile: string; cdpEndpoint: string }`
-- Produces (`redact.ts`): `export function redact(text: string, secrets: string[]): string` — thay mọi lần xuất hiện của từng secret không rỗng bằng `[REDACTED]`.
-- Produces (`audit.ts`): `export class FileAuditLog implements AuditLog { constructor(path: string) }` — append một dòng JSON `{ts, action, domain, result}`, tạo thư mục nếu chưa có.
+- Produces (`redact.ts`): `export function redact(text: string, secrets: string[]): string` — replaces every occurrence of each non-empty secret with `[REDACTED]`.
+- Produces (`audit.ts`): `export class FileAuditLog implements AuditLog { constructor(path: string) }` — appends one JSON line `{ts, action, domain, result}`, creating the directory if needed.
 
-- [ ] **Step 1:** `git init`, tạo `package.json` (`"type": "module"`, scripts `build: tsc`, `test: vitest run`), cài `@modelcontextprotocol/sdk playwright zod` và dev `typescript vitest @types/node`. `.gitignore`: `node_modules`, `dist`.
-- [ ] **Step 2: Viết test failing**
+- [ ] **Step 1:** `git init`, create `package.json` (`"type": "module"`, scripts `build: tsc`, `test: vitest run`), install `@modelcontextprotocol/sdk playwright zod` and dev `typescript vitest @types/node`. `.gitignore`: `node_modules`, `dist`.
+- [ ] **Step 2: Write failing tests**
   ```ts
   // redact.test.ts
   expect(redact('pw=hunter2 again hunter2', ['hunter2'])).toBe('pw=[REDACTED] again [REDACTED]')
   expect(redact('abc', [''])).toBe('abc')
-  // audit.test.ts — ghi 2 event vào file tạm, đọc lại được 2 dòng JSON có ts, action, domain, result
+  // audit.test.ts — write 2 events to a temp file, read back 2 JSON lines with ts, action, domain, result
   ```
-- [ ] **Step 3:** `npx vitest run` → FAIL (module chưa có).
+- [ ] **Step 3:** `npx vitest run` → FAIL (module missing).
 - [ ] **Step 4:** Implement `types.ts`, `config.ts`, `redact.ts`, `audit.ts`.
-- [ ] **Step 5:** `npx vitest run` → PASS; `npx tsc --noEmit` → không lỗi.
+- [ ] **Step 5:** `npx vitest run` → PASS; `npx tsc --noEmit` → no errors.
 - [ ] **Step 6:** Commit `chore: scaffold u-chan-secrets core types, config, redact, audit`.
 
 ### Task 2: Allowlist store
@@ -84,28 +84,28 @@
     constructor(path: string)
     list(): Promise<AllowEntry[]>
     get(domain: string): Promise<AllowEntry | undefined>
-    upsert(entry: AllowEntry): Promise<void>   // ghi atomic: file tạm rồi rename
+    upsert(entry: AllowEntry): Promise<void>   // atomic write: temp file, then rename
     remove(domain: string): Promise<boolean>
   }
   export function isHostAllowed(entry: AllowEntry, url: string): boolean
   export function buildEntry(domain: string, loginUrl: string, item: string, existing?: AllowEntry): AllowEntry
   ```
-  `buildEntry`: ném `UserFacingError` nếu `loginUrl` không phải `https:`; `hosts` = hợp của `existing?.hosts`, `domain`, hostname của `loginUrl` (lowercase, không trùng). Domain normalize về lowercase, bỏ `https://` và path nếu AI truyền nhầm URL.
+  `buildEntry`: throws `UserFacingError` if `loginUrl` is not `https:`; `hosts` = union of `existing?.hosts`, `domain`, and the `loginUrl` hostname (lowercase, deduplicated). The domain is normalized to lowercase, stripping `https://` and any path if the AI passes a URL by mistake.
 
-- [ ] **Step 1: Viết test failing**
+- [ ] **Step 1: Write failing tests**
   ```ts
   isHostAllowed({hosts:['admin.example.com'], ...}, 'https://admin.example.com/login') === true
-  isHostAllowed(same, 'https://evil.example.com/login') === false        // không wildcard
+  isHostAllowed(same, 'https://evil.example.com/login') === false        // no wildcard
   isHostAllowed(same, 'https://admin.example.com.evil.com/') === false
-  isHostAllowed(same, 'http://admin.example.com/') === false              // chỉ https
+  isHostAllowed(same, 'http://admin.example.com/') === false              // https only
   buildEntry('admin.example.com','http://x', 'item') throws UserFacingError
   buildEntry('admin.example.com','https://auth.example.com/login','Example').hosts
     => ['admin.example.com','auth.example.com']
-  store: upsert → get trả entry; remove → true rồi get undefined; file không tồn tại → list() = []
+  store: upsert → get returns the entry; remove → true, then get is undefined; missing file → list() = []
   ```
-- [ ] **Step 2:** Chạy → FAIL.
+- [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Chạy → PASS.
+- [ ] **Step 4:** Run → PASS.
 - [ ] **Step 5:** Commit `feat: allowlist store with exact host matching`.
 
 ### Task 3: Bitwarden vault client
@@ -121,24 +121,24 @@
   ```ts
   export type Exec = (args: string[], env: NodeJS.ProcessEnv) => Promise<{ code: number; stdout: string; stderr: string }>
   export class BitwardenVault implements VaultClient {
-    constructor(opts: { sessionPath: string; exec?: Exec })   // exec mặc định: execFile('bw', args) không qua shell
+    constructor(opts: { sessionPath: string; exec?: Exec })   // default exec: execFile('bw', args), no shell
   }
   ```
-  Session: đọc `BW_SESSION` từ env nếu có, ngược lại đọc file `sessionPath` (trim). Truyền cho `bw` qua env `BW_SESSION`, không qua argv.
-  `status()`: `bw status` → parse JSON `.status`; `bw` không chạy được → `'unavailable'`.
-  `getLogin(item)`: `bw get item <item>`; lỗi chứa `More than one result` → `UserFacingError('multiple items match, dùng item id')`; `Not found` → `UserFacingError('item not found')`; locked → `UserFacingError('vault locked — chạy scripts/unlock.ps1')`; item không có `login.username`/`login.password` → `UserFacingError('item has no username/password')`. Mọi message lỗi khác đi qua `redact` với session và không bao giờ kèm stdout.
-- `scripts/unlock.ps1`: chạy `bw unlock --raw` (bw tự hỏi master password), ghi output vào `<U_CHAN_HOME>\bw-session`; `-Lock` switch: `bw lock` và xoá file.
+  Session: read `BW_SESSION` from the environment if present, otherwise read the `sessionPath` file (trimmed). Pass it to `bw` through the `BW_SESSION` environment variable, never through argv.
+  `status()`: `bw status` → parse JSON `.status`; `bw` cannot run → `'unavailable'`.
+  `getLogin(item)`: `bw get item <item>`; error containing `More than one result` → `UserFacingError('multiple items match, use the item id')`; `Not found` → `UserFacingError('item not found')`; locked → `UserFacingError('vault locked — run scripts/unlock.ps1')`; item without `login.username`/`login.password` → `UserFacingError('item has no username/password')`. Every other error message goes through `redact` with the session and never includes stdout.
+- `scripts/unlock.ps1`: runs `bw unlock --raw` (bw prompts for the master password itself) and writes the output to `<U_CHAN_HOME>\bw-session`; the `-Lock` switch runs `bw lock` and deletes the file.
 
-- [ ] **Step 1: Viết test failing** với `exec` giả:
-  - status JSON `{"status":"unlocked"}` → `'unlocked'`; exec ném ENOENT → `'unavailable'`.
-  - `get item` trả JSON `{login:{username:'u@x',password:'p'}}` → `{username:'u@x',password:'p'}`.
-  - stderr `More than one result was found` → throws `UserFacingError` message `multiple items match, dùng item id`.
-  - stderr `Not found.` → `item not found`; stderr `Vault is locked.` → `vault locked — chạy scripts/unlock.ps1`.
-  - Exec nhận `env.BW_SESSION === 'S'` khi file session chứa `S\n`; `args` không chứa `'S'`.
-  - Lỗi lạ có stderr chứa session `S` → message không chứa `S`.
-- [ ] **Step 2:** Chạy → FAIL.
-- [ ] **Step 3:** Implement `vault.ts` và `unlock.ps1`.
-- [ ] **Step 4:** Chạy → PASS.
+- [ ] **Step 1: Write failing tests** with a fake `exec`:
+  - status JSON `{"status":"unlocked"}` → `'unlocked'`; exec throws ENOENT → `'unavailable'`.
+  - `get item` returns JSON `{login:{username:'u@x',password:'p'}}` → `{username:'u@x',password:'p'}`.
+  - stderr `More than one result was found` → throws `UserFacingError` with message `multiple items match, use the item id`.
+  - stderr `Not found.` → `item not found`; stderr `Vault is locked.` → `vault locked — run scripts/unlock.ps1`.
+  - Exec receives `env.BW_SESSION === 'S'` when the session file contains `S\n`; `args` does not contain `'S'`.
+  - An unexpected error whose stderr contains session `S` → the message does not contain `S`.
+- [ ] **Step 2:** Run → FAIL.
+- [ ] **Step 3:** Implement `vault.ts` and `unlock.ps1`.
+- [ ] **Step 4:** Run → PASS.
 - [ ] **Step 5:** Commit `feat: bitwarden vault client via bw CLI`.
 
 ### Task 4: Windows approval dialog
@@ -149,20 +149,20 @@
 
 **Interfaces:**
 - Consumes: `Approver`.
-- Produces: `export class WindowsDialogApprover implements Approver { constructor(opts?: { spawnPs?: SpawnPs; timeoutMs?: number }) }` (timeout mặc định 120000 → coi là từ chối).
-  Cách làm: spawn `powershell.exe -NoProfile -NonInteractive -Command <script cố định>`; nội dung hiển thị truyền qua env `UCS_TITLE` / `UCS_BODY` (body = `lines.join('\n')`), **không bao giờ nội suy chuỗi do AI cung cấp vào script** (chống PowerShell injection). Script dùng `System.Windows.Forms.MessageBox` Yes/No, icon Warning, nút mặc định = No, cửa sổ TopMost; in `YES` hoặc `NO`. Chỉ `YES` → `true`.
+- Produces: `export class WindowsDialogApprover implements Approver { constructor(opts?: { spawnPs?: SpawnPs; timeoutMs?: number }) }` (default timeout 120000 → treated as a denial).
+  Approach: spawn `powershell.exe -NoProfile -NonInteractive -Command <fixed script>`; the displayed text is passed through the `UCS_TITLE` / `UCS_BODY` environment variables (body = `lines.join('\n')`). **Never interpolate AI-supplied strings into the script** (prevents PowerShell injection). The script uses a `System.Windows.Forms.MessageBox` with Yes/No, a Warning icon, default button = No, TopMost window; it prints `YES` or `NO`. Only `YES` → `true`.
 
-- [ ] **Step 1: Viết test failing** với `spawnPs` giả: stdout `YES\r\n` → true; `NO` → false; timeout → false; khi `lines` chứa `"; Remove-Item C:\ ; "` thì argument script truyền cho `spawnPs` giống hệt script cố định và chuỗi đó chỉ nằm trong env `UCS_BODY`.
-- [ ] **Step 2:** Chạy → FAIL.
+- [ ] **Step 1: Write failing tests** with a fake `spawnPs`: stdout `YES\r\n` → true; `NO` → false; timeout → false; when `lines` contains `"; Remove-Item C:\ ; "`, the script argument passed to `spawnPs` is identical to the fixed script and the string appears only in the `UCS_BODY` environment variable.
+- [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Chạy → PASS. Thử tay: `node -e` gọi `ask('U-Chan Secrets', ['test'])` → hộp thoại hiện trên cùng, bấm Yes/No ra đúng kết quả.
+- [ ] **Step 4:** Run → PASS. Manual check: `node -e` calling `ask('U-Chan Secrets', ['test'])` → the dialog appears on top, and Yes/No give the right result.
 - [ ] **Step 5:** Commit `feat: windows native approval dialog`.
 
 ### Task 5: Login filler (Playwright)
 
 **Files:**
 - Create: `src/core/login-filler.ts`
-- Test: `test/login-filler.test.ts`, `test/fixtures/server.ts` (HTTP server local phục vụ các trang login mẫu)
+- Test: `test/login-filler.test.ts`, `test/fixtures/server.ts` (a local HTTP server serving sample login pages)
 
 **Interfaces:**
 - Consumes: `AllowEntry`, `Credentials`, `isHostAllowed`.
@@ -172,27 +172,27 @@
   export async function fillLogin(page: Page, entry: AllowEntry,
     getCreds: () => Promise<Credentials>, opts?: { timeoutMs?: number; hostCheck?: (url: string) => boolean }): Promise<FillOutcome>
   ```
-  `hostCheck` mặc định `url => isHostAllowed(entry, url)`; test truyền hàm cho phép `http://127.0.0.1:<port>`.
-  Thuật toán:
-  1. `page.goto(entry.loginUrl)`, chờ load. Nếu `hostCheck(page.url())` sai → `failed: unexpected host <hostname>`.
-  2. Nếu không có ô username lẫn ô password hiển thị → `already_logged_in` (**không** gọi `getCreds`).
-  3. Gọi `getCreds()` một lần.
-  4. Ô username: `selectors.username` hoặc input hiển thị đầu tiên khớp `[autocomplete=username], [type=email], [name*=email i], [name*=user i], [id*=email i]`. Ô password: `selectors.password` hoặc `input[type=password]:visible`. Submit: `selectors.submit` hoặc `button[type=submit], input[type=submit]`, fallback nhấn Enter.
-  5. Nếu cả hai ô hiển thị: kiểm tra host → fill username → fill password → submit **liền nhau trong cùng một lần gọi** (không trả control giữa chừng).
-  6. Nếu chỉ có username (form tách bước): kiểm tra host → fill → submit → chờ `input[type=password]` hiển thị (timeout) → kiểm tra host lại → fill password → submit.
-  7. Chờ navigation/network idle. Nếu ô password vẫn hiển thị → `failed: login form still present (sai mật khẩu?)`. Ngược lại → `logged_in`.
-  `reason` không bao giờ chứa giá trị credential.
+  `hostCheck` defaults to `url => isHostAllowed(entry, url)`; tests pass a function that allows `http://127.0.0.1:<port>`.
+  Algorithm:
+  1. `page.goto(entry.loginUrl)`, wait for load. If `hostCheck(page.url())` is false → `failed: unexpected host <hostname>`.
+  2. If neither a username field nor a password field is visible → `already_logged_in` (do **not** call `getCreds`).
+  3. Call `getCreds()` once.
+  4. Username field: `selectors.username`, or the first visible input matching `[autocomplete=username], [type=email], [name*=email i], [name*=user i], [id*=email i]`. Password field: `selectors.password` or `input[type=password]:visible`. Submit: `selectors.submit` or `button[type=submit], input[type=submit]`, falling back to pressing Enter.
+  5. If both fields are visible: check host → fill username → fill password → submit **back to back in a single call** (no control handed back in between).
+  6. If only the username field is present (split form): check host → fill → submit → wait for `input[type=password]` to be visible (timeout) → check host again → fill password → submit.
+  7. Wait for navigation/network idle. If the password field is still visible → `failed: login form still present (wrong password?)`. Otherwise → `logged_in`.
+  `reason` never contains a credential value.
 
-- [ ] **Step 1: Viết fixture server** với các trang: `/single` (email+password, POST đúng `u@x`/`pw` → redirect `/dash`, sai → render lại form), `/two-step` (bước 1 email, bước 2 password), `/already` (redirect thẳng `/dash`), `/redirect-evil` (redirect sang `http://localhost:<port>/single` — khác host so với `127.0.0.1`).
-- [ ] **Step 2: Viết test failing** (Playwright chromium headless):
-  - `/single` đúng creds → `logged_in`, page ở `/dash`.
-  - `/single` sai mật khẩu → `failed`, reason chứa `login form still present`, không chứa mật khẩu.
+- [ ] **Step 1: Write the fixture server** with these pages: `/single` (email+password; a POST with `u@x`/`pw` → redirect to `/dash`, otherwise the form re-renders), `/two-step` (step 1 email, step 2 password), `/already` (redirects straight to `/dash`), `/redirect-evil` (redirects to `http://localhost:<port>/single` — a different host from `127.0.0.1`).
+- [ ] **Step 2: Write failing tests** (Playwright chromium headless):
+  - `/single` with correct creds → `logged_in`, page at `/dash`.
+  - `/single` with a wrong password → `failed`, reason contains `login form still present` and not the password.
   - `/two-step` → `logged_in`.
-  - `/already` → `already_logged_in`, `getCreds` không được gọi.
-  - `/redirect-evil` → `failed: unexpected host localhost`, `getCreds` không được gọi, không có request POST nào tới server.
-- [ ] **Step 3:** Chạy → FAIL.
+  - `/already` → `already_logged_in`, `getCreds` not called.
+  - `/redirect-evil` → `failed: unexpected host localhost`, `getCreds` not called, no POST request reaches the server.
+- [ ] **Step 3:** Run → FAIL.
 - [ ] **Step 4:** Implement.
-- [ ] **Step 5:** Chạy → PASS.
+- [ ] **Step 5:** Run → PASS.
 - [ ] **Step 6:** Commit `feat: playwright login filler with host checks and two-step support`.
 
 ### Task 6: CoreService
@@ -202,8 +202,8 @@
 - Test: `test/service.test.ts`
 
 **Interfaces:**
-- Consumes: mọi thứ từ Task 1–5.
-- Produces (`browser.ts`): `export interface BrowserProvider { withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>; connected(): Promise<boolean> }` và `export class CdpBrowserProvider implements BrowserProvider { constructor(endpoint: string) }` — `chromium.connectOverCDP`, dùng `contexts()[0]` (context mặc định, cookie dùng chung với Playwright MCP), mở tab mới, chạy `fn`, đóng tab. Không kết nối được → `UserFacingError('Chrome chưa chạy — chạy scripts/start-chrome.ps1')`.
+- Consumes: everything from Tasks 1–5.
+- Produces (`browser.ts`): `export interface BrowserProvider { withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>; connected(): Promise<boolean> }` and `export class CdpBrowserProvider implements BrowserProvider { constructor(endpoint: string) }` — `chromium.connectOverCDP`, uses `contexts()[0]` (the default context, whose cookies are shared with Playwright MCP), opens a new tab, runs `fn`, closes the tab. Connection failure → `UserFacingError('Chrome is not running — run scripts/start-chrome.ps1')`.
 - Produces (`service.ts`):
   ```ts
   export class CoreService {
@@ -211,52 +211,52 @@
     login(domain: string): Promise<ToolResult>
     requestAllow(domain: string, loginUrl: string, item: string): Promise<ToolResult>
     revoke(domain: string): Promise<ToolResult>
-    listAllowed(): Promise<ToolResult>   // message: mỗi dòng "domain — item — hosts"
+    listAllowed(): Promise<ToolResult>   // message: one line per entry, "domain — item — hosts"
     status(): Promise<ToolResult>        // vault status + chrome connected
   }
   ```
-  `CoreService` là ranh giới IPC tương lai: chỉ nhận/trả kiểu serializable.
-  - `login`: domain không có trong allowlist → `{ok:false, message:'domain chưa được cho phép — dùng request_allow'}`. Ngược lại `browser.withPage(page => fillLogin(page, entry, () => vault.getLogin(entry.item)))`. `logged_in` → `ok: logged in`; `already_logged_in` → `ok: already logged in`; `failed` → `{ok:false}`.
-  - `requestAllow`: `buildEntry` (lỗi → `{ok:false}`), rồi `approver.ask('U-Chan Secrets', ['Cho phép AI đăng nhập?', 'Domain: …', 'Login URL: …', 'Item Bitwarden: …', 'Hosts: …'])`. true → `upsert`, `approved`; false → `denied`.
-  - Mọi method: bắt lỗi; `UserFacingError` → trả message của nó; lỗi khác → `{ok:false, message:'internal error'}` và log chi tiết đã `redact` ra stderr. Ghi audit cho login/request_allow/revoke.
+  `CoreService` is the future IPC boundary: it only takes and returns serializable types.
+  - `login`: domain not in the allowlist → `{ok:false, message:'domain is not allowlisted — use request_allow'}`. Otherwise `browser.withPage(page => fillLogin(page, entry, () => vault.getLogin(entry.item)))`. `logged_in` → `ok: logged in`; `already_logged_in` → `ok: already logged in`; `failed` → `{ok:false}`.
+  - `requestAllow`: `buildEntry` (error → `{ok:false}`), then `approver.ask('U-Chan Secrets', ['Allow the AI to sign in?', 'Domain: …', 'Login URL: …', 'Bitwarden item: …', 'Hosts: …'])`. true → `upsert`, `approved`; false → `denied`.
+  - Every method catches errors; `UserFacingError` → return its message; any other error → `{ok:false, message:'internal error'}` with the `redact`ed details logged to stderr. Write audit entries for login/request_allow/revoke.
 
-- [ ] **Step 1: Viết test failing** với fake vault/approver/audit/browser (browser fake gọi `fn` với page từ fixture server Task 5 hoặc stub `fillLogin` qua module mock):
-  - `login` domain lạ → ok=false, vault không bị gọi.
-  - `login` thành công → `{ok:true, message:'logged in'}`, audit ghi `{action:'login', result:'ok'}`.
-  - Fake vault ném `UserFacingError('vault locked — chạy scripts/unlock.ps1')` → message đúng như vậy.
-  - Fake vault ném `Error('boom hunter2')` với password `hunter2` → message `internal error`; JSON toàn bộ kết quả không chứa `hunter2`.
-  - `requestAllow` approver=false → `denied`, allowlist không đổi; approver=true → entry có trong `list()`.
-  - `requestAllow` với `http://` → ok=false, approver không bị gọi.
-  - `revoke` → entry bị xoá, approver không bị gọi.
-- [ ] **Step 2:** Chạy → FAIL.
+- [ ] **Step 1: Write failing tests** with a fake vault/approver/audit/browser (the fake browser calls `fn` with a page from the Task 5 fixture server, or `fillLogin` is stubbed via a module mock):
+  - `login` for an unknown domain → ok=false, the vault is not called.
+  - Successful `login` → `{ok:true, message:'logged in'}`, the audit records `{action:'login', result:'ok'}`.
+  - Fake vault throws `UserFacingError('vault locked — run scripts/unlock.ps1')` → exactly that message.
+  - Fake vault throws `Error('boom hunter2')` with password `hunter2` → message `internal error`; the JSON of the whole result does not contain `hunter2`.
+  - `requestAllow` with approver=false → `denied`, the allowlist is unchanged; approver=true → the entry is in `list()`.
+  - `requestAllow` with `http://` → ok=false, the approver is not called.
+  - `revoke` → the entry is removed, the approver is not called.
+- [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Chạy → PASS.
+- [ ] **Step 4:** Run → PASS.
 - [ ] **Step 5:** Commit `feat: core service orchestrating login and allowlist`.
 
-### Task 7: MCP adapter và entrypoint
+### Task 7: MCP adapter and entrypoint
 
 **Files:**
 - Create: `src/mcp/server.ts`, `src/index.ts`
 - Test: `test/mcp.test.ts`
 
 **Interfaces:**
-- Consumes: `CoreService`, `loadConfig` và các class cụ thể.
-- Produces: `export function createMcpServer(core: Pick<CoreService, 'login'|'requestAllow'|'revoke'|'listAllowed'|'status'>): McpServer`. Tool (tên chính xác, schema zod):
+- Consumes: `CoreService`, `loadConfig` and the concrete classes.
+- Produces: `export function createMcpServer(core: Pick<CoreService, 'login'|'requestAllow'|'revoke'|'listAllowed'|'status'>): McpServer`. Tools (exact names, zod schemas):
   - `login` `{ domain: string }`
-  - `request_allow` `{ domain: string, login_url: string, item: string }` — description nói rõ: sẽ hiện hộp thoại để người dùng duyệt; item là tên/ID item Bitwarden do người dùng cung cấp.
+  - `request_allow` `{ domain: string, login_url: string, item: string }` — the description states that a dialog will ask the user to approve, and that item is the Bitwarden item name/ID provided by the user.
   - `revoke` `{ domain: string }`
   - `list_allowed` `{}`
   - `status` `{}`
-  Mỗi tool trả `{ content: [{ type: 'text', text: message }], isError: !ok }`. Description của `login` nói: sau khi `ok`, dùng Playwright MCP để duyệt tiếp.
-  `src/index.ts`: dựng các dependency từ `loadConfig()`, kết nối `StdioServerTransport`. Không `console.log` (stdout là kênh MCP).
+  Each tool returns `{ content: [{ type: 'text', text: message }], isError: !ok }`. The `login` description says: once it returns `ok`, use Playwright MCP to keep browsing.
+  `src/index.ts`: builds the dependencies from `loadConfig()` and connects a `StdioServerTransport`. No `console.log` (stdout is the MCP channel).
 
-- [ ] **Step 1: Viết test failing**: dùng `InMemoryTransport` + `Client` của SDK với core giả; `listTools` có đúng 5 tên trên; gọi `login` → text = message của core; core trả ok=false → `isError: true`.
-- [ ] **Step 2:** Chạy → FAIL.
+- [ ] **Step 1: Write failing tests**: use the SDK's `InMemoryTransport` + `Client` with a fake core; `listTools` has exactly the 5 names above; calling `login` → text = the core's message; core returns ok=false → `isError: true`.
+- [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Chạy → PASS; `npm run build` → có `dist/index.js`.
+- [ ] **Step 4:** Run → PASS; `npm run build` → `dist/index.js` exists.
 - [ ] **Step 5:** Commit `feat: mcp adapter exposing u-chan-secrets tools`.
 
-### Task 8: Scripts khởi động, README, kiểm tra end-to-end
+### Task 8: Startup scripts, README, end-to-end check
 
 **Files:**
 - Create: `scripts/start-chrome.ps1`, `README.md`
@@ -264,13 +264,13 @@
 **Interfaces:**
 - Consumes: `dist/index.js`, `scripts/unlock.ps1`.
 
-- [ ] **Step 1:** `scripts/start-chrome.ps1`: tìm `chrome.exe` (Program Files / LocalAppData), chạy với `--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir=<U_CHAN_HOME>\chrome-profile --no-first-run`. Nếu cổng 9222 đã mở thì không chạy thêm.
-- [ ] **Step 2:** `README.md` (tiếng Việt): cài `bw` và `bw login`; quy trình hằng ngày (`start-chrome.ps1`, `unlock.ps1`); đăng ký MCP:
+- [ ] **Step 1:** `scripts/start-chrome.ps1`: find `chrome.exe` (Program Files / LocalAppData) and run it with `--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir=<U_CHAN_HOME>\chrome-profile --no-first-run`. If port 9222 is already open, do not start another one.
+- [ ] **Step 2:** `README.md`: install `bw` and run `bw login`; the daily routine (`start-chrome.ps1`, `unlock.ps1`); MCP registration:
   ```
   claude mcp add u-chan-secrets -- node <path-to>\u-chan-secrets\dist\index.js
   claude mcp add playwright -- npx @playwright/mcp@latest --cdp-endpoint http://127.0.0.1:9222
   ```
-  (cấu hình lại Playwright MCP hiện có thay vì thêm bản thứ hai); threat model v1 (chống lộ vô tình, không chống AI bị lừa — xem spec §5b); cách gỡ quyền (`revoke`, sửa `allowlist.json`).
-- [ ] **Step 3: E2E thật:** chạy Chrome + unlock; trong Claude Code: `status` → unlocked + connected; `request_allow("admin.example.com", "<login url>", "<item>")` → hộp thoại hiện, bấm Đồng ý; `login("admin.example.com")` → `logged in`; Playwright MCP `browser_navigate` tới trang admin → thấy giao diện đã đăng nhập, chụp màn hình.
-- [ ] **Step 4: Kiểm tra rò rỉ:** grep mật khẩu thật trong `audit.log`, transcript Claude Code của phiên test (`~/.claude/projects/...`), và stderr log → không có kết quả.
+  (reconfigure the existing Playwright MCP instead of adding a second one); threat model v1 (prevents accidental leaks, not a tricked AI — see spec §5b); how to revoke access (`revoke`, editing `allowlist.json`).
+- [ ] **Step 3: Real E2E:** start Chrome + unlock; in Claude Code: `status` → unlocked + connected; `request_allow("admin.example.com", "<login url>", "<item>")` → the dialog appears, click Yes; `login("admin.example.com")` → `logged in`; Playwright MCP `browser_navigate` to the admin page → the signed-in UI is visible; take a screenshot.
+- [ ] **Step 4: Leak check:** grep for the real password in `audit.log`, the Claude Code transcript of the test session (`~/.claude/projects/...`) and the stderr log → no hits.
 - [ ] **Step 5:** Commit `docs: startup scripts and README`.

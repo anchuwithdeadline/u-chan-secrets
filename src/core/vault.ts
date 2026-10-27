@@ -28,8 +28,8 @@ const defaultExec: Exec = (args, env) =>
 
 const STATUSES: VaultStatus[] = ['unlocked', 'locked', 'unauthenticated']
 const SPAWN_CODES = ['ENOENT', 'EACCES', 'EINVAL']
-const LOGIN_MSG = 'chưa đăng nhập Bitwarden — chạy bw login rồi scripts/unlock.ps1'
-const UNLOCK_MSG = 'vault locked — chạy scripts/unlock.ps1'
+const LOGIN_MSG = 'not logged in to Bitwarden — run bw login, then scripts/unlock.ps1'
+const UNLOCK_MSG = 'vault locked — run scripts/unlock.ps1'
 
 export class BitwardenVault implements VaultClient {
   private sessionPath: string
@@ -81,7 +81,7 @@ export class BitwardenVault implements VaultClient {
     }
     if (r.code !== 0) {
       const err = r.stderr.toLowerCase()
-      if (err.includes('more than one result')) throw new UserFacingError('multiple items match, dùng item id')
+      if (err.includes('more than one result')) throw new UserFacingError('multiple items match, use the item id')
       if (err.includes('not found')) throw new UserFacingError('item not found')
       if (err.includes('vault is locked')) throw new UserFacingError(UNLOCK_MSG)
       if (err.includes('you are not logged in')) throw new UserFacingError(LOGIN_MSG)

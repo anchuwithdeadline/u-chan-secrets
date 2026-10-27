@@ -54,7 +54,7 @@ describe('BitwardenVault.getLogin', () => {
   })
   it('maps multiple results', async () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('More than one result was found.') })
-    expect(await msg(v.getLogin('i'))).toBe('multiple items match, dùng item id')
+    expect(await msg(v.getLogin('i'))).toBe('multiple items match, use the item id')
   })
   it('maps not found', async () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('Not found.') })
@@ -62,11 +62,11 @@ describe('BitwardenVault.getLogin', () => {
   })
   it('maps locked', async () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('Vault is locked.') })
-    expect(await msg(v.getLogin('i'))).toBe('vault locked — chạy scripts/unlock.ps1')
+    expect(await msg(v.getLogin('i'))).toBe('vault locked — run scripts/unlock.ps1')
   })
   it('maps not logged in (case-insensitive)', async () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('You are not logged in.') })
-    expect(await msg(v.getLogin('i'))).toBe('chưa đăng nhập Bitwarden — chạy bw login rồi scripts/unlock.ps1')
+    expect(await msg(v.getLogin('i'))).toBe('not logged in to Bitwarden — run bw login, then scripts/unlock.ps1')
   })
   it('rejects item without username/password', async () => {
     const v = new BitwardenVault({ sessionPath, exec: ok(JSON.stringify({ login: { username: 'u' } })) })
