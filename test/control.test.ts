@@ -1,0 +1,117 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AllowlistStore } from '../src/core/allowlist.js'
+import { ControlService } from '../src/service/control.js'
+import { SettingsStore } from '../src/service/settings.js'
+import { AttemptLimiter } from '../src/service/attempts.js'
+import type { AuditEvent } from '../src/core/types.js'
+
+let dir: string
+let events: AuditEvent[]
+let vault: { unlock: ReturnType<typeof vi.fn>; lock: ReturnType<typeof vi.fn>; verify: ReturnType<typeof vi.fn> }
+let approver: { askPassword: ReturnType<typeof vi.fn>; ask: ReturnType<typeof vi.fn> }
+let limiter: AttemptLimiter
+let settings: SettingsStore
+let allowlist: AllowlistStore
+
+const make = (platform: NodeJS.Platform = 'win32') =>
+  new ControlService({
+    vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+    audit: { record: async (e) => void events.push(e) }, platform,
+  })
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'ucs-ctl-'))
+  events = []
+  vault = { unlock: vi.fn(async () => true), lock: vi.fn(async () => {}), verify: vi.fn(async () => true) }
+  approver = { askPassword: vi.fn(async () => 'pw'), ask: vi.fn(async () => true) }
+  limiter = new AttemptLimiter()
+  settings = new SettingsStore(join(dir, 'settings.json'))
+  allowlist = new AllowlistStore(join(dir, 'allow.json'))
+})
+afterEach(() => rm(dir, { recursive: true, force: true }))
+
+describe('control: unlock', () => {
+  it('unlocks and audits without the password', async () => {
+    expect(await make().unlock()).toEqual({ ok: true, message: 'unlocked' })
+    expect(vault.unlock).toHaveBeenCalledWith('pw')
+    expect(events).toEqual([{ action: 'unlock', domain: '', result: 'ok' }])
+    expect(JSON.stringify(events)).not.toContain('pw')
+  })
+  it('wrong password counts a failure', async () => {
+    vault.unlock.mockResolvedValue(false)
+    const fail = vi.spyOn(limiter, 'fail')
+    expect(await make().unlock()).toEqual({ ok: false, message: 'wrong password' })
+    expect(fail).toHaveBeenCalled()
+    expect(events[0]).toMatchObject({ action: 'unlock', result: 'failed: wrong password' })
+  })
+  it('cancel', async () => {
+    approver.askPassword.mockResolvedValue(null)
+    expect(await make().unlock()).toEqual({ ok: false, message: 'cancelled' })
+  })
+  it('blocked returns the lockout message without prompting', async () => {
+    for (let i = 0; i < 5; i++) limiter.fail()
+    expect(await make().unlock()).toEqual({ ok: false, message: 'too many wrong passwords — try again in 15 minutes' })
+    expect(approver.askPassword).not.toHaveBeenCalled()
+  })
+  it('success resets the limiter', async () => {
+    const reset = vi.spyOn(limiter, 'reset')
+    await make().unlock()
+    expect(reset).toHaveBeenCalled()
+  })
+})
+
+describe('control: lock', () => {
+  it('locks', async () => {
+    expect(await make().lock()).toEqual({ ok: true, message: 'locked' })
+    expect(vault.lock).toHaveBeenCalled()
+    expect(events[0]).toMatchObject({ action: 'lock', result: 'ok' })
+  })
+})
+
+describe('control: mode', () => {
+  it('hardcore saves with no prompt', async () => {
+    expect((await make().setMode('hardcore')).ok).toBe(true)
+    expect((await settings.get()).mode).toBe('hardcore')
+    expect(approver.askPassword).not.toHaveBeenCalled()
+    expect(events[0]).toMatchObject({ action: 'mode', result: 'hardcore' })
+  })
+  it('easy on win32 requires the master password', async () => {
+    await settings.update({ mode: 'hardcore' })
+    expect((await make().setMode('easy')).ok).toBe(true)
+    expect(vault.verify).toHaveBeenCalledWith('pw')
+    expect((await settings.get()).mode).toBe('easy')
+  })
+  it('easy with a wrong password is refused and counted', async () => {
+    await settings.update({ mode: 'hardcore' })
+    vault.verify.mockResolvedValue(false)
+    const fail = vi.spyOn(limiter, 'fail')
+    expect(await make().setMode('easy')).toEqual({ ok: false, message: 'wrong password' })
+    expect(fail).toHaveBeenCalled()
+    expect((await settings.get()).mode).toBe('hardcore')
+  })
+  it('easy cancelled or blocked changes nothing', async () => {
+    await settings.update({ mode: 'hardcore' })
+    approver.askPassword.mockResolvedValue(null)
+    expect((await make().setMode('easy')).ok).toBe(false)
+    expect((await settings.get()).mode).toBe('hardcore')
+  })
+  it('easy on darwin is unavailable', async () => {
+    expect(await make('darwin').setMode('easy')).toEqual({ ok: false, message: 'easy mode is not available on macOS' })
+    expect(approver.askPassword).not.toHaveBeenCalled()
+  })
+})
+
+describe('control: importV1', () => {
+  it('asks for each valid entry', async () => {
+    const e = (d: string) => ({ domain: d, hosts: [d], loginUrl: `https://${d}/login`, item: d })
+    approver.ask.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const out = await make().importV1([e('a.com'), { bad: 1 }, e('b.com')])
+    expect(out).toEqual({ ok: true, message: 'imported 1 of 2' })
+    expect((await allowlist.list()).map((x) => x.domain)).toEqual(['a.com'])
+    expect(approver.ask).toHaveBeenCalledTimes(2)
+    expect(events[0]).toMatchObject({ action: 'import', result: 'imported 1 of 2' })
+  })
+})

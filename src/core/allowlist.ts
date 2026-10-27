@@ -54,7 +54,7 @@ export class AllowlistStore {
   }
 }
 
-function isValidEntry(e: unknown): e is AllowEntry {
+export function isValidEntry(e: unknown): e is AllowEntry {
   if (typeof e !== 'object' || e === null) return false
   const o = e as Record<string, unknown>
   return (

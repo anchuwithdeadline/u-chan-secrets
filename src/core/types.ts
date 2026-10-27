@@ -18,7 +18,7 @@ export interface VaultClient {
   lock(): Promise<void>
 }
 export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
-export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke'; domain: string; result: string }
+export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import'; domain: string; result: string }
 export interface AuditLog { record(event: AuditEvent): Promise<void> }
 export type Selectors = NonNullable<AllowEntry['selectors']>
 export type ApprovalMode = 'easy' | 'hardcore'

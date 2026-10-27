@@ -3,15 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { AllowlistStore } from '../src/core/allowlist.js'
-import type { BrowserProvider } from '../src/core/browser.js'
 import { CoreService } from '../src/core/service.js'
 import { UserFacingError, type AllowEntry, type AuditEvent, type VaultClient, type VaultStatus } from '../src/core/types.js'
 import type { FillOutcome } from '../src/core/login-filler.js'
-
-const fill = vi.hoisted(() => ({ impl: undefined as undefined | ((getCreds: () => Promise<unknown>) => Promise<FillOutcome>) }))
-vi.mock('../src/core/login-filler.js', () => ({
-  fillLogin: (_page: unknown, _entry: unknown, getCreds: () => Promise<unknown>) => fill.impl!(getCreds),
-}))
 
 const entry: AllowEntry = { domain: 'example.com', hosts: ['example.com'], loginUrl: 'https://example.com/login', item: 'ex' }
 let dir: string
@@ -19,7 +13,9 @@ let store: AllowlistStore
 let events: AuditEvent[]
 let vault: VaultClient & { getLogin: ReturnType<typeof vi.fn> }
 let approve: Mock<(title: string, lines: string[]) => Promise<boolean>>
-let chrome: boolean
+let fill: { impl: (entry: AllowEntry, getCreds: () => Promise<unknown>) => Promise<FillOutcome> }
+let runs: AllowEntry[]
+let mode: 'easy' | 'hardcore'
 let svc: CoreService
 let vaultStatus: VaultStatus
 
@@ -28,12 +24,13 @@ beforeEach(async () => {
   store = new AllowlistStore(join(dir, 'allow.json'))
   events = []
   vaultStatus = 'unlocked'
-  chrome = true
+  mode = 'hardcore'
+  runs = []
+  fill = { impl: async (_e, getCreds) => { await getCreds(); return { status: 'logged_in' } } }
   vault = { status: async () => vaultStatus, unlock: async () => true, lock: async () => {}, getLogin: vi.fn(async () => ({ username: 'u', password: 'hunter2' })) }
   approve = vi.fn(async (_t: string, _l: string[]) => true)
-  const browser: BrowserProvider = { withPage: (fn) => fn({} as never), connected: async () => chrome }
-  fill.impl = async (getCreds) => { await getCreds(); return { status: 'logged_in' } }
-  svc = new CoreService({ vault, allowlist: store, approver: { ask: approve }, audit: { record: async (e) => void events.push(e) }, browser })
+  const login = { run: async (e: AllowEntry, g: () => Promise<never>) => { runs.push(e); return fill.impl(e, g) } }
+  svc = new CoreService({ vault, allowlist: store, approver: { ask: approve }, audit: { record: async (e) => void events.push(e) }, login, mode: async () => mode })
 })
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -44,6 +41,11 @@ describe('login', () => {
   it('rejects unknown domain without touching vault', async () => {
     expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain is not allowlisted — use request_allow' })
     expect(vault.getLogin).not.toHaveBeenCalled()
+  })
+  it('uses the runner with the stored entry', async () => {
+    await store.upsert(entry)
+    expect(await svc.login('example.com')).toEqual({ ok: true, message: 'logged in' })
+    expect(runs).toEqual([entry])
   })
   it('logs in and audits', async () => {
     await store.upsert(entry)
@@ -79,7 +81,7 @@ describe('login', () => {
   })
   it('hides internal errors and redacts credentials from stderr', async () => {
     await store.upsert(entry)
-    fill.impl = async (getCreds) => { await getCreds(); throw new Error('boom hunter2') }
+    fill.impl = async (_e, getCreds) => { await getCreds(); throw new Error('boom hunter2') }
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const out = await svc.login('example.com')
     expect(out).toEqual({ ok: false, message: 'internal error' })
@@ -95,7 +97,7 @@ describe('login', () => {
     const s = new CoreService({
       vault, allowlist: store, approver: { ask: approve },
       audit: { record: async () => { throw new Error('disk') } },
-      browser: { withPage: (fn) => fn({} as never), connected: async () => true },
+      login: { run: async () => ({ status: 'logged_in' }) }, mode: async () => 'easy',
     })
     expect(await s.login('example.com')).toEqual({ ok: true, message: 'logged in' })
     expect(err).toHaveBeenCalledWith('audit write failed')
@@ -137,6 +139,12 @@ describe('requestAllow', () => {
     expect(lines[2]).toBe('Login URL: https://example.com/login')
     expect(lines[3]).toBe('Bitwarden item: item')
   })
+  it('requestAllow shows and stores selectors', async () => {
+    await svc.requestAllow('example.com', 'https://example.com/login', 'ex', { username: '#e\n' })
+    const lines = approve.mock.calls[0][1] as string[]
+    expect(lines).toContain('Selectors: username=#e')
+    expect((await store.list())[0].selectors).toEqual({ username: '#e' })
+  })
   it('rejects http without asking', async () => {
     const out = await svc.requestAllow('example.com', 'http://example.com/login', 'ex')
     expect(out.ok).toBe(false)
@@ -170,26 +178,11 @@ describe('revoke / list / status', () => {
     await store.upsert({ ...entry, hosts: ['example.com', 'a.example.com'] })
     expect(await svc.listAllowed()).toEqual({ ok: true, message: 'example.com — ex — example.com, a.example.com' })
   })
-  it('status combines vault and chrome; a closed Chrome is not an error since login launches it', async () => {
-    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected' })
-    chrome = false
-    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: not connected (login will start it)' })
-    chrome = true
+  it('status shows mode', async () => {
+    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: hardcore' })
+    mode = 'easy'
+    expect((await svc.status()).message).toBe('vault: unlocked; mode: easy')
     vaultStatus = 'locked'
-    expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; chrome: connected' })
-  })
-  it('status flags a Playwright MCP that is not attached to the shared Chrome', async () => {
-    const browser: BrowserProvider = { withPage: (fn) => fn({} as never), connected: async () => true }
-    const deps = { vault, allowlist: store, approver: { ask: approve }, audit: { record: async () => {} }, browser }
-    let pw: 'ok' | 'missing' | 'not_found' | 'unknown' = 'missing'
-    const s = new CoreService({ ...deps, playwright: async () => pw })
-    expect(await s.status()).toEqual({
-      ok: false,
-      message: 'vault: unlocked; chrome: connected; playwright: missing --cdp-endpoint (using its own Chrome; restart the AI session)',
-    })
-    pw = 'ok'
-    expect(await s.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected; playwright: shared chrome' })
-    pw = 'not_found'
-    expect(await s.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected; playwright: not found' })
+    expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; mode: easy' })
   })
 })

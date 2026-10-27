@@ -1,15 +1,15 @@
 import { buildEntry, normalizeDomain } from './allowlist.js'
 import type { AllowlistStore } from './allowlist.js'
-import type { BrowserProvider } from './browser.js'
-import type { PlaywrightCheck } from './doctor.js'
-import { fillLogin } from './login-filler.js'
 import { redact } from './redact.js'
 import {
   UserFacingError,
   type Approver,
   type AuditEvent,
   type AuditLog,
+  type ApprovalMode,
   type CoreApi,
+  type LoginRunner,
+  type Selectors,
   type ToolResult,
   type VaultClient,
 } from './types.js'
@@ -19,16 +19,8 @@ export interface CoreDeps {
   allowlist: AllowlistStore
   approver: Approver
   audit: AuditLog
-  browser: BrowserProvider
-  /** Optional check that the AI client's Playwright MCP is attached to the shared Chrome. */
-  playwright?: () => Promise<PlaywrightCheck>
-}
-
-const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
-  ok: 'shared chrome',
-  missing: 'missing --cdp-endpoint (using its own Chrome; restart the AI session)',
-  not_found: 'not found',
-  unknown: 'unknown',
+  login: LoginRunner
+  mode: () => Promise<ApprovalMode>
 }
 
 /** Strips control, format (e.g. bidi overrides), line- and paragraph-separator characters (incl. \r \n \t). */
@@ -84,7 +76,7 @@ export class CoreService implements CoreApi {
         secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
         return c
       }
-      const out = await this.deps.browser.withPage((page) => fillLogin(page, entry, getCreds))
+      const out = await this.deps.login.run(entry, getCreds)
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }
       const message = out.reason ?? 'login failed'
@@ -92,17 +84,22 @@ export class CoreService implements CoreApi {
     })
   }
 
-  requestAllow(domain: string, loginUrl: string, item: string): Promise<ToolResult> {
+  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors): Promise<ToolResult> {
     return this.guarded('request_allow', domain, [], async () => {
       const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
-      const entry = buildEntry(d, clean(loginUrl), clean(item), existing)
+      let entry = buildEntry(d, clean(loginUrl), clean(item), existing)
+      const sel = Object.fromEntries(
+        Object.entries(selectors ?? {}).flatMap(([k, v]) => (typeof v === 'string' && clean(v) ? [[k, clean(v)]] : [])),
+      ) as Selectors
+      if (Object.keys(sel).length) entry = { ...entry, selectors: sel }
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
         'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,
         `Login URL: ${new URL(entry.loginUrl).href}`,
         `Bitwarden item: ${entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
+        ...(Object.keys(sel).length ? [`Selectors: ${Object.entries(sel).map(([k, v]) => `${k}=${v}`).join(', ')}`] : []),
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
       await this.deps.allowlist.upsert(entry)
@@ -131,12 +128,8 @@ export class CoreService implements CoreApi {
   status(): Promise<ToolResult> {
     return this.guarded(undefined, '', [], async () => {
       const vault = await this.deps.vault.status()
-      const chrome = await this.deps.browser.connected()
-      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected (login will start it)'}`
-      const pw = await this.deps.playwright?.()
-      if (pw) message += `; playwright: ${PLAYWRIGHT_MSG[pw]}`
-      const ok = vault === 'unlocked' && pw !== 'missing'
-      return { result: { ok, message }, audit: '' }
+      const message = `vault: ${vault}; mode: ${await this.deps.mode()}`
+      return { result: { ok: vault === 'unlocked', message }, audit: '' }
     })
   }
 }
