@@ -12,14 +12,25 @@ async function run(fn: () => Promise<ToolResult>) {
   return { content: [{ type: 'text' as const, text: r.message }], isError: !r.ok }
 }
 
+const INSTRUCTIONS = [
+  'U-Chan Secrets logs into websites for you without exposing passwords.',
+  'Use it whenever a site needs sign-in (admin pages, dashboards, a Playwright page showing a login form).',
+  'Never ask the user for a password, and never type one into a form yourself.',
+  'Flow: list_allowed -> login(domain) -> continue with the Playwright MCP tools in the same Chrome.',
+  'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a Windows dialog.',
+  'If login fails, call status: a locked vault means the user must run scripts/unlock.ps1 themselves.',
+].join('\n')
+
 export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
-  const server = new McpServer({ name: 'u-chan-secrets', version })
+  const server = new McpServer({ name: 'u-chan-secrets', version }, { instructions: INSTRUCTIONS })
 
   server.registerTool(
     'login',
     {
       description:
-        'Log into an allowlisted website in the shared Chrome using Bitwarden credentials, without revealing them. ' +
+        'Use this whenever a website needs sign-in: an admin page, a dashboard, or a Playwright page that shows a login form. ' +
+        'Logs into an allowlisted domain in the shared Chrome using Bitwarden credentials, without revealing them. ' +
+        'Launches Chrome if it is not running. ' +
         'After the result is ok, continue browsing with the Playwright MCP tools in the same browser.',
       inputSchema: { domain: z.string() },
     },
@@ -45,13 +56,13 @@ export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
 
   server.registerTool(
     'list_allowed',
-    { description: 'List allowlisted domains with their Bitwarden item and hosts.' },
+    { description: 'List allowlisted domains with their Bitwarden item and hosts. Call it to check whether a site can be logged into before login or request_allow.' },
     () => run(() => core.listAllowed()),
   )
 
   server.registerTool(
     'status',
-    { description: 'Report Bitwarden vault lock state and Chrome connection state.' },
+    { description: 'Report Bitwarden vault lock state and Chrome connection state. Call it first when login fails.' },
     () => run(() => core.status()),
   )
 
