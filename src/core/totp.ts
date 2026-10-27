@@ -5,7 +5,7 @@ export interface TotpParams { key: Buffer; algorithm: 'sha1' | 'sha256' | 'sha51
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 // Fixed message only: the seed must never reach the AI.
-const BAD = 'TOTP trong item Bitwarden không dùng được'
+const BAD = 'the TOTP in the Bitwarden item is unusable'
 
 function base32(s: string): Buffer {
   const clean = s.replace(/[\s-]/g, '').replace(/=+$/, '').toUpperCase()

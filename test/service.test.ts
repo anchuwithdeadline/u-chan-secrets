@@ -42,7 +42,7 @@ afterEach(async () => {
 
 describe('login', () => {
   it('rejects unknown domain without touching vault', async () => {
-    expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain chưa được cho phép — dùng request_allow' })
+    expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain is not allowlisted — use request_allow' })
     expect(vault.getLogin).not.toHaveBeenCalled()
   })
   it('logs in and audits', async () => {
@@ -74,8 +74,8 @@ describe('login', () => {
   })
   it('returns UserFacingError message', async () => {
     await store.upsert(entry)
-    vault.getLogin.mockRejectedValue(new UserFacingError('vault locked — chạy scripts/unlock.ps1'))
-    expect(await svc.login('example.com')).toEqual({ ok: false, message: 'vault locked — chạy scripts/unlock.ps1' })
+    vault.getLogin.mockRejectedValue(new UserFacingError('vault locked — run scripts/unlock.ps1'))
+    expect(await svc.login('example.com')).toEqual({ ok: false, message: 'vault locked — run scripts/unlock.ps1' })
   })
   it('hides internal errors and redacts credentials from stderr', async () => {
     await store.upsert(entry)
@@ -113,8 +113,8 @@ describe('requestAllow', () => {
     expect(await svc.requestAllow('Example.com', 'https://auth.example.com/login', 'ex')).toEqual({ ok: true, message: 'approved' })
     expect((await store.list())[0]).toMatchObject({ domain: 'example.com', hosts: ['example.com', 'auth.example.com'] })
     expect(approve).toHaveBeenCalledWith('U-Chan Secrets', [
-      'Cho phép AI đăng nhập?', 'Domain: example.com', 'Login URL: https://auth.example.com/login',
-      'Item Bitwarden: ex', 'Hosts: example.com, auth.example.com',
+      'Allow the AI to sign in?', 'Domain: example.com', 'Login URL: https://auth.example.com/login',
+      'Bitwarden item: ex', 'Hosts: example.com, auth.example.com',
     ])
     expect(events[0].result).toBe('approved')
   })
@@ -127,7 +127,7 @@ describe('requestAllow', () => {
     await svc.requestAllow('example.com\r\n', 'https://example.com/login ', 'it\nem\u0007\t')
     const lines = approve.mock.calls[0][1] as string[]
     expect(lines).toHaveLength(5)
-    expect(lines[3]).toBe('Item Bitwarden: item')
+    expect(lines[3]).toBe('Bitwarden item: item')
     expect((await store.list())[0].item).toBe('item')
   })
   it('strips format chars and shows normalized URL in dialog', async () => {
@@ -135,7 +135,7 @@ describe('requestAllow', () => {
     const lines = approve.mock.calls[0][1] as string[]
     expect(lines.join('|')).not.toContain('\u202E')
     expect(lines[2]).toBe('Login URL: https://example.com/login')
-    expect(lines[3]).toBe('Item Bitwarden: item')
+    expect(lines[3]).toBe('Bitwarden item: item')
   })
   it('rejects http without asking', async () => {
     const out = await svc.requestAllow('example.com', 'http://example.com/login', 'ex')
@@ -160,7 +160,7 @@ describe('revoke / list / status', () => {
     expect((await svc.revoke('  ')).ok).toBe(false)
   })
   it('lists empty allowlist', async () => {
-    expect(await svc.listAllowed()).toEqual({ ok: true, message: 'allowlist trống' })
+    expect(await svc.listAllowed()).toEqual({ ok: true, message: 'allowlist is empty' })
   })
   it('revoke of unknown domain audits not found', async () => {
     expect((await svc.revoke('x.com')).ok).toBe(false)
@@ -173,7 +173,7 @@ describe('revoke / list / status', () => {
   it('status combines vault and chrome; a closed Chrome is not an error since login launches it', async () => {
     expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected' })
     chrome = false
-    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: not connected (login sẽ tự mở)' })
+    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: not connected (login will start it)' })
     chrome = true
     vaultStatus = 'locked'
     expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; chrome: connected' })
@@ -185,7 +185,7 @@ describe('revoke / list / status', () => {
     const s = new CoreService({ ...deps, playwright: async () => pw })
     expect(await s.status()).toEqual({
       ok: false,
-      message: 'vault: unlocked; chrome: connected; playwright: thiếu --cdp-endpoint (đang dùng Chrome riêng, khởi động lại phiên AI)',
+      message: 'vault: unlocked; chrome: connected; playwright: missing --cdp-endpoint (using its own Chrome; restart the AI session)',
     })
     pw = 'ok'
     expect(await s.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected; playwright: shared chrome' })

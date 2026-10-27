@@ -50,9 +50,9 @@ export class CdpBrowserProvider implements BrowserProvider {
     try {
       return await chromium.connectOverCDP(this.endpoint)
     } catch {
-      if (!autoLaunch || !this.opts.launch) throw new UserFacingError('Chrome chưa chạy — chạy scripts/start-chrome.ps1')
+      if (!autoLaunch || !this.opts.launch) throw new UserFacingError('Chrome is not running — run scripts/start-chrome.ps1')
     }
-    const fail = () => new UserFacingError('không tự mở được Chrome — chạy scripts/start-chrome.ps1')
+    const fail = () => new UserFacingError('could not start Chrome — run scripts/start-chrome.ps1')
     await this.opts.launch().catch(() => {
       throw fail()
     })
@@ -70,7 +70,7 @@ export class CdpBrowserProvider implements BrowserProvider {
   async withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
     const browser = await this.getBrowser(true)
     const context = browser.contexts()[0]
-    if (!context) throw new UserFacingError('Chrome không có cửa sổ mặc định — mở Chrome bằng scripts/start-chrome.ps1')
+    if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
     const page = await context.newPage()
     try {
       return await fn(page)

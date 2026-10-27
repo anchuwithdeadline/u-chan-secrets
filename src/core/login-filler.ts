@@ -84,7 +84,7 @@ export async function fillLogin(
 
   // 2FA code, at most once per login so a bad seed cannot lock the account.
   const fillOtp = async (): Promise<FillOutcome | undefined> => {
-    if (!creds.totp) return { status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' }
+    if (!creds.totp) return { status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP' }
     const code = await freshTotpCode(creds.totp)
     const otpH = await handleOf(otpBox)
     if (!otpH) return { status: 'failed', reason: '2FA field not found' }
@@ -133,13 +133,13 @@ export async function fillLogin(
 
   if ((fail = badHost())) return fail
   if ((await userBox.isVisible()) || (await passBox.isVisible())) {
-    const reason = otpFilled ? 'login form still present (sai mật khẩu hoặc mã 2FA?)' : 'login form still present (sai mật khẩu?)'
+    const reason = otpFilled ? 'login form still present (wrong password or 2FA code?)' : 'login form still present (wrong password?)'
     return { status: 'failed', reason }
   }
 
   // Separate 2FA step after the password.
   if (await otpBox.isVisible()) {
-    if (otpFilled) return { status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' }
+    if (otpFilled) return { status: 'failed', reason: '2FA code rejected (wrong TOTP in Bitwarden?)' }
     const otpSubmitH = await handleOf(submitBox)
     if ((fail = await fillOtp())) return fail
     if ((fail = await submit(otpSubmitH))) return fail
@@ -149,7 +149,7 @@ export async function fillLogin(
     await page.waitForLoadState('load', { timeout }).catch(() => {})
     await page.waitForLoadState('networkidle', { timeout }).catch(() => {})
     if ((fail = badHost())) return fail
-    if (await otpBox.isVisible()) return { status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' }
+    if (await otpBox.isVisible()) return { status: 'failed', reason: '2FA code rejected (wrong TOTP in Bitwarden?)' }
   }
   return { status: 'logged_in' }
 }

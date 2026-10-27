@@ -81,7 +81,7 @@ describe('AllowlistStore', () => {
       await writeFile(f, '{nope')
       await expect(s.list()).rejects.toThrow(UserFacingError)
       await writeFile(f, '{"a":1}')
-      await expect(s.list()).rejects.toThrow('allowlist.json không hợp lệ')
+      await expect(s.list()).rejects.toThrow('allowlist.json is invalid')
       await writeFile(f, JSON.stringify([entry, { ...entry, hosts: 'x' }, null, 5, { domain: 'z' }]))
       expect(await s.list()).toEqual([entry])
     } finally { await rm(dir, { recursive: true, force: true }) }

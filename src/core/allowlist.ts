@@ -17,9 +17,9 @@ export class AllowlistStore {
     try {
       data = JSON.parse(raw)
     } catch {
-      throw new UserFacingError('allowlist.json không hợp lệ')
+      throw new UserFacingError('allowlist.json is invalid')
     }
-    if (!Array.isArray(data)) throw new UserFacingError('allowlist.json không hợp lệ')
+    if (!Array.isArray(data)) throw new UserFacingError('allowlist.json is invalid')
     return data.filter(isValidEntry)
   }
 
