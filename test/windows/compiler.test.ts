@@ -120,4 +120,24 @@ describe('Windows C# Assets', () => {
     expect(SERVICE_HOST_CSHARP).toContain('OnStop')
     expect(SERVICE_HOST_CSHARP).toMatch(/Process\.Start|ProcessStartInfo/)
   })
+
+  it('compiles C# templates successfully via Add-Type on Windows', async () => {
+    if (process.platform !== 'win32') return
+    const tmp = `dist/tmp-test-${Date.now()}`
+    try {
+      await compileCsharp(AUTH_HELPER_CSHARP, `${tmp}-auth.exe`)
+      await compileCsharp(PROMPT_HELPER_CSHARP, `${tmp}-prompt.exe`, {
+        outputType: 'WindowsApplication',
+        referencedAssemblies: ['System.Windows.Forms.dll', 'System.Drawing.dll'],
+      })
+      await compileCsharp(SERVICE_HOST_CSHARP, `${tmp}-service.exe`, {
+        referencedAssemblies: ['System.ServiceProcess.dll'],
+      })
+    } finally {
+      const fs = await import('node:fs/promises')
+      await fs.unlink(`${tmp}-auth.exe`).catch(() => {})
+      await fs.unlink(`${tmp}-prompt.exe`).catch(() => {})
+      await fs.unlink(`${tmp}-service.exe`).catch(() => {})
+    }
+  }, 30000)
 })

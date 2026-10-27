@@ -171,7 +171,7 @@ namespace UChan.Platform.Windows.Assets
             string input = raw.Trim();
             if (input.StartsWith("[") && input.EndsWith("]"))
             {
-                MatchCollection matches = Regex.Matches(input, "\"((?:\\\\.|[^\"\\\\])*)\"");
+                MatchCollection matches = Regex.Matches(input, @"""((?:\\\\.|[^""\\\\])*)""");
                 foreach (Match m in matches)
                 {
                     list.Add(Regex.Unescape(m.Groups[1].Value));

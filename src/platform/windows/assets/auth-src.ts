@@ -35,9 +35,6 @@ namespace UChan.Platform.Windows.Assets
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
 
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern bool ConvertSidToStringSid(IntPtr pSid, out string strSid);
-
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
 
@@ -88,7 +85,8 @@ namespace UChan.Platform.Windows.Assets
                 return 1;
             }
 
-            if (!uint.TryParse(args[0], out uint serverPid))
+            uint serverPid;
+            if (!uint.TryParse(args[0], out serverPid))
             {
                 Console.Error.WriteLine("Invalid server PID");
                 return 1;
@@ -109,7 +107,8 @@ namespace UChan.Platform.Windows.Assets
                         {
                             try
                             {
-                                if (GetNamedPipeClientProcessId(hLocal, out uint candidatePid) && candidatePid != 0 && candidatePid != serverPid)
+                                uint candidatePid;
+                                if (GetNamedPipeClientProcessId(hLocal, out candidatePid) && candidatePid != 0 && candidatePid != serverPid)
                                 {
                                     clientPid = candidatePid;
                                     break;
