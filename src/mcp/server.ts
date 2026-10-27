@@ -44,8 +44,9 @@ export function withPlaywrightStatus(core: CoreApi, check: () => Promise<Playwri
   }
 }
 
+const SELECTOR = z.string().max(1000)
 const SELECTORS = z
-  .object({ username: z.string(), password: z.string(), submit: z.string(), otp: z.string() })
+  .object({ username: SELECTOR, password: SELECTOR, submit: SELECTOR, otp: SELECTOR })
   .partial()
   .strict()
 

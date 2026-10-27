@@ -68,6 +68,12 @@ describe('mcp server', () => {
     expect(args).toEqual(['a.com', 'https://a.com/l', 'A', selectors])
     const bad = await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l', item: 'A', selectors: { evil: 'x' } } })
     expect(bad.isError).toBe(true)
+    const long = await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l', item: 'A', selectors: { username: 'x'.repeat(1001) } } })
+    expect(long.isError).toBe(true)
+    expect(args[3]).toEqual(selectors)
+    const max = { username: 'x'.repeat(1000) }
+    expect((await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l', item: 'A', selectors: max } })).isError).toBe(false)
+    expect(args[3]).toEqual(max)
   })
 
   it('instructions point to the U-Chan window and u-chan unlock', async () => {
