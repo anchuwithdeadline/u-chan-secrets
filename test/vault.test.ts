@@ -162,9 +162,8 @@ describe('BitwardenVault session', () => {
     await v.unlock('pw')
     await v.lock()
     expect(calls[calls.length - 1].args).toEqual(['lock'])
-    const n = calls.length
     expect(await v.status()).toBe('locked')
-    expect(calls.length).toBe(n)
+    expect(calls[calls.length - 1].env.BW_SESSION).toBeUndefined()
   })
   it('verify re-unlocks; bad password keeps the old session', async () => {
     const calls: { args: string[]; env: NodeJS.ProcessEnv }[] = []
@@ -194,6 +193,56 @@ describe('BitwardenVault session', () => {
     const logged = spy.mock.calls.map((c) => String(c[0]))
     expect(logged.length).toBeGreaterThan(0)
     for (const l of logged) { expect(l).not.toContain('pw '); expect(l.endsWith('pw')).toBe(false) }
+    spy.mockRestore()
+  })
+
+  it('fresh vault surfaces unauthenticated and LOGIN_MSG', async () => {
+    const calls: NodeJS.ProcessEnv[] = []
+    const exec: Exec = async (_a, env) => { calls.push(env); return { code: 0, stdout: '{"status":"unauthenticated"}', stderr: '' } }
+    const v = new BitwardenVault({ dataDir, idleLockMs: 1000, exec })
+    expect(await v.status()).toBe('unauthenticated')
+    expect(await msg(v.getLogin('x'))).toBe('not logged in to Bitwarden — run u-chan install')
+    for (const e of calls) { expect(e.BW_SESSION).toBeUndefined(); expect(e.BITWARDENCLI_APPDATA_DIR).toBe(dataDir) }
+  })
+  it('bw status unlocked with no key held reports locked', async () => {
+    const exec: Exec = async () => ({ code: 0, stdout: '{"status":"unlocked"}', stderr: '' })
+    const v = new BitwardenVault({ dataDir, idleLockMs: 1000, exec })
+    expect(await v.status()).toBe('locked')
+    expect(await msg(v.getLogin('x'))).toBe('vault locked — run u-chan unlock')
+  })
+  it('stale "vault is locked" does not wipe a concurrent fresh session', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    let n = 0
+    const sessions: (string | undefined)[] = []
+    const exec: Exec = async (args, env) => {
+      if (args[0] === 'unlock') return { code: 0, stdout: `K${++n}`, stderr: '' }
+      sessions.push(env.BW_SESSION)
+      if (sessions.length === 1) { await gate; return { code: 1, stdout: '', stderr: 'Vault is locked.' } }
+      return { code: 0, stdout: JSON.stringify({ login: { username: 'u', password: 'p' } }), stderr: '' }
+    }
+    const v = new BitwardenVault({ dataDir, idleLockMs: 1000, exec })
+    await v.unlock('pw')
+    const stale = v.getLogin('x')
+    await v.unlock('pw')
+    release()
+    expect(await msg(stale)).toBe('vault locked — run u-chan unlock')
+    await v.getLogin('x')
+    expect(sessions[1]).toBe('K2')
+  })
+  it('failed unlock keeps the previous session', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const seen: (string | undefined)[] = []
+    const exec: Exec = async (args, env) => {
+      if (args[0] === 'unlock') return env.UCS_BW_PASSWORD === 'bad' ? { code: 1, stdout: '', stderr: 'no' } : { code: 0, stdout: 'K1', stderr: '' }
+      seen.push(env.BW_SESSION)
+      return { code: 0, stdout: JSON.stringify({ login: { username: 'u', password: 'p' } }), stderr: '' }
+    }
+    const v = new BitwardenVault({ dataDir, idleLockMs: 1000, exec })
+    await v.unlock('pw')
+    expect(await v.unlock('bad')).toBe(false)
+    await v.getLogin('x')
+    expect(seen[0]).toBe('K1')
     spy.mockRestore()
   })
 })

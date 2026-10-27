@@ -80,20 +80,15 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
   }
 
   async unlock(password: string): Promise<boolean> {
-    this.sessionKey = ''
     const key = await this.tryUnlock(password)
-    if (!key) return false
+    if (!key) return false // keep any previous session until a new one succeeds
     this.sessionKey = key
     this.lastUse = this.now()
     return true
   }
 
-  async verify(password: string): Promise<boolean> {
-    const key = await this.tryUnlock(password)
-    if (!key) return false
-    this.sessionKey = key
-    this.lastUse = this.now()
-    return true
+  verify(password: string): Promise<boolean> {
+    return this.unlock(password)
   }
 
   async lock(): Promise<void> {
@@ -108,12 +103,13 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
 
   async status(): Promise<VaultStatus> {
     const session = this.session()
-    if (!session) return 'locked'
     try {
       const r = await this.run(['status'], session)
       const s = (JSON.parse(r.stdout) as { status?: string }).status as VaultStatus
-      if (s === 'locked') this.sessionKey = ''
-      return STATUSES.includes(s) ? s : 'unavailable'
+      if (!STATUSES.includes(s)) return 'unavailable'
+      if (s === 'locked' && session && this.sessionKey === session) this.sessionKey = ''
+      // Without a key held in memory the vault is effectively locked.
+      return s === 'unlocked' && !session ? 'locked' : s
     } catch {
       return 'unavailable'
     }
@@ -121,7 +117,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
 
   async getLogin(item: string): Promise<Credentials> {
     const session = this.session()
-    if (!session) throw new UserFacingError(UNLOCK_MSG)
+    if (!session) throw new UserFacingError((await this.status()) === 'unauthenticated' ? LOGIN_MSG : UNLOCK_MSG)
     let r: ExecResult
     try {
       r = await this.run(['get', 'item', item], session)
@@ -139,7 +135,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
       if (err.includes('more than one result')) throw new UserFacingError('multiple items match, use the item id')
       if (err.includes('not found')) throw new UserFacingError('item not found')
       if (err.includes('vault is locked')) {
-        this.sessionKey = ''
+        if (this.sessionKey === session) this.sessionKey = ''
         throw new UserFacingError(UNLOCK_MSG)
       }
       if (err.includes('you are not logged in')) throw new UserFacingError(LOGIN_MSG)
