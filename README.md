@@ -1,96 +1,100 @@
 # U-Chan Secrets
 
-MCP server chạy local: cho Claude Code đăng nhập vào các website đã allowlist bằng credential Bitwarden, mà mật khẩu không đi qua model.
+A local MCP server that lets Claude Code sign in to allowlisted websites with Bitwarden credentials, without the password ever passing through the model.
 
-## Cài đặt
+## Install
 
-1. Cài Bitwarden CLI bản native (không dùng shim `.cmd` của npm): `winget install Bitwarden.CLI`. Nếu `bw.exe` không nằm trong PATH, đặt `U_CHAN_BW` trỏ tới file đó.
-2. `bw login` (một lần).
+1. Install the native Bitwarden CLI (not npm's `.cmd` shim): `winget install Bitwarden.CLI`. If `bw.exe` is not on your PATH, point `U_CHAN_BW` at it.
+2. Run `bw login` (once).
 3. Build:
    ```
    npm install
    npm run build
    ```
-   Kết quả: `dist/index.js`.
+   Output: `dist/index.js`.
 
-## Đăng ký MCP
+## Register the MCP server
 
 ```
 claude mcp add u-chan-secrets -- node <path-to>\u-chan-secrets\dist\index.js
 ```
 
-Playwright MCP phải dùng chung Chrome này. Nếu đã có Playwright MCP, hãy cấu hình lại nó thay vì thêm bản thứ hai:
+Playwright MCP must share the same Chrome. If you already have Playwright MCP, reconfigure it instead of adding a second one:
 
 ```
-claude mcp remove playwright   # gỡ bản cũ trước khi thêm lại với --cdp-endpoint
+claude mcp remove playwright   # remove the old one before re-adding it with --cdp-endpoint
 claude mcp add playwright -- npx @playwright/mcp@latest --cdp-endpoint http://127.0.0.1:9222
 ```
 
-## Quy trình hằng ngày
+## Daily routine
 
 ```
-powershell -File scripts\start-chrome.ps1   # Chrome riêng, CDP theo U_CHAN_CDP, mặc định 127.0.0.1:9222 (bỏ qua nếu cổng đã mở)
-powershell -File scripts\unlock.ps1         # nhập master password; lưu session vào bw-session
-powershell -File scripts\unlock.ps1 -Lock   # khóa vault, xóa session
+powershell -File scripts\start-chrome.ps1   # dedicated Chrome, CDP from U_CHAN_CDP, default 127.0.0.1:9222 (skipped if the port is already open)
+powershell -File scripts\unlock.ps1         # enter the master password; saves the session to bw-session
+powershell -File scripts\unlock.ps1 -Lock   # lock the vault and delete the session
 ```
 
-Chrome dùng profile riêng `<data dir>\chrome-profile`, không đụng profile Chrome mặc định của bạn.
+Chrome uses its own profile at `<data dir>\chrome-profile` and never touches your default Chrome profile.
 
-## Công cụ MCP
+## MCP tools
 
-- `status`: trạng thái vault (unlocked/locked/...) và kết nối Chrome. Chỉ báo lỗi khi cần người dùng xử lý (vault khoá, Playwright thiếu `--cdp-endpoint`); Chrome tắt không phải lỗi vì `login` tự mở.
-- `request_allow(domain, login_url, item)`: xin allowlist một site; hiện hộp thoại Windows, bạn phải bấm Đồng ý. `item` là tên/id item Bitwarden; nên dùng id item vì tên chỉ là tìm kiếm và có thể khớp nhầm item khác.
-- `login(domain)`: đăng nhập site đã allowlist trong Chrome dùng chung. Sau đó dùng Playwright MCP để duyệt tiếp.
-- `list_allowed`: liệt kê domain đã allowlist.
-- `revoke(domain)`: gỡ quyền.
+- `status`: vault state (unlocked/locked/...) and the Chrome connection. It reports an error only when you need to act (vault locked, Playwright missing `--cdp-endpoint`). A closed Chrome is not an error, because `login` starts it.
+- `request_allow(domain, login_url, item)`: asks to allowlist a site. A Windows dialog appears and you must click Yes. `item` is a Bitwarden item name or id. Prefer the id: a name is only a search and can match the wrong item.
+- `login(domain)`: signs in to an allowlisted site in the shared Chrome. Then use Playwright MCP to keep browsing.
+- `list_allowed`: lists the allowlisted domains.
+- `revoke(domain)`: removes a site from the allowlist.
 
-## Dữ liệu và cấu hình
+## Data and configuration
 
-Thư mục dữ liệu: `U_CHAN_HOME`, mặc định `%APPDATA%\u-chan-secrets`. Gồm `allowlist.json`, `audit.log`, `bw-session`, `chrome-profile\`.
+Data directory: `U_CHAN_HOME`, default `%APPDATA%\u-chan-secrets`. It holds `allowlist.json`, `audit.log`, `bw-session` and `chrome-profile\`.
 
-| Biến môi trường | Mặc định | Ý nghĩa |
+| Environment variable | Default | Meaning |
 |---|---|---|
-| `U_CHAN_HOME` | `%APPDATA%\u-chan-secrets` | Thư mục dữ liệu |
-| `U_CHAN_CDP` | `http://127.0.0.1:9222` | CDP endpoint của Chrome (`start-chrome.ps1` lấy host/port từ đây) |
-| `U_CHAN_BW` | `bw` | Đường dẫn `bw.exe` |
+| `U_CHAN_HOME` | `%APPDATA%\u-chan-secrets` | Data directory |
+| `U_CHAN_CDP` | `http://127.0.0.1:9222` | Chrome CDP endpoint (`start-chrome.ps1` takes its host and port from here) |
+| `U_CHAN_BW` | `bw` | Path to `bw.exe` |
 
-`allowlist.json` gồm các entry:
+Each `allowlist.json` entry looks like this:
 
 ```json
 {
   "domain": "admin.example.com",
   "hosts": ["admin.example.com"],
   "loginUrl": "https://admin.example.com/login",
-  "item": "Tên item Bitwarden",
+  "item": "Bitwarden item name",
   "selectors": { "username": "#email", "password": "#password", "submit": "button[type=submit]", "otp": "#code" }
 }
 ```
 
-`selectors` là tùy chọn (chỉ cần khi tự dò form không đúng). `audit.log` ghi lại mọi lần login / request_allow / revoke (không chứa mật khẩu).
+`selectors` is optional; set it only when automatic form detection gets the form wrong. `audit.log` records every `login`, `request_allow` and `revoke` call, never a password.
 
 ## 2FA (TOTP)
 
-Nếu sau bước mật khẩu, trang hiện ô nhập mã (`autocomplete="one-time-code"`, tên/id chứa `otp`, `2fa`, hoặc tên/id là `code`), `login` sẽ tính mã từ trường **Authenticator key (TOTP)** của item Bitwarden rồi điền vào. Mã được tính tại máy theo RFC 6238 (hỗ trợ secret base32 và URI `otpauth://totp/...` với SHA1/256/512, số chữ số và chu kỳ tùy chỉnh), nên không cần Bitwarden Premium. Seed và mã đều không đi qua model.
+If a code field appears after the password step (`autocomplete="one-time-code"`, a name or id containing `otp` or `2fa`, or a name or id of `code`), `login` computes the code from the Bitwarden item's **Authenticator key (TOTP)** field and fills it in. The code is computed locally per RFC 6238: base32 secrets and `otpauth://totp/...` URIs with SHA1/256/512 and custom digits and period are supported, so Bitwarden Premium is not required. Neither the seed nor the code passes through the model.
 
-- Mỗi lần `login` chỉ điền mã một lần, không thử lại, để tránh bị khóa tài khoản.
-- Nếu mã sắp hết hạn (còn dưới 3 giây), U-Chan chờ sang chu kỳ kế tiếp rồi mới điền.
-- Chưa hỗ trợ: mã gửi qua SMS hoặc email, passkey, Steam Guard.
+- Each `login` fills the code only once and never retries, to avoid locking the account.
+- If the code expires in under 3 seconds, U-Chan waits for the next period before filling it.
+- Not supported yet: codes sent by SMS or email, passkeys, Steam Guard.
 
-## Gỡ quyền
+## Revoking access
 
-Gọi `revoke(domain)`, hoặc xóa entry tương ứng trong `allowlist.json`.
+Call `revoke(domain)`, or delete the entry from `allowlist.json`.
 
-## Threat model v1
+## Threat model (v1)
 
-Chống lộ vô tình (mật khẩu không vào chat/context trong luồng bình thường); không chống AI bị lừa hay cố ý moi mật khẩu (tự chạy `bw`, sửa allowlist/log, giả click hộp thoại). Chi tiết: `docs/specs/2026-10-27-u-chan-secrets-design.md` mục 5b.
+U-Chan protects against accidental leaks: in the normal flow the password never enters the chat or the model's context. It does not protect against an AI that is tricked into, or deliberately tries, extracting the password (running `bw` itself, editing the allowlist or log, faking a click on the dialog). Details: section 5b of `docs/specs/2026-10-27-u-chan-secrets-design.md` (in Vietnamese).
 
-## Kiểm tra end-to-end
+## End-to-end check
 
-Chạy thủ công sau khi cài (cần Bitwarden thật):
+Run by hand after installing (needs a real Bitwarden account):
 
-- [ ] Chạy `start-chrome.ps1` và `unlock.ps1`.
-- [ ] Trong Claude Code: `status` trả về unlocked + connected.
-- [ ] `request_allow("admin.example.com", "<login url>", "<tên item>")`: hộp thoại hiện, bấm Đồng ý.
-- [ ] `login("admin.example.com")` trả về `logged in`.
-- [ ] Playwright MCP `browser_navigate` tới trang admin: thấy giao diện đã đăng nhập; chụp màn hình.
-- [ ] Kiểm tra rò rỉ: grep mật khẩu thật trong `audit.log`, transcript Claude Code của phiên test (`~/.claude/projects/...`) và stderr log: không có kết quả.
+- [ ] Run `start-chrome.ps1` and `unlock.ps1`.
+- [ ] In Claude Code, `status` returns unlocked + connected.
+- [ ] `request_allow("admin.example.com", "<login url>", "<item name>")`: the dialog appears; click Yes.
+- [ ] `login("admin.example.com")` returns `logged in`.
+- [ ] Playwright MCP `browser_navigate` to the admin page shows the signed-in UI; take a screenshot.
+- [ ] Leak check: grep for the real password in `audit.log`, the Claude Code transcript of the test session (`~/.claude/projects/...`) and the stderr log. There must be no hits.
+
+## License
+
+[MIT](LICENSE)
