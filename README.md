@@ -97,4 +97,6 @@ Run by hand after installing (needs a real Bitwarden account):
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Security reports: see [SECURITY.md](SECURITY.md).
+
+Not affiliated with or endorsed by Bitwarden, Inc. "Bitwarden" is a trademark of its owner and is used here only to describe compatibility.
