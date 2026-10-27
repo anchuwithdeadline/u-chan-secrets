@@ -68,6 +68,18 @@ describe('fillLogin', () => {
     expect(r.outcome).toEqual({ status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' })
     expect(JSON.stringify(r.outcome)).not.toContain('GEZDGNBVGY3TQOJQ')
   })
+  it('fills a TOTP field that sits in the password form', async () => {
+    const r = await run('/otp-inline', 'pw', 'u@x', OTP_SEED)
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
+  it('fails an inline 2FA form when the item has no TOTP', async () => {
+    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' })
+  })
+  it('reports password-or-code on a rejected inline 2FA form', async () => {
+    const r = await run('/otp-inline', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (sai mật khẩu hoặc mã 2FA?)' })
+  })
   it('handles two-step form', async () => {
     expect((await run('/two-step')).outcome.status).toBe('logged_in')
   })
