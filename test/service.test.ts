@@ -170,10 +170,10 @@ describe('revoke / list / status', () => {
     await store.upsert({ ...entry, hosts: ['example.com', 'a.example.com'] })
     expect(await svc.listAllowed()).toEqual({ ok: true, message: 'example.com — ex — example.com, a.example.com' })
   })
-  it('status combines vault and chrome', async () => {
+  it('status combines vault and chrome; a closed Chrome is not an error since login launches it', async () => {
     expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected' })
     chrome = false
-    expect(await svc.status()).toEqual({ ok: false, message: 'vault: unlocked; chrome: not connected' })
+    expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: not connected (login sẽ tự mở)' })
     chrome = true
     vaultStatus = 'locked'
     expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; chrome: connected' })

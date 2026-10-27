@@ -132,10 +132,10 @@ export class CoreService implements CoreApi {
     return this.guarded(undefined, '', [], async () => {
       const vault = await this.deps.vault.status()
       const chrome = await this.deps.browser.connected()
-      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected'}`
+      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected (login sẽ tự mở)'}`
       const pw = await this.deps.playwright?.()
       if (pw) message += `; playwright: ${PLAYWRIGHT_MSG[pw]}`
-      const ok = vault === 'unlocked' && chrome && pw !== 'missing'
+      const ok = vault === 'unlocked' && pw !== 'missing'
       return { result: { ok, message }, audit: '' }
     })
   }
