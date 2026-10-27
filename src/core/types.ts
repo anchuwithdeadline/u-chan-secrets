@@ -15,13 +15,21 @@ export interface VaultClient {
 export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
 export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke'; domain: string; result: string }
 export interface AuditLog { record(event: AuditEvent): Promise<void> }
+export type Selectors = NonNullable<AllowEntry['selectors']>
+export type ApprovalMode = 'easy' | 'hardcore'
 export type ToolResult = { ok: boolean; message: string }
 /** Message is safe to return to the AI. */
 export class UserFacingError extends Error {}
 export interface CoreApi {
   login(domain: string): Promise<ToolResult>
-  requestAllow(domain: string, loginUrl: string, item: string): Promise<ToolResult>
+  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors): Promise<ToolResult>
   revoke(domain: string): Promise<ToolResult>
   listAllowed(): Promise<ToolResult>
   status(): Promise<ToolResult>
+}
+export interface ControlApi {
+  unlock(): Promise<ToolResult>
+  lock(): Promise<ToolResult>
+  setMode(mode: ApprovalMode): Promise<ToolResult>
+  importV1(entries: unknown[]): Promise<ToolResult>
 }
