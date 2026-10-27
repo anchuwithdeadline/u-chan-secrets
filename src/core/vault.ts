@@ -88,7 +88,7 @@ export class BitwardenVault implements VaultClient {
       console.error(`bw failed (exit ${r.code}): ${redact(r.stderr.trim(), [session])}`)
       throw new UserFacingError(`bw failed (exit ${r.code})`)
     }
-    let login: { username?: unknown; password?: unknown } | undefined
+    let login: { username?: unknown; password?: unknown; totp?: unknown } | undefined
     try {
       login = (JSON.parse(r.stdout) as { login?: typeof login }).login
     } catch {
@@ -97,6 +97,8 @@ export class BitwardenVault implements VaultClient {
     if (typeof login?.username !== 'string' || typeof login?.password !== 'string' || !login.username || !login.password) {
       throw new UserFacingError('item has no username/password')
     }
-    return { username: login.username, password: login.password }
+    const creds: Credentials = { username: login.username, password: login.password }
+    if (typeof login.totp === 'string' && login.totp.trim()) creds.totp = login.totp.trim()
+    return creds
   }
 }

@@ -1,10 +1,13 @@
 import type { ElementHandle, Locator, Page } from 'playwright'
 import { isHostAllowed } from './allowlist.js'
+import { freshTotpCode } from './totp.js'
 import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
 export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
 
 const USERNAME_CSS = '[autocomplete=username], [type=email], [name*=email i], [name*=user i], [id*=email i]'
+const OTP_CSS =
+  'input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], input[name*="2fa" i], input[name="code"], input[id="code"]'
 
 const visible = (l: Locator) => l.filter({ visible: true }).first()
 
@@ -50,6 +53,7 @@ export async function fillLogin(
   const userBox = visible(page.locator(sel?.username ?? USERNAME_CSS))
   const passBox = visible(page.locator(sel?.password ?? 'input[type=password]'))
   const submitBox = visible(page.locator(sel?.submit ?? 'button[type=submit], input[type=submit]'))
+  const otpBox = visible(page.locator(sel?.otp ?? OTP_CSS))
   const handleOf = async (l: Locator): Promise<ElementHandle | null> =>
     (await l.isVisible()) ? l.elementHandle({ timeout }) : null
 
@@ -76,12 +80,29 @@ export async function fillLogin(
   let passH = hasPass ? await handleOf(passBox) : null
   let submitH = await handleOf(submitBox)
   let fail: FillOutcome | undefined
+  let otpFilled = false
+
+  // 2FA code, at most once per login so a bad seed cannot lock the account.
+  const fillOtp = async (): Promise<FillOutcome | undefined> => {
+    if (!creds.totp) return { status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' }
+    const code = await freshTotpCode(creds.totp)
+    const otpH = await handleOf(otpBox)
+    if (!otpH) return { status: 'failed', reason: '2FA field not found' }
+    const f = badHost()
+    if (f) return f
+    await guard('fill 2FA field', () => otpH.fill(code, { timeout }))
+    otpFilled = true
+    return undefined
+  }
+  // Some sites put the 2FA field in the same form as the password.
+  const fillInlineOtp = async () => ((await otpBox.isVisible()) ? fillOtp() : undefined)
 
   if (passH) {
     if ((fail = badHost())) return fail
     await guard('fill username field', () => userH.fill(creds.username, { timeout }))
     if ((fail = badHost())) return fail
     await guard('fill password field', () => passH!.fill(creds.password, { timeout }))
+    if ((fail = await fillInlineOtp())) return fail
     if ((fail = await submit(submitH))) return fail
   } else {
     if ((fail = badHost())) return fail
@@ -97,6 +118,7 @@ export async function fillLogin(
     if (!passH) return { status: 'failed', reason: 'password field did not appear' }
     if ((fail = badHost())) return fail
     await guard('fill password field', () => passH!.fill(creds.password, { timeout }))
+    if ((fail = await fillInlineOtp())) return fail
     if ((fail = await submit(submitH))) return fail
   }
 
@@ -111,7 +133,23 @@ export async function fillLogin(
 
   if ((fail = badHost())) return fail
   if ((await userBox.isVisible()) || (await passBox.isVisible())) {
-    return { status: 'failed', reason: 'login form still present (sai mật khẩu?)' }
+    const reason = otpFilled ? 'login form still present (sai mật khẩu hoặc mã 2FA?)' : 'login form still present (sai mật khẩu?)'
+    return { status: 'failed', reason }
+  }
+
+  // Separate 2FA step after the password.
+  if (await otpBox.isVisible()) {
+    if (otpFilled) return { status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' }
+    const otpSubmitH = await handleOf(submitBox)
+    if ((fail = await fillOtp())) return fail
+    if ((fail = await submit(otpSubmitH))) return fail
+    await otpBox.waitFor({ state: 'hidden', timeout }).catch(() => {
+      // Timeout: the check below decides.
+    })
+    await page.waitForLoadState('load', { timeout }).catch(() => {})
+    await page.waitForLoadState('networkidle', { timeout }).catch(() => {})
+    if ((fail = badHost())) return fail
+    if (await otpBox.isVisible()) return { status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' }
   }
   return { status: 'logged_in' }
 }

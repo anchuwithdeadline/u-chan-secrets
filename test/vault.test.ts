@@ -46,6 +46,12 @@ describe('BitwardenVault.getLogin', () => {
     const v = new BitwardenVault({ sessionPath, exec: ok(JSON.stringify({ login: { username: 'u@x', password: 'p' } })) })
     expect(await v.getLogin('item')).toEqual({ username: 'u@x', password: 'p' })
   })
+  it('includes the TOTP seed when the item has one', async () => {
+    const v = new BitwardenVault({ sessionPath, exec: ok(JSON.stringify({ login: { username: 'u', password: 'p', totp: 'JBSWY3DP' } })) })
+    expect(await v.getLogin('item')).toEqual({ username: 'u', password: 'p', totp: 'JBSWY3DP' })
+    const v2 = new BitwardenVault({ sessionPath, exec: ok(JSON.stringify({ login: { username: 'u', password: 'p', totp: null } })) })
+    expect(await v2.getLogin('item')).toEqual({ username: 'u', password: 'p' })
+  })
   it('maps multiple results', async () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('More than one result was found.') })
     expect(await msg(v.getLogin('i'))).toBe('multiple items match, dùng item id')

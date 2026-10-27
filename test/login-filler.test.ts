@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser, type BrowserContext } from 'playwright'
 import { fillLogin } from '../src/core/login-filler.js'
 import type { AllowEntry } from '../src/core/types.js'
-import { startFixture, type Fixture } from './fixtures/server.js'
+import { OTP_SEED, startFixture, type Fixture } from './fixtures/server.js'
 
 let browser: Browser
 let fx: Fixture
@@ -20,10 +20,10 @@ const entry = (path: string): AllowEntry => ({
 })
 const hostCheck = (url: string) => new URL(url).hostname === '127.0.0.1'
 
-async function run(path: string, password = 'pw', username = 'u@x') {
+async function run(path: string, password = 'pw', username = 'u@x', totp?: string) {
   const ctx: BrowserContext = await browser.newContext()
   const page = await ctx.newPage()
-  const getCreds = vi.fn(async () => ({ username, password }))
+  const getCreds = vi.fn(async () => ({ username, password, ...(totp ? { totp } : {}) }))
   try {
     const outcome = await fillLogin(page, entry(path), getCreds, { timeoutMs: 3000, hostCheck })
     return { outcome, getCreds, url: page.url() }
@@ -54,6 +54,31 @@ describe('fillLogin', () => {
     expect(r.outcome.status).toBe('failed')
     expect(r.outcome.reason).toContain('login form still present')
     expect(JSON.stringify(r.outcome)).not.toContain('wrong-secret-123')
+  })
+  it('fills a TOTP code on a 2FA step', async () => {
+    const r = await run('/otp', 'pw', 'u@x', OTP_SEED)
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
+  it('fails on a 2FA step when the item has no TOTP', async () => {
+    expect((await run('/otp')).outcome).toEqual({ status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' })
+  })
+  it('fails when the TOTP code is rejected, without leaking the seed', async () => {
+    const r = await run('/otp', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'mã 2FA bị từ chối (sai TOTP trong Bitwarden?)' })
+    expect(JSON.stringify(r.outcome)).not.toContain('GEZDGNBVGY3TQOJQ')
+  })
+  it('fills a TOTP field that sits in the password form', async () => {
+    const r = await run('/otp-inline', 'pw', 'u@x', OTP_SEED)
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
+  it('fails an inline 2FA form when the item has no TOTP', async () => {
+    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'trang cần mã 2FA nhưng item Bitwarden không có TOTP' })
+  })
+  it('reports password-or-code on a rejected inline 2FA form', async () => {
+    const r = await run('/otp-inline', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (sai mật khẩu hoặc mã 2FA?)' })
   })
   it('handles two-step form', async () => {
     expect((await run('/two-step')).outcome.status).toBe('logged_in')

@@ -1,5 +1,8 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { totpCode } from '../../src/core/totp.js'
+
+export const OTP_SEED = 'JBSWY3DPEHPK3PXP'
 
 export interface Fixture { server: Server; port: number; posts: string[]; close(): Promise<void> }
 
@@ -9,6 +12,10 @@ const singleForm = `<form method="post" action="/single"><input type="email" nam
 const stepEmail = (action: string) => `<form method="post" action="${action}"><input type="email" name="email"><button type="submit">Next</button></form>`
 const stepPassword = (email: string) =>
   `<form method="post" action="/two-step"><input type="hidden" name="email" value="${esc(email)}"><input type="password" name="password"><button type="submit">Login</button></form>`
+const otpLogin = singleForm.replace('/single', '/otp')
+// Same shape as authenticationtest.com/totpChallenge: 2FA field inside the password form.
+const otpInline = `<form method="post" action="/otp-inline"><input type="email" name="email"><input type="password" name="password"><input type="text" name="totpmfa"><input type="submit" value="Log In"></form>`
+const otpForm =`<form method="post" action="/otp-verify"><input name="otp" autocomplete="one-time-code" inputmode="numeric"><button type="submit">Verify</button></form>`
 
 export async function startFixture(): Promise<Fixture> {
   const posts: string[] = []
@@ -30,6 +37,15 @@ export async function startFixture(): Promise<Fixture> {
           return good ? redirect('/dash') : send(stepEmail('/two-step'))
         }
         if (url === '/stuck') return send(stepEmail('/stuck'))
+        if (url === '/otp') return send(good ? otpForm : otpLogin)
+        if (url === '/otp-inline') {
+          const valid = [Date.now(), Date.now() - 30000].map((t) => totpCode(OTP_SEED, t))
+          return good && valid.includes(form.get('totpmfa') ?? '') ? redirect('/dash') : send(otpInline)
+        }
+        if (url === '/otp-verify') {
+          const valid = [Date.now(), Date.now() - 30000].map((t) => totpCode(OTP_SEED, t))
+          return valid.includes(form.get('otp') ?? '') ? redirect('/dash') : send(otpForm)
+        }
         res.writeHead(404); res.end()
       })
       return
@@ -47,6 +63,8 @@ export async function startFixture(): Promise<Fixture> {
       case '/nav-evil':
         return send(`<form method="post" action="/single"><input type="email" name="email" oninput="location.href='http://localhost:${port}/single'"><input type="password" name="password"><button type="submit">Login</button></form>`)
       case '/stuck': return send(stepEmail('/stuck'))
+      case '/otp': return send(otpLogin)
+      case '/otp-inline': return send(otpInline)
       case '/spa-slow':
         // SPA: URL changes at once on submit, the form only goes away later.
         return send(`<form id="f"><input type="email" name="email"><input type="password" name="password"><button type="submit">Login</button></form><script>f.onsubmit=(e)=>{e.preventDefault();history.pushState(null,'','/spa-slow?signing-in');setTimeout(()=>{location.href='/dash'},1200)}</script>`)
