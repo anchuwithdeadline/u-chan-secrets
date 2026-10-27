@@ -178,4 +178,18 @@ describe('revoke / list / status', () => {
     vaultStatus = 'locked'
     expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; chrome: connected' })
   })
+  it('status flags a Playwright MCP that is not attached to the shared Chrome', async () => {
+    const browser: BrowserProvider = { withPage: (fn) => fn({} as never), connected: async () => true }
+    const deps = { vault, allowlist: store, approver: { ask: approve }, audit: { record: async () => {} }, browser }
+    let pw: 'ok' | 'missing' | 'not_found' | 'unknown' = 'missing'
+    const s = new CoreService({ ...deps, playwright: async () => pw })
+    expect(await s.status()).toEqual({
+      ok: false,
+      message: 'vault: unlocked; chrome: connected; playwright: thiếu --cdp-endpoint (đang dùng Chrome riêng, khởi động lại phiên AI)',
+    })
+    pw = 'ok'
+    expect(await s.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected; playwright: shared chrome' })
+    pw = 'not_found'
+    expect(await s.status()).toEqual({ ok: true, message: 'vault: unlocked; chrome: connected; playwright: not found' })
+  })
 })

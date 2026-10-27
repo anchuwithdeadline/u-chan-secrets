@@ -1,6 +1,7 @@
 import { buildEntry, normalizeDomain } from './allowlist.js'
 import type { AllowlistStore } from './allowlist.js'
 import type { BrowserProvider } from './browser.js'
+import type { PlaywrightCheck } from './doctor.js'
 import { fillLogin } from './login-filler.js'
 import { redact } from './redact.js'
 import {
@@ -19,6 +20,15 @@ export interface CoreDeps {
   approver: Approver
   audit: AuditLog
   browser: BrowserProvider
+  /** Optional check that the AI client's Playwright MCP is attached to the shared Chrome. */
+  playwright?: () => Promise<PlaywrightCheck>
+}
+
+const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
+  ok: 'shared chrome',
+  missing: 'thiếu --cdp-endpoint (đang dùng Chrome riêng, khởi động lại phiên AI)',
+  not_found: 'not found',
+  unknown: 'unknown',
 }
 
 /** Strips control, format (e.g. bidi overrides), line- and paragraph-separator characters (incl. \r \n \t). */
@@ -122,8 +132,11 @@ export class CoreService implements CoreApi {
     return this.guarded(undefined, '', [], async () => {
       const vault = await this.deps.vault.status()
       const chrome = await this.deps.browser.connected()
-      const ok = vault === 'unlocked' && chrome
-      return { result: { ok, message: `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected'}` }, audit: '' }
+      let message = `vault: ${vault}; chrome: ${chrome ? 'connected' : 'not connected'}`
+      const pw = await this.deps.playwright?.()
+      if (pw) message += `; playwright: ${PLAYWRIGHT_MSG[pw]}`
+      const ok = vault === 'unlocked' && chrome && pw !== 'missing'
+      return { result: { ok, message }, audit: '' }
     })
   }
 }
