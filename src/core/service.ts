@@ -81,7 +81,7 @@ export class CoreService implements CoreApi {
       if (!entry) throw new UserFacingError('domain chưa được cho phép — dùng request_allow')
       const getCreds = async () => {
         const c = await this.deps.vault.getLogin(entry.item)
-        secrets.push(c.username, c.password)
+        secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
         return c
       }
       const out = await this.deps.browser.withPage((page) => fillLogin(page, entry, getCreds))

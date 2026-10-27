@@ -3,9 +3,10 @@ export interface AllowEntry {
   hosts: string[]
   loginUrl: string
   item: string
-  selectors?: { username?: string; password?: string; submit?: string }
+  selectors?: { username?: string; password?: string; submit?: string; otp?: string }
 }
-export interface Credentials { username: string; password: string }
+/** `totp` is the item's TOTP seed (base32 or otpauth:// URI), if any. */
+export interface Credentials { username: string; password: string; totp?: string }
 export type VaultStatus = 'unlocked' | 'locked' | 'unauthenticated' | 'unavailable'
 export interface VaultClient {
   status(): Promise<VaultStatus>

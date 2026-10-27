@@ -62,11 +62,19 @@ Thư mục dữ liệu: `U_CHAN_HOME`, mặc định `%APPDATA%\u-chan-secrets`.
   "hosts": ["admin.example.com"],
   "loginUrl": "https://admin.example.com/login",
   "item": "Tên item Bitwarden",
-  "selectors": { "username": "#email", "password": "#password", "submit": "button[type=submit]" }
+  "selectors": { "username": "#email", "password": "#password", "submit": "button[type=submit]", "otp": "#code" }
 }
 ```
 
 `selectors` là tùy chọn (chỉ cần khi tự dò form không đúng). `audit.log` ghi lại mọi lần login / request_allow / revoke (không chứa mật khẩu).
+
+## 2FA (TOTP)
+
+Nếu sau bước mật khẩu, trang hiện ô nhập mã (`autocomplete="one-time-code"`, tên/id chứa `otp`, `2fa`, hoặc tên/id là `code`), `login` sẽ tính mã từ trường **Authenticator key (TOTP)** của item Bitwarden rồi điền vào. Mã được tính tại máy theo RFC 6238 (hỗ trợ secret base32 và URI `otpauth://totp/...` với SHA1/256/512, số chữ số và chu kỳ tùy chỉnh), nên không cần Bitwarden Premium. Seed và mã đều không đi qua model.
+
+- Mỗi lần `login` chỉ điền mã một lần, không thử lại, để tránh bị khóa tài khoản.
+- Nếu mã sắp hết hạn (còn dưới 3 giây), U-Chan chờ sang chu kỳ kế tiếp rồi mới điền.
+- Chưa hỗ trợ: mã gửi qua SMS hoặc email, passkey, Steam Guard.
 
 ## Gỡ quyền
 
