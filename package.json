@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "description": "U-Chan Secrets: local MCP server for Bitwarden-backed logins",
   "type": "module",
+  "bin": { "u-chan-secrets": "dist/index.js" },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run"
   },
   "dependencies": {
