@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AllowlistStore, isHostAllowed, buildEntry } from '../src/core/allowlist.js'
@@ -14,6 +14,11 @@ describe('isHostAllowed', () => {
   it('rejects suffix trick', () => expect(isHostAllowed(entry, 'https://admin.example.com.evil.com/')).toBe(false))
   it('rejects userinfo trick', () => expect(isHostAllowed(entry, 'https://admin.example.com@evil.com/')).toBe(false))
   it('rejects http', () => expect(isHostAllowed(entry, 'http://admin.example.com/')).toBe(false))
+  it('rejects malformed hosts (string, non-string elements)', () => {
+    expect(isHostAllowed({ ...entry, hosts: 'admin.example.com' as never }, 'https://example/')).toBe(false)
+    expect(isHostAllowed({ ...entry, hosts: 'admin.example.com' as never }, 'https://admin.example.com/')).toBe(false)
+    expect(isHostAllowed({ ...entry, hosts: ['admin.example.com', 1] as never }, 'https://admin.example.com/')).toBe(false)
+  })
   it('rejects invalid url', () => expect(isHostAllowed(entry, 'not a url')).toBe(false))
 })
 
@@ -57,6 +62,28 @@ describe('AllowlistStore', () => {
       expect(await s.remove('admin.example.com')).toBe(true)
       expect(await s.get('admin.example.com')).toBeUndefined()
       expect(await s.remove('admin.example.com')).toBe(false)
+    } finally { await rm(dir, { recursive: true, force: true }) }
+  })
+  it('normalizes domain in get/remove/upsert', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'uchan-'))
+    try {
+      const s = new AllowlistStore(join(dir, 'a.json'))
+      await s.upsert({ ...entry, domain: 'Admin.example.com' })
+      expect((await s.get('https://ADMIN.example.com/x'))?.domain).toBe('admin.example.com')
+      expect(await s.remove('https://admin.example.com/')).toBe(true)
+    } finally { await rm(dir, { recursive: true, force: true }) }
+  })
+  it('throws UserFacingError on invalid JSON or non-array; drops malformed entries', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'uchan-'))
+    try {
+      const f = join(dir, 'a.json')
+      const s = new AllowlistStore(f)
+      await writeFile(f, '{nope')
+      await expect(s.list()).rejects.toThrow(UserFacingError)
+      await writeFile(f, '{"a":1}')
+      await expect(s.list()).rejects.toThrow('allowlist.json không hợp lệ')
+      await writeFile(f, JSON.stringify([entry, { ...entry, hosts: 'x' }, null, 5, { domain: 'z' }]))
+      expect(await s.list()).toEqual([entry])
     } finally { await rm(dir, { recursive: true, force: true }) }
   })
 })

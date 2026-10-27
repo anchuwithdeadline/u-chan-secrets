@@ -13,21 +13,32 @@ export class AllowlistStore {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw e
     }
-    return JSON.parse(raw) as AllowEntry[]
+    let data: unknown
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      throw new UserFacingError('allowlist.json không hợp lệ')
+    }
+    if (!Array.isArray(data)) throw new UserFacingError('allowlist.json không hợp lệ')
+    return data.filter(isValidEntry)
   }
 
   async get(domain: string): Promise<AllowEntry | undefined> {
-    const d = domain.trim().toLowerCase()
+    const d = normalizeDomain(domain)
+    if (!d) return undefined
     return (await this.list()).find((e) => e.domain === d)
   }
 
   async upsert(entry: AllowEntry): Promise<void> {
-    const rest = (await this.list()).filter((e) => e.domain !== entry.domain)
-    await this.write([...rest, entry])
+    const d = normalizeDomain(entry.domain)
+    if (!d) throw new UserFacingError('domain is empty or invalid')
+    const rest = (await this.list()).filter((e) => e.domain !== d)
+    await this.write([...rest, { ...entry, domain: d }])
   }
 
   async remove(domain: string): Promise<boolean> {
-    const d = domain.trim().toLowerCase()
+    const d = normalizeDomain(domain)
+    if (!d) return false
     const all = await this.list()
     const rest = all.filter((e) => e.domain !== d)
     if (rest.length === all.length) return false
@@ -43,6 +54,18 @@ export class AllowlistStore {
   }
 }
 
+function isValidEntry(e: unknown): e is AllowEntry {
+  if (typeof e !== 'object' || e === null) return false
+  const o = e as Record<string, unknown>
+  return (
+    typeof o.domain === 'string' &&
+    typeof o.loginUrl === 'string' &&
+    typeof o.item === 'string' &&
+    Array.isArray(o.hosts) &&
+    o.hosts.every((h) => typeof h === 'string')
+  )
+}
+
 /** Exact, case-insensitive hostname match over https only. No wildcards. */
 export function isHostAllowed(entry: AllowEntry, url: string): boolean {
   let u: URL
@@ -52,10 +75,11 @@ export function isHostAllowed(entry: AllowEntry, url: string): boolean {
     return false
   }
   if (u.protocol !== 'https:') return false
+  if (!Array.isArray(entry.hosts) || !entry.hosts.every((h) => typeof h === 'string')) return false
   return entry.hosts.includes(u.hostname.toLowerCase())
 }
 
-function normalizeDomain(input: string): string {
+export function normalizeDomain(input: string): string {
   const s = input.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split(/[/?#]/)[0]
   if (!s) return ''
   try {

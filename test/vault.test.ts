@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -58,9 +58,9 @@ describe('BitwardenVault.getLogin', () => {
     const v = new BitwardenVault({ sessionPath, exec: fail('Vault is locked.') })
     expect(await msg(v.getLogin('i'))).toBe('vault locked — chạy scripts/unlock.ps1')
   })
-  it('matches case-insensitively', async () => {
-    const v = new BitwardenVault({ sessionPath, exec: fail('you are not logged in.') })
-    expect(await msg(v.getLogin('i'))).toBe('vault locked — chạy scripts/unlock.ps1')
+  it('maps not logged in (case-insensitive)', async () => {
+    const v = new BitwardenVault({ sessionPath, exec: fail('You are not logged in.') })
+    expect(await msg(v.getLogin('i'))).toBe('chưa đăng nhập Bitwarden — chạy bw login rồi scripts/unlock.ps1')
   })
   it('rejects item without username/password', async () => {
     const v = new BitwardenVault({ sessionPath, exec: ok(JSON.stringify({ login: { username: 'u' } })) })
@@ -90,11 +90,16 @@ describe('BitwardenVault.getLogin', () => {
     const v = new BitwardenVault({ sessionPath: join(dir, 'missing'), exec: fail('Vault is locked.') })
     expect(await msg(v.getLogin('i'))).toContain('vault locked')
   })
-  it('redacts session from unknown errors and never includes stdout', async () => {
+  it('unknown errors return fixed message; redacted stderr goes to console.error', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const v = new BitwardenVault({ sessionPath, exec: fail('weird failure with S inside', 'SECRETSTDOUT') })
     const m = await msg(v.getLogin('i'))
-    expect(m).not.toContain('S')
-    expect(m).not.toContain('SECRETSTDOUT')
+    expect(m).toBe('bw failed (exit 1)')
+    const logged = spy.mock.calls.flat().join(' ')
+    expect(logged).toContain('weird failure')
+    expect(logged).not.toMatch(/S/)
+    expect(logged).not.toContain('SECRETSTDOUT')
+    spy.mockRestore()
   })
   it('spawn failure becomes a user-facing error', async () => {
     const exec: Exec = async () => { throw new Error('spawn bw ENOENT S') }

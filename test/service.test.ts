@@ -48,7 +48,17 @@ describe('login', () => {
   it('logs in and audits', async () => {
     await store.upsert(entry)
     expect(await svc.login('Example.com')).toEqual({ ok: true, message: 'logged in' })
-    expect(events).toEqual([{ action: 'login', domain: 'Example.com', result: 'ok' }])
+    expect(events).toEqual([{ action: 'login', domain: 'example.com', result: 'ok' }])
+  })
+  it('normalizes URL-shaped domain', async () => {
+    await store.upsert(entry)
+    expect((await svc.login('https://Example.com/x')).ok).toBe(true)
+    expect(events[0].domain).toBe('example.com')
+  })
+  it('rejects invalid domain', async () => {
+    const out = await svc.login('https:///')
+    expect(out.ok).toBe(false)
+    expect(out.message).toMatch(/invalid/)
   })
   it('reports already logged in', async () => {
     await store.upsert(entry)
@@ -120,6 +130,13 @@ describe('requestAllow', () => {
     expect(lines[3]).toBe('Item Bitwarden: item')
     expect((await store.list())[0].item).toBe('item')
   })
+  it('strips format chars and shows normalized URL in dialog', async () => {
+    await svc.requestAllow('example.com', 'https://example.com/lo\u202Egin', 'i\u202Etem')
+    const lines = approve.mock.calls[0][1] as string[]
+    expect(lines.join('|')).not.toContain('\u202E')
+    expect(lines[2]).toBe('Login URL: https://example.com/login')
+    expect(lines[3]).toBe('Item Bitwarden: item')
+  })
   it('rejects http without asking', async () => {
     const out = await svc.requestAllow('example.com', 'http://example.com/login', 'ex')
     expect(out.ok).toBe(false)
@@ -135,6 +152,15 @@ describe('revoke / list / status', () => {
     expect(await store.list()).toEqual([])
     expect(approve).not.toHaveBeenCalled()
     expect(events).toEqual([{ action: 'revoke', domain: 'example.com', result: 'ok' }])
+  })
+  it('revoke accepts scheme/path and audits normalized domain', async () => {
+    await store.upsert(entry)
+    expect((await svc.revoke('HTTPS://Example.com/path')).ok).toBe(true)
+    expect(events[0].domain).toBe('example.com')
+    expect((await svc.revoke('  ')).ok).toBe(false)
+  })
+  it('lists empty allowlist', async () => {
+    expect(await svc.listAllowed()).toEqual({ ok: true, message: 'allowlist trống' })
   })
   it('revoke of unknown domain audits not found', async () => {
     expect((await svc.revoke('x.com')).ok).toBe(false)

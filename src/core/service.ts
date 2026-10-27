@@ -1,4 +1,4 @@
-import { buildEntry } from './allowlist.js'
+import { buildEntry, normalizeDomain } from './allowlist.js'
 import type { AllowlistStore } from './allowlist.js'
 import type { BrowserProvider } from './browser.js'
 import { fillLogin } from './login-filler.js'
@@ -8,6 +8,7 @@ import {
   type Approver,
   type AuditEvent,
   type AuditLog,
+  type CoreApi,
   type ToolResult,
   type VaultClient,
 } from './types.js'
@@ -20,10 +21,17 @@ export interface CoreDeps {
   browser: BrowserProvider
 }
 
-/** Strips control, line- and paragraph-separator characters (incl. \r \n \t). */
-const clean = (s: string): string => String(s ?? '').replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, '')
+/** Strips control, format (e.g. bidi overrides), line- and paragraph-separator characters (incl. \r \n \t). */
+const clean = (s: string): string => String(s ?? '').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
 
-export class CoreService {
+/** Normalized domain for lookups/audit; throws on unusable input. */
+function domainOf(input: string): string {
+  const d = normalizeDomain(clean(input))
+  if (!d) throw new UserFacingError('domain is empty or invalid')
+  return d
+}
+
+export class CoreService implements CoreApi {
   constructor(private readonly deps: CoreDeps) {}
 
   /** Runs `fn`, maps errors to ToolResults (never leaking details) and audits the outcome. */
@@ -48,7 +56,7 @@ export class CoreService {
     }
     if (action) {
       try {
-        await this.deps.audit.record({ action, domain: clean(domain), result: audit })
+        await this.deps.audit.record({ action, domain: normalizeDomain(clean(domain)) || clean(domain), result: audit })
       } catch {
         console.error('audit write failed')
       }
@@ -59,7 +67,7 @@ export class CoreService {
   login(domain: string): Promise<ToolResult> {
     const secrets: string[] = []
     return this.guarded('login', domain, secrets, async () => {
-      const entry = await this.deps.allowlist.get(clean(domain))
+      const entry = await this.deps.allowlist.get(domainOf(domain))
       if (!entry) throw new UserFacingError('domain chưa được cho phép — dùng request_allow')
       const getCreds = async () => {
         const c = await this.deps.vault.getLogin(entry.item)
@@ -76,13 +84,13 @@ export class CoreService {
 
   requestAllow(domain: string, loginUrl: string, item: string): Promise<ToolResult> {
     return this.guarded('request_allow', domain, [], async () => {
-      const d = clean(domain)
+      const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
       const entry = buildEntry(d, clean(loginUrl), clean(item), existing)
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
         'Cho phép AI đăng nhập?',
         `Domain: ${entry.domain}`,
-        `Login URL: ${entry.loginUrl}`,
+        `Login URL: ${new URL(entry.loginUrl).href}`,
         `Item Bitwarden: ${entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
       ])
@@ -94,7 +102,7 @@ export class CoreService {
 
   revoke(domain: string): Promise<ToolResult> {
     return this.guarded('revoke', domain, [], async () => {
-      const removed = await this.deps.allowlist.remove(clean(domain))
+      const removed = await this.deps.allowlist.remove(domainOf(domain))
       return removed
         ? { result: { ok: true, message: 'revoked' }, audit: 'ok' }
         : { result: { ok: false, message: 'domain không có trong allowlist' }, audit: 'not found' }
@@ -104,6 +112,7 @@ export class CoreService {
   listAllowed(): Promise<ToolResult> {
     return this.guarded(undefined, '', [], async () => {
       const all = await this.deps.allowlist.list()
+      if (all.length === 0) return { result: { ok: true, message: 'allowlist trống' }, audit: '' }
       const message = all.map((e) => `${e.domain} — ${e.item} — ${e.hosts.join(', ')}`).join('\n')
       return { result: { ok: true, message }, audit: '' }
     })

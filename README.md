@@ -22,13 +22,14 @@ claude mcp add u-chan-secrets -- node <path-to>\u-chan-secrets\dist\index.js
 Playwright MCP phải dùng chung Chrome này. Nếu đã có Playwright MCP, hãy cấu hình lại nó thay vì thêm bản thứ hai:
 
 ```
+claude mcp remove playwright   # gỡ bản cũ trước khi thêm lại với --cdp-endpoint
 claude mcp add playwright -- npx @playwright/mcp@latest --cdp-endpoint http://127.0.0.1:9222
 ```
 
 ## Quy trình hằng ngày
 
 ```
-powershell -File scripts\start-chrome.ps1   # Chrome riêng, CDP 127.0.0.1:9222 (bỏ qua nếu cổng đã mở)
+powershell -File scripts\start-chrome.ps1   # Chrome riêng, CDP theo U_CHAN_CDP, mặc định 127.0.0.1:9222 (bỏ qua nếu cổng đã mở)
 powershell -File scripts\unlock.ps1         # nhập master password; lưu session vào bw-session
 powershell -File scripts\unlock.ps1 -Lock   # khóa vault, xóa session
 ```
@@ -38,7 +39,7 @@ Chrome dùng profile riêng `<data dir>\chrome-profile`, không đụng profile 
 ## Công cụ MCP
 
 - `status`: trạng thái vault (unlocked/locked/...) và kết nối Chrome.
-- `request_allow(domain, login_url, item)`: xin allowlist một site; hiện hộp thoại Windows, bạn phải bấm Đồng ý. `item` là tên/id item Bitwarden.
+- `request_allow(domain, login_url, item)`: xin allowlist một site; hiện hộp thoại Windows, bạn phải bấm Đồng ý. `item` là tên/id item Bitwarden; nên dùng id item vì tên chỉ là tìm kiếm và có thể khớp nhầm item khác.
 - `login(domain)`: đăng nhập site đã allowlist trong Chrome dùng chung. Sau đó dùng Playwright MCP để duyệt tiếp.
 - `list_allowed`: liệt kê domain đã allowlist.
 - `revoke(domain)`: gỡ quyền.
@@ -50,7 +51,7 @@ Thư mục dữ liệu: `U_CHAN_HOME`, mặc định `%APPDATA%\u-chan-secrets`.
 | Biến môi trường | Mặc định | Ý nghĩa |
 |---|---|---|
 | `U_CHAN_HOME` | `%APPDATA%\u-chan-secrets` | Thư mục dữ liệu |
-| `U_CHAN_CDP` | `http://127.0.0.1:9222` | CDP endpoint của Chrome |
+| `U_CHAN_CDP` | `http://127.0.0.1:9222` | CDP endpoint của Chrome (`start-chrome.ps1` lấy host/port từ đây) |
 | `U_CHAN_BW` | `bw` | Đường dẫn `bw.exe` |
 
 `allowlist.json` gồm các entry:
