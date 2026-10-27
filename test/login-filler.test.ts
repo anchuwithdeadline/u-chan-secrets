@@ -33,9 +33,12 @@ async function run(path: string, password = 'pw', username = 'u@x', totp?: strin
 }
 
 describe('fillLogin', () => {
+  it('NEEDS_YOU is the exact user-facing text', () => {
+    expect(NEEDS_YOU).toBe('needs you — sign in by hand this time')
+  })
   it('login-filler: stops at a captcha', async () => {
     const r = await run('/captcha')
-    expect(r.outcome).toEqual({ status: 'failed', reason: NEEDS_YOU })
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'needs you — sign in by hand this time' })
     expect(r.getCreds).not.toHaveBeenCalled()
   })
   it('logs in on single-step form', async () => {

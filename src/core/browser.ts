@@ -83,7 +83,7 @@ export class CdpBrowserProvider implements BrowserProvider {
   async withContext<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
     const browser = await this.getBrowser(true)
     const context = browser.contexts()[0]
-    if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
+    if (!context) throw new UserFacingError('Chrome has no default window â€” open Chrome with scripts/start-chrome.ps1')
     return fn(context)
   }
 
@@ -113,9 +113,13 @@ export class CdpSessionTarget implements SessionTarget {
         const page = await context.newPage()
         try {
           await page.goto(o.origin, { waitUntil: 'commit' })
-          await page.evaluate((items) => {
-            for (const i of items) localStorage.setItem(i.name, i.value)
-          }, o.localStorage)
+          await page.evaluate(
+            ({ origin, items }) => {
+              if (location.origin !== origin) throw new Error('origin mismatch')
+              for (const i of items) localStorage.setItem(i.name, i.value)
+            },
+            { origin: o.origin, items: o.localStorage },
+          )
         } finally {
           await page.close().catch(() => {})
         }

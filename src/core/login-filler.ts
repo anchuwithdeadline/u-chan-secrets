@@ -5,7 +5,7 @@ import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
 export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
 
-export const NEEDS_YOU = 'needs you — sign in by hand this time'
+export const NEEDS_YOU = 'needs you â€” sign in by hand this time'
 const CHALLENGE_CSS =
   'iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]'
 

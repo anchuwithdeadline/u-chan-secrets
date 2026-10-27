@@ -64,4 +64,21 @@ describe('CdpSessionTarget', () => {
     expect(await page.evaluate(() => localStorage.getItem('tok'))).toBe('abc')
     await page.close()
   }, 30000)
+
+  it('rejects when the origin redirects elsewhere and writes nothing there', async () => {
+    const provider = new CdpBrowserProvider(`http://127.0.0.1:${port}`)
+    const target = new CdpSessionTarget(provider)
+    fx.bounceRoot = true
+    await expect(
+      target.inject({
+        cookies: [],
+        origins: [{ origin: `http://127.0.0.1:${fx.port}`, localStorage: [{ name: 'leak', value: 'x' }] }],
+      }),
+    ).rejects.toThrow()
+    const other = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
+    const page = await other.contexts()[0]!.newPage()
+    await page.goto(`http://localhost:${fx.port}/dash`)
+    expect(await page.evaluate(() => localStorage.getItem('leak'))).toBeNull()
+    await page.close()
+  }, 30000)
 })

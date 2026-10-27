@@ -4,7 +4,7 @@ import { totpCode } from '../../src/core/totp.js'
 
 export const OTP_SEED = 'JBSWY3DPEHPK3PXP'
 
-export interface Fixture { server: Server; port: number; posts: string[]; close(): Promise<void> }
+export interface Fixture { server: Server; port: number; posts: string[]; bounceRoot: boolean; close(): Promise<void> }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const page = (body: string) => `<!doctype html><html><body>${body}</body></html>`
@@ -20,6 +20,7 @@ const otpForm =`<form method="post" action="/otp-verify"><input name="otp" autoc
 export async function startFixture(): Promise<Fixture> {
   const posts: string[] = []
   let port = 0
+  const fxState = { bounceRoot: false }
   const server = createServer((req, res) => {
     const url = req.url ?? '/'
     const send = (html: string) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(page(html)) }
@@ -55,6 +56,7 @@ export async function startFixture(): Promise<Fixture> {
       case '/two-step': return send(stepEmail('/two-step'))
       case '/already': return redirect('/dash')
       case '/dash': return send('<h1>Dashboard</h1>')
+      case '/': return fxState.bounceRoot ? redirect(`http://localhost:${port}/dash`) : send('<p>root</p>')
       case '/redirect-evil': return redirect(`http://localhost:${port}/single`)
       case '/late':
         return send(`<div id="m"></div><script>setTimeout(()=>{document.getElementById('m').innerHTML=${JSON.stringify(singleForm)}},500)</script>`)
@@ -83,5 +85,5 @@ export async function startFixture(): Promise<Fixture> {
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   port = (server.address() as AddressInfo).port
-  return { server, port, posts, close: () => new Promise<void>((r) => { server.close(() => r()); server.closeAllConnections() }) }
+  return { server, port, posts, get bounceRoot() { return fxState.bounceRoot }, set bounceRoot(v: boolean) { fxState.bounceRoot = v }, close: () => new Promise<void>((r) => { server.close(() => r()); server.closeAllConnections() }) }
 }
