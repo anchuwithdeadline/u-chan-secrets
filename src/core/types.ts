@@ -33,3 +33,10 @@ export interface ControlApi {
   setMode(mode: ApprovalMode): Promise<ToolResult>
   importV1(entries: unknown[]): Promise<ToolResult>
 }
+export interface PromptRequest { title: string; lines: string[]; phrase: string }
+/** Platform window owned by the service. Close, timeout or error → false / null. */
+export interface ProtectedPrompt {
+  confirm(req: PromptRequest): Promise<boolean>
+  askPassword(req: PromptRequest): Promise<string | null>
+}
+export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
