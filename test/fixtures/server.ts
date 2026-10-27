@@ -47,6 +47,14 @@ export async function startFixture(): Promise<Fixture> {
       case '/nav-evil':
         return send(`<form method="post" action="/single"><input type="email" name="email" oninput="location.href='http://localhost:${port}/single'"><input type="password" name="password"><button type="submit">Login</button></form>`)
       case '/stuck': return send(stepEmail('/stuck'))
+      case '/spa-slow':
+        // SPA: URL changes at once on submit, the form only goes away later.
+        return send(`<form id="f"><input type="email" name="email"><input type="password" name="password"><button type="submit">Login</button></form><script>f.onsubmit=(e)=>{e.preventDefault();history.pushState(null,'','/spa-slow?signing-in');setTimeout(()=>{location.href='/dash'},1200)}</script>`)
+      case '/spa-remount': {
+        // SPA: submit re-renders the form (old nodes detached), then navigates later.
+        const form = `<form><input type="email" name="email"><input type="password" name="password"><button type="submit">Login</button></form>`
+        return send(`<div id="m">${form}</div><script>m.addEventListener('submit',(e)=>{e.preventDefault();m.innerHTML=${JSON.stringify(form)};setTimeout(()=>{location.href='/dash'},1200)})</script>`)
+      }
       case '/pass-only':
         return send(`<form method="post" action="/single"><input type="password" name="password"><button type="submit">Login</button></form>`)
     }

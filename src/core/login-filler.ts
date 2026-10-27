@@ -100,13 +100,11 @@ export async function fillLogin(
     if ((fail = await submit(submitH))) return fail
   }
 
-  // Wait for the submitted form to go away (navigation or detach), then judge the final page.
-  const before = page.url()
-  await Promise.race([
-    page.waitForURL((u) => u.href !== before, { timeout }),
-    (passH ?? userH).waitForElementState('hidden', { timeout }),
-  ]).catch(() => {
-    // Timeout or disposed handle: the state check below decides.
+  // Wait for the login form to go away, then judge the final page. Wait on locators, not
+  // the filled handles: SPAs often re-render the form on submit, detaching those nodes
+  // long before the app navigates away.
+  await userBox.or(passBox).first().waitFor({ state: 'hidden', timeout }).catch(() => {
+    // Timeout: the state check below decides.
   })
   await page.waitForLoadState('load', { timeout }).catch(() => {})
   await page.waitForLoadState('networkidle', { timeout }).catch(() => {})

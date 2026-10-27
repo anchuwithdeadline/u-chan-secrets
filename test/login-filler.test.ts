@@ -39,6 +39,16 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
     expect(r.getCreds).toHaveBeenCalledTimes(1)
   })
+  it('waits for an SPA form that hides after the URL changes', async () => {
+    const r = await run('/spa-slow')
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
+  it('waits for an SPA that re-renders the form before navigating', async () => {
+    const r = await run('/spa-remount')
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
   it('fails on wrong password without leaking it', async () => {
     const r = await run('/single', 'wrong-secret-123')
     expect(r.outcome.status).toBe('failed')
