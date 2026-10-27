@@ -28,6 +28,13 @@ describe('mcp server', () => {
     expect(tools.map((t) => t.name).sort()).toEqual(['list_allowed', 'login', 'request_allow', 'revoke', 'status'])
   })
 
+  it('sends usage instructions on connect', async () => {
+    const c = await connect({})
+    const text = c.getInstructions() ?? ''
+    expect(text).toMatch(/never ask the user for a password/i)
+    expect(text).toMatch(/login/)
+  })
+
   it('login returns core message', async () => {
     const c = await connect({})
     const r = await c.callTool({ name: 'login', arguments: { domain: 'a.com' } })
