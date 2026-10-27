@@ -1,0 +1,31 @@
+$ErrorActionPreference = 'Stop'
+$home_ = if ($env:U_CHAN_HOME) { $env:U_CHAN_HOME } else { Join-Path $env:APPDATA 'u-chan-secrets' }
+$profileDir = Join-Path $home_ 'chrome-profile'   # dedicated profile, never the default Chrome profile
+$port = 9222
+
+# Already listening? Then do nothing (short TCP probe; Test-NetConnection is slow).
+$client = New-Object System.Net.Sockets.TcpClient
+try {
+  $iar = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+  if ($iar.AsyncWaitHandle.WaitOne(500) -and $client.Connected) {
+    Write-Host "Port $port already open; Chrome is already running with remote debugging."
+    return
+  }
+} catch { } finally { $client.Close() }
+
+$candidates = @(
+  (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+)
+$chrome = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $chrome) { throw 'chrome.exe not found' }
+
+New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+Start-Process -FilePath $chrome -ArgumentList @(
+  "--remote-debugging-port=$port",
+  '--remote-debugging-address=127.0.0.1',
+  "--user-data-dir=$profileDir",
+  '--no-first-run'
+)
+Write-Host "Chrome started (profile: $profileDir, CDP: http://127.0.0.1:$port)"
