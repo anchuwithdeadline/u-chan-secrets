@@ -23,7 +23,7 @@ export async function startFixture(): Promise<Fixture> {
   const server = createServer((req, res) => {
     const url = req.url ?? '/'
     const send = (html: string) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(page(html)) }
-    const redirect = (to: string) => { res.writeHead(302, { location: to }); res.end() }
+    const redirect = (to: string) => { res.writeHead(302, { location: to, ...(to === '/dash' ? { 'set-cookie': 'sid=1; Path=/' } : {}) }); res.end() }
     if (req.method === 'POST') {
       posts.push(url)
       let raw = ''
@@ -73,6 +73,9 @@ export async function startFixture(): Promise<Fixture> {
         const form = `<form><input type="email" name="email"><input type="password" name="password"><button type="submit">Login</button></form>`
         return send(`<div id="m">${form}</div><script>m.addEventListener('submit',(e)=>{e.preventDefault();m.innerHTML=${JSON.stringify(form)};setTimeout(()=>{location.href='/dash'},1200)})</script>`)
       }
+      case '/captcha':
+        return send(`${singleForm}<iframe src="/recaptcha/api2/anchor"></iframe>`)
+      case '/recaptcha/api2/anchor': return send('<p>captcha</p>')
       case '/pass-only':
         return send(`<form method="post" action="/single"><input type="password" name="password"><button type="submit">Login</button></form>`)
     }

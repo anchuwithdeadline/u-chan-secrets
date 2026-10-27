@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
-import { chromium, type Browser, type Page } from 'playwright'
-import { UserFacingError } from './types.js'
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import type { SessionState } from '../service/session-transfer.js'
+import { UserFacingError, type SessionTarget } from './types.js'
 
 export interface BrowserProvider {
   withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>
@@ -79,6 +80,13 @@ export class CdpBrowserProvider implements BrowserProvider {
     }
   }
 
+  async withContext<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
+    const browser = await this.getBrowser(true)
+    const context = browser.contexts()[0]
+    if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
+    return fn(context)
+  }
+
   async connected(): Promise<boolean> {
     try {
       await this.getBrowser(false)
@@ -86,5 +94,32 @@ export class CdpBrowserProvider implements BrowserProvider {
     } catch {
       return false
     }
+  }
+}
+
+/** Receives a session (cookies + localStorage) into the user's Chrome over CDP. */
+export class CdpSessionTarget implements SessionTarget {
+  constructor(private readonly provider: CdpBrowserProvider) {}
+
+  userAgent(): Promise<string> {
+    return this.provider.withPage((page) => page.evaluate(() => navigator.userAgent))
+  }
+
+  inject(state: SessionState): Promise<void> {
+    return this.provider.withContext(async (context) => {
+      await context.addCookies(state.cookies)
+      for (const o of state.origins) {
+        if (!o.localStorage.length) continue
+        const page = await context.newPage()
+        try {
+          await page.goto(o.origin, { waitUntil: 'commit' })
+          await page.evaluate((items) => {
+            for (const i of items) localStorage.setItem(i.name, i.value)
+          }, o.localStorage)
+        } finally {
+          await page.close().catch(() => {})
+        }
+      }
+    })
   }
 }

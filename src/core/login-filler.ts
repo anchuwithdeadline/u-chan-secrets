@@ -5,6 +5,10 @@ import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
 export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
 
+export const NEEDS_YOU = 'needs you — sign in by hand this time'
+const CHALLENGE_CSS =
+  'iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]'
+
 const USERNAME_CSS = '[autocomplete=username], [type=email], [name*=email i], [name*=user i], [id*=email i]'
 const OTP_CSS =
   'input[autocomplete="one-time-code"], input[name*="otp" i], input[id*="otp" i], input[name*="2fa" i], input[name="code"], input[id="code"]'
@@ -64,6 +68,8 @@ export async function fillLogin(
   const [hasUser, hasPass] = await Promise.all([userBox.isVisible(), passBox.isVisible()])
   if (!hasUser && !hasPass) return { status: 'already_logged_in' }
   if (!hasUser) return { status: 'failed', reason: 'username field not found' }
+
+  if (await visible(page.locator(CHALLENGE_CSS)).isVisible()) return { status: 'failed', reason: NEEDS_YOU }
 
   const creds = await getCreds()
 
@@ -132,6 +138,7 @@ export async function fillLogin(
   await page.waitForLoadState('networkidle', { timeout }).catch(() => {})
 
   if ((fail = badHost())) return fail
+  if (await visible(page.locator(CHALLENGE_CSS)).isVisible()) return { status: 'failed', reason: NEEDS_YOU }
   if ((await userBox.isVisible()) || (await passBox.isVisible())) {
     const reason = otpFilled ? 'login form still present (wrong password or 2FA code?)' : 'login form still present (wrong password?)'
     return { status: 'failed', reason }

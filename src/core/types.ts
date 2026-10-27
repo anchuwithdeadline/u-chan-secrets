@@ -1,3 +1,6 @@
+import type { FillOutcome } from './login-filler.js'
+import type { SessionState } from '../service/session-transfer.js'
+
 export interface AllowEntry {
   domain: string
   hosts: string[]
@@ -42,3 +45,10 @@ export interface ProtectedPrompt {
   askPassword(req: PromptRequest): Promise<string | null>
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
+export interface SessionTarget {
+  userAgent(): Promise<string>
+  inject(state: SessionState): Promise<void>
+}
+export interface LoginRunner {
+  run(entry: AllowEntry, getCreds: () => Promise<Credentials>): Promise<FillOutcome>
+}

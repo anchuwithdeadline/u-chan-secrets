@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser, type BrowserContext } from 'playwright'
-import { fillLogin } from '../src/core/login-filler.js'
+import { fillLogin, NEEDS_YOU } from '../src/core/login-filler.js'
 import type { AllowEntry } from '../src/core/types.js'
 import { OTP_SEED, startFixture, type Fixture } from './fixtures/server.js'
 
@@ -33,6 +33,11 @@ async function run(path: string, password = 'pw', username = 'u@x', totp?: strin
 }
 
 describe('fillLogin', () => {
+  it('login-filler: stops at a captcha', async () => {
+    const r = await run('/captcha')
+    expect(r.outcome).toEqual({ status: 'failed', reason: NEEDS_YOU })
+    expect(r.getCreds).not.toHaveBeenCalled()
+  })
   it('logs in on single-step form', async () => {
     const r = await run('/single')
     expect(r.outcome).toEqual({ status: 'logged_in' })
