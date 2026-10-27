@@ -1,6 +1,6 @@
 import type { ElementHandle, Locator, Page } from 'playwright'
 import { isHostAllowed } from './allowlist.js'
-import type { AllowEntry, Credentials } from './types.js'
+import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
 export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
 
@@ -16,7 +16,7 @@ async function guard<T>(what: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch {
-    throw new Error(`failed to ${what}`)
+    throw new UserFacingError(`failed to ${what}`)
   }
 }
 
