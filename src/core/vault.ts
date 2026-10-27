@@ -16,7 +16,7 @@ const defaultExec: Exec = (args, env) =>
     execFile(
       process.env.U_CHAN_BW ?? 'bw',
       args,
-      { env, shell: false, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+      { env, shell: false, windowsHide: true, maxBuffer: 10 * 1024 * 1024, timeout: 30000, killSignal: 'SIGKILL' },
       (err, stdout, stderr) => {
         if (!err) return resolve({ code: 0, stdout, stderr })
         const code = (err as NodeJS.ErrnoException & { code?: unknown }).code
@@ -27,6 +27,7 @@ const defaultExec: Exec = (args, env) =>
   })
 
 const STATUSES: VaultStatus[] = ['unlocked', 'locked', 'unauthenticated']
+const SPAWN_CODES = ['ENOENT', 'EACCES', 'EINVAL']
 const UNLOCK_MSG = 'vault locked — chạy scripts/unlock.ps1'
 
 export class BitwardenVault implements VaultClient {
@@ -68,8 +69,14 @@ export class BitwardenVault implements VaultClient {
     let r: { code: number; stdout: string; stderr: string }
     try {
       r = await this.run(['get', 'item', item], session)
-    } catch {
-      throw new UserFacingError('bitwarden CLI (bw) is not available')
+    } catch (e) {
+      // Fixed messages only: error text may contain argv.
+      const err = e as { code?: unknown; signal?: unknown; killed?: unknown }
+      if (typeof err.code === 'string' && SPAWN_CODES.includes(err.code)) {
+        throw new UserFacingError('bitwarden CLI (bw) is not available')
+      }
+      if (err.signal || err.killed) throw new UserFacingError('bw timed out')
+      throw new UserFacingError('bw failed')
     }
     if (r.code !== 0) {
       const err = r.stderr.toLowerCase()

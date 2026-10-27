@@ -101,4 +101,17 @@ describe('BitwardenVault.getLogin', () => {
     const m = await msg(new BitwardenVault({ sessionPath, exec }).getLogin('i'))
     expect(m).not.toContain('S')
   })
+  const rejecting = (props: object): Exec => async () => { throw Object.assign(new Error('boom argv item'), props) }
+  it.each(['ENOENT', 'EACCES', 'EINVAL'])('%s is not available', async (code) => {
+    const v = new BitwardenVault({ sessionPath, exec: rejecting({ code }) })
+    expect(await msg(v.getLogin('i'))).toBe('bitwarden CLI (bw) is not available')
+  })
+  it('timeout/signal kill becomes bw timed out', async () => {
+    const v = new BitwardenVault({ sessionPath, exec: rejecting({ code: null, signal: 'SIGKILL', killed: true }) })
+    expect(await msg(v.getLogin('i'))).toBe('bw timed out')
+  })
+  it('maxBuffer overflow becomes bw failed without error text', async () => {
+    const v = new BitwardenVault({ sessionPath, exec: rejecting({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }) })
+    expect(await msg(v.getLogin('i'))).toBe('bw failed')
+  })
 })
