@@ -38,7 +38,7 @@ Chrome dùng profile riêng `<data dir>\chrome-profile`, không đụng profile 
 
 ## Công cụ MCP
 
-- `status`: trạng thái vault (unlocked/locked/...) và kết nối Chrome.
+- `status`: trạng thái vault (unlocked/locked/...) và kết nối Chrome. Chỉ báo lỗi khi cần người dùng xử lý (vault khoá, Playwright thiếu `--cdp-endpoint`); Chrome tắt không phải lỗi vì `login` tự mở.
 - `request_allow(domain, login_url, item)`: xin allowlist một site; hiện hộp thoại Windows, bạn phải bấm Đồng ý. `item` là tên/id item Bitwarden; nên dùng id item vì tên chỉ là tìm kiếm và có thể khớp nhầm item khác.
 - `login(domain)`: đăng nhập site đã allowlist trong Chrome dùng chung. Sau đó dùng Playwright MCP để duyệt tiếp.
 - `list_allowed`: liệt kê domain đã allowlist.
