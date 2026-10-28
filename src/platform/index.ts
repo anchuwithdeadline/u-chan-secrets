@@ -46,5 +46,5 @@ export function platformAdapters(platform: NodeJS.Platform, opts?: PlatformAdapt
   if (platform === 'darwin') {
     return darwinPlatformAdapters(opts)
   }
-  throw new UserFacingError(`U-Chan V2 is not supported on ${platform} yet`)
+  throw new UserFacingError(`U-Chan V3 is not supported on ${platform} yet`)
 }

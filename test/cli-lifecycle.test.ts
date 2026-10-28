@@ -12,6 +12,7 @@ describe('cli darwin lifecycle', () => {
     const out: string[] = []
     const err: string[] = []
     const code = await main(['install', '--phrase', 'green pine tree'], {
+      doctor: async () => ({ version: 1, checks: [{ id: 'service', state: 'pass', required: true, message: 'Service is reachable.', nextAction: '' }] }),
       connect: vi.fn(),
       env: {},
       platform: 'darwin',
@@ -21,7 +22,7 @@ describe('cli darwin lifecycle', () => {
     })
 
     expect(code).toBe(0)
-    expect(out).toEqual(['u-chan service installed successfully'])
+    expect(out).toEqual(['u-chan service installed successfully', 'PASS service: Service is reachable.'])
     expect(macosInstallSpy).toHaveBeenCalledWith(expect.objectContaining({
       phrase: 'green pine tree',
     }))

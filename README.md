@@ -1,276 +1,217 @@
-# U-Chan Secrets V2
+# U-Chan Secrets V3
 
-A hardened Model Context Protocol (MCP) server that enables Claude Code to authenticate into allowlisted websites using Bitwarden credentials—without exposing passwords, TOTP seeds, or vault session keys to the AI model or the user-level desktop environment.
+A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-Even if Claude Code is tricked by prompt injection or operated in bypass permissions mode (`--dangerously-skip-permissions`), credentials remain protected behind an OS-level privileged service boundary.
+V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.0`; merging this repository does not publish an npm package or update an installed service.
 
----
+**Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
-## Architecture Overview
+## What V3 changes
 
-U-Chan Secrets V2 splits operations across an OS privilege boundary:
+- **Diagnose:** `u-chan doctor` explains service, vault, permission, Chrome, and browser-sharing problems without fetching credentials or repairing configuration.
+- **Limit approval:** approve one login attempt, a fixed duration, or permanent future logins.
+- **Confirm outcomes:** an approved URL or selector provides authentication evidence; generic form completion remains explicitly unconfirmed.
+- **Manage access:** `u-chan manage` shows grant pages and recent sanitized activity, with lock, unlock, and revoke actions.
+- **Preserve state:** privileged migration backup, schema/downgrade guards, and state-preserving reinstall replace manual editing of protected files.
+
+Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
+
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph UserSpace["User Desktop Space (Standard / Bypass Permissions)"]
-        CC["Claude Code"]
-        PW["Playwright MCP"]
-        THIN["u-chan-secrets MCP (Thin Client)"]
-        CHROME["Google Chrome (Dedicated Profile)"]
-    end
-
-    subgraph ServiceSpace["Privileged Service Boundary (SYSTEM / root)"]
-        IPC["Local IPC (Named Pipe / Unix Domain Socket)"]
-        CORE["U-Chan Secrets Service"]
-        VAULT["Bitwarden Vault (Memory-Only Session)"]
-        BWCLI["Bitwarden CLI (bw native binary)"]
-        SBROWSER["Headless Browser (Isolated Context)"]
-        PROMPT["Protected Window (WPF UIPI / Cocoa NSSecureTextField)"]
-        STORAGE["Admin Storage (allowlist, audit.log, settings)"]
-    end
-
-    CC -->|"MCP Tool Calls"| THIN
-    CC -->|"Browser Automation"| PW
-    PW -->|"CDP Port 9222"| CHROME
-    THIN -->|"IPC Requests"| IPC
-    IPC --> CORE
-    CORE --> VAULT
-    CORE --> BWCLI
-    CORE --> STORAGE
-    CORE -->|"Render Prompt with Secret Phrase"| PROMPT
-    PROMPT -->|"User Approval / Password"| CORE
-    CORE -->|"Autofill & Submit Credentials"| SBROWSER
-    SBROWSER -->|"Transfer Cookies & Storage over CDP"| CHROME
+    AI["Claude Code / other MCP client"] --> MCP["Thin MCP client: user account"]
+    MCP --> IPC["Local IPC with caller identity checks"]
+    IPC --> SERVICE["Privileged service: SYSTEM / root"]
+    SERVICE --> VAULT["Bitwarden CLI and private vault data"]
+    SERVICE --> PROMPT["Service-owned native prompts"]
+    SERVICE --> BROWSER["Isolated service-owned Chromium"]
+    BROWSER -->|"Filtered cookies and localStorage"| CHROME["Dedicated user Chrome"]
+    AI --> PW["Playwright MCP"]
+    PW -->|"Shared CDP endpoint"| CHROME
 ```
 
-### Key Security Components
+The service owns the allowlist, settings, audit log, runtime, dependencies, Bitwarden executable, and isolated Chromium bundle. The thin client holds no vault credentials. Windows prompts require SYSTEM identity and a separate input desktop; replies cross sessions through a SYSTEM-only named pipe. macOS uses secure password entry and permits hardcore mode only.
 
-- **Privileged Background Service:** Runs under `SYSTEM` on Windows or `root` via `launchd` on macOS. Owns all sensitive configuration files (`allowlist.json`, `settings.json`, `audit.log`, and Bitwarden CLI vault data). Inaccessible to normal user accounts.
-- **Memory-Only Session:** Master password unlocks the vault into service process memory only (`BW_SESSION`). The session is never written to disk and automatically expires on reboot, service restart, manual lock, or after a 12-hour idle timeout.
-- **Thin MCP Client:** Claude Code communicates exclusively with a thin client over local authenticated IPC (`\\.\pipe\u-chan-secrets` on Windows with caller SID validation; `/var/run/u-chan-secrets/ipc.sock` on macOS with peer UID verification).
-- **Protected Windows:** Unlock dialogs, approval prompts, and mode changes execute directly within privileged service UI:
-  - **Windows:** C# WPF/WinForms prompt running with High Integrity and User Interface Privilege Isolation (UIPI) to prevent unprivileged synthetic clicks and keystroke interception.
-  - **macOS:** Cocoa `NSSecureTextField` with `EnableSecureEventInput` to defeat keylogger event taps.
-- **Isolated Browser Credential Entry:** Logins are executed inside a service-owned headless Chromium browser instance with no exposed debugging ports. Only post-login session cookies and localStorage for allowlisted hosts are transferred over Chrome DevTools Protocol (CDP) into the user's Chrome browser.
-- **Anti-Phishing Secret Phrase:** A personalized secret phrase chosen during installation is displayed on all legitimate approval prompts. If a compromised AI attempts to spawn a lookalike modal to phish your master password, the absence of your secret phrase reveals the fraud.
+A Bitwarden session is held in service memory and passed to privileged Bitwarden subprocesses when needed. It is not stored in desktop configuration or a session file. Vault access expires after the configured idle interval (12 hours by default), manual lock, restart, or reboot. This does not claim cryptographic zeroization of JavaScript strings or OS memory.
 
----
+**After session transfer, the AI can use the signed-in website.** Grant expiry and revocation stop future U-Chan logins; they do not invalidate existing Chrome sessions or prevent actions inside those sessions. Revocation waits for an earlier queued login to finish.
 
 ## Prerequisites
 
-- **Node.js 24+**
-- **Bitwarden CLI:** Native binary (`bw`), installed via package manager (`winget install Bitwarden.CLI` or `brew install bitwarden-cli`). *Do not use the npm `.cmd` shim.*
-- **Google Chrome**
+- Windows or macOS.
+- Node.js 24+.
+- A native Bitwarden CLI executable: `bw.exe` on Windows or `bw` on macOS. The Windows npm `.cmd` shim is unsupported.
+- Google Chrome for the user-side dedicated profile.
+- The matching Playwright Chromium installation for service staging.
 
----
+Install from a trusted shell before granting an AI unrestricted user-account access. On Windows, use UAC **Always notify** or run the AI from a standard user account. Existing administrator/root compromise is outside the threat model.
 
-## Installation Guide
+## Build and install from source
 
-### Windows Installation
+Use the checkout for the V3 source version. Unversioned npm installation can select a different published version; the package metadata in this repository is not proof of npm publication.
 
-#### Option A: Quick Automated Setup (Recommended)
-If installing from source or setting up locally, right-click and run as Administrator (or execute from an elevated terminal):
-```cmd
-scripts\debug-install.bat
-```
-*This elevated script automates stopping old helper instances, compiling native C# helper assets, applying file permissions, installing and starting the service, and prompting for your Bitwarden vault login.*
-
-#### Option B: Manual Installation
-
-1. Install the CLI package globally:
-   ```cmd
-   npm install -g u-chan-secrets
-   ```
-
-2. Run the privileged installer from an elevated Command Prompt or PowerShell:
-   ```cmd
-   u-chan install
-   ```
-   *The installer compiles native C# helper assets, configures file ACLs on `%ProgramData%\u-chan-secrets`, registers the `u-chan-secrets` Windows service under `SYSTEM`, sets up your anti-phishing secret phrase, and prompts for your initial approval mode (Easy or Hardcore).*
-
-3. Log in to Bitwarden for the privileged service store:
-   Because the service runs in isolated system storage (`%ProgramData%\u-chan-secrets\bw-data`), log in to Bitwarden once using the helper script:
-   ```cmd
-   scripts\login-bw.bat
-   ```
-   *(Or from an elevated command prompt: `set BITWARDENCLI_APPDATA_DIR=%ProgramData%\u-chan-secrets\bw-data && bw login`)*
-
-> [!CRITICAL]
-> **Windows UAC Security Notice**
-> The U-Chan Secrets V2 security guarantee holds on Windows **ONLY** if:
-> 1. User Account Control (UAC) is set to **"Always Notify"** (slider at the highest setting), **OR**
-> 2. Claude Code is run from a **Standard User account** (non-administrator).
->
-> **Why?** On Windows, if an administrator account uses the default UAC setting ("Notify me only when apps try to make changes"), unprivileged processes can silently bypass UAC via well-documented auto-elevating system interfaces without displaying a consent dialog. If Claude Code is compromised in this environment, it could obtain administrative rights silently and tamper with the service. Setting UAC to "Always Notify" or using a Standard User account ensures every elevation requires explicit human confirmation on the Secure Desktop.
-
-### macOS Installation
-
-1. Install the CLI package globally:
-   ```bash
-   npm install -g u-chan-secrets
-   ```
-
-2. Run the installer with `sudo`:
-   ```bash
-   sudo u-chan install
-   ```
-   *The installer creates `/Library/Application Support/u-chan-secrets` with `0700` root permissions, writes the launchd plist to `/Library/LaunchDaemons/com.uchan.secrets.plist`, starts the daemon, configures your anti-phishing secret phrase, and migrates Bitwarden CLI sessions.*
-
-3. Log in to Bitwarden for the daemon store:
-   Because the daemon uses isolated root storage, run a one-time login for the service store:
-   ```bash
-   sudo BITWARDENCLI_APPDATA_DIR="/Library/Application Support/u-chan-secrets/bw-data" bw login
-   ```
-
-> [!NOTE]
-> **macOS: Hardcore Mode Enforced**
-> On macOS, any application granted Accessibility permissions can programmatically dispatch synthetic mouse clicks to other applications, including privileged dialogs. Because synthetic clicks cannot be blocked by the OS, **Easy Mode (click-to-approve) is disabled on macOS**. macOS operates exclusively in **Hardcore Mode**, requiring master password re-entry in an `NSSecureTextField` with Secure Event Input for every approval.
-
----
-
-## MCP Registration & CDP Configuration
-
-### 1. Register `u-chan-secrets` MCP Server
-
-Add the thin MCP client to Claude Code:
-```bash
-claude mcp add u-chan-secrets -- u-chan-secrets
+```sh
+git clone https://github.com/anchuwithdeadline/u-chan-secrets.git
+cd u-chan-secrets
+npm ci
+npm run build
+npx playwright install chromium
 ```
 
-### 2. Configure Playwright MCP with Shared CDP
+The following setup commands use `node dist/cli.js` from that checkout. After a matching package is globally installed, `u-chan` invokes the same CLI. The globally installed MCP command is `u-chan-secrets`.
 
-Playwright MCP must connect to the shared Chrome debugging port (`http://127.0.0.1:9222`) so it can continue browsing inside the session initialized by U-Chan:
+### Windows
+
+From a trusted elevated PowerShell terminal in the checkout:
+
+```powershell
+node dist/cli.js install --mode hardcore
+```
+
+Windows also supports `--mode easy`; omitting the mode uses the Windows installer default, easy. The installer generates a phrase unless one is supplied. Reinstall preserves existing owner/settings and grants rather than applying new mode/phrase arguments over them.
+
+For the one-time login to the service's private Bitwarden store, use the copied native executable in that same elevated terminal:
+
+```powershell
+$env:BITWARDENCLI_APPDATA_DIR = Join-Path $env:ProgramData 'u-chan-secrets\bw-data'
+Remove-Item Env:\BW_SESSION -ErrorAction SilentlyContinue
+& (Join-Path $env:ProgramData 'u-chan-secrets\bin\bw.exe') login
+Remove-Item Env:\BITWARDENCLI_APPDATA_DIR
+```
+
+**Do not use `scripts/debug-install.bat` as a V3 setup or upgrade path.** That legacy script invokes uninstall, which deletes service data, and exports protected settings into the checkout. Use the CLI installer above.
+
+### macOS
+
+From the trusted checkout:
 
 ```bash
-# Remove existing unattached playwright instance if present
-claude mcp remove playwright
+sudo "$(command -v node)" dist/cli.js install
+sudo env -u BW_SESSION \
+  BITWARDENCLI_APPDATA_DIR="/Library/Application Support/u-chan-secrets/bw-data" \
+  "/Library/Application Support/u-chan-secrets/bin/bw" login
+```
 
-# Register playwright with the shared CDP endpoint
+The daemon uses `/Library/Application Support/u-chan-secrets` and `/Library/LaunchDaemons/com.uchan.secrets.plist`. macOS always uses hardcore approval; easy mode is refused.
+
+### Register MCP and shared Chrome
+
+For a source checkout, register the absolute path to the thin client:
+
+```sh
+claude mcp add u-chan-secrets -- node "/absolute/path/to/u-chan-secrets/dist/index.js"
 claude mcp add playwright -- npx @playwright/mcp@latest --cdp-endpoint http://127.0.0.1:9222
 ```
 
-### 3. Dedicated Chrome Profile & Launching Chrome
+If a Playwright MCP registration already exists, replace it with the shared-CDP configuration and restart the AI session. A globally installed matching package can instead register `claude mcp add u-chan-secrets -- u-chan-secrets`.
 
-U-Chan isolates automation in a dedicated profile (`%APPDATA%\u-chan-secrets\chrome-profile` on Windows, `~/Library/Application Support/u-chan-secrets/chrome-profile` on macOS) to protect your daily browsing sessions.
+Start the dedicated Chrome profile from the checkout:
 
-Start Chrome before your Claude Code session:
-- **Windows:**
-  ```powershell
-  powershell -File scripts\start-chrome.ps1
-  ```
-- **macOS:**
-  ```bash
-  bash scripts/start-chrome.sh
-  ```
+| Platform | Command |
+|---|---|
+| Windows | `powershell -File scripts\start-chrome.ps1` |
+| macOS | `bash scripts/start-chrome.sh` |
 
----
+Use a normal user terminal for daily operations:
 
-## Admin CLI Reference (`u-chan`)
+```sh
+node dist/cli.js doctor
+node dist/cli.js unlock
+```
 
-The `u-chan` CLI provides control over service lifecycle, vault state, and security settings:
+Check the phrase in the genuine protected prompt before entering a password. Never send passwords, TOTP seeds/codes, or vault session keys to an AI conversation.
 
-| Command | Arguments | Elevated | Description |
-|---|---|---|---|
-| `install` | `[--mode <easy\|hardcore>] [--phrase <phrase>]` | Yes | Installs background service, sets up file ACLs, migrates Bitwarden CLI, and configures phrase and mode |
-| `uninstall` | None | Yes | Stops and removes background service and deletes all service data |
-| `unlock` | None | No | Launches protected prompt to enter Bitwarden master password; stores session in memory only |
-| `lock` | None | No | Clears Bitwarden session from memory and locks vault immediately |
-| `mode` | `<easy\|hardcore>` | No* | Switches approval mode. Downgrading Hardcore -> Easy requires master password in protected prompt |
-| `import-v1` | `[path]` | No* | Imports allowlist from V1 `allowlist.json`. Prompts user in protected window for each entry |
-| `audit` | `[limit]` | No | Displays recent entries from the service audit log (e.g. `u-chan audit 25`) |
-| `update` | None | No | Requests service self-update; validates npm signatures and SHA-512 integrity before swapping binaries |
+## Daily commands
 
-*\*Triggers protected prompt window rendered by privileged service.*
+The table uses the globally installed `u-chan` spelling; from source use `node dist/cli.js` with the same arguments.
 
-### Helper Scripts
+| Command | Purpose |
+|---|---|
+| `doctor [--json]` | Read-only diagnostic report and safe next actions |
+| `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
+| `unlock` | Request the protected master-password prompt |
+| `lock` | Forget the service's vault session and request vault lock |
+| `mode <easy\|hardcore>` | Change approval mode; lowering protection requires a protected password check |
+| `audit [limit]` | Read recent service audit records |
+| `import-v1 [path]` | Approve each imported entry in a protected window; imported grants are permanent |
+| `update` | Request a verified compatible package update; some changes require administrator reinstall |
+| `install [--mode <easy\|hardcore>] [--phrase <phrase>]` | Privileged install/reinstall; existing settings are preserved |
+| `uninstall` | Privileged removal of the service **and all its data** |
 
-| Script | Platform | Elevated | Description |
-|---|---|---|---|
-| `scripts\debug-install.bat` | Windows | Yes | One-click build, service installation, ACL configuration, and Bitwarden login |
-| `scripts\login-bw.bat` | Windows | Yes | Elevated prompt to log into Bitwarden inside the service storage (`%ProgramData%\u-chan-secrets\bw-data`) |
-| `scripts\start-chrome.ps1` | Windows | No | Starts dedicated Google Chrome instance with CDP on port 9222 |
-| `scripts/start-chrome.sh` | macOS | No | Starts dedicated Google Chrome instance with CDP on port 9222 |
+Doctor reports `pass`, `fail`, or `unknown`. Exit 0 means required checks passed; 1 means a required check failed; 2 means required checks remain unknown without a failure. A locked vault is a valid state with an unlock instruction. Unobservable Playwright sharing is advisory; a known mismatch fails doctor. Diagnosis never retrieves credentials, opens an unlock prompt, or changes configuration.
 
-### Daily Workflow
+Manage shows 20 grants per page. It cannot create or extend a grant. Unlock closes the management dialog before opening the protected password prompt.
 
-1. **Start Chrome:**
-   `powershell -File scripts\start-chrome.ps1` (or `bash scripts/start-chrome.sh`)
-2. **Unlock Vault:**
-   `u-chan unlock`
-   *Check that your anti-phishing secret phrase matches, then enter your master password. The session is held in service memory.*
-   *(Note: Ensure you completed the one-time Bitwarden login during installation).*
-3. **Run Claude Code:**
-   `claude`
-   *Claude can now authenticate to allowlisted websites on demand.*
-4. **Lock Vault:**
-   `u-chan lock`
-   *(Optional; vault automatically locks on reboot, service restart, or 12 hours of inactivity).*
+## MCP tools and approvals
 
----
+The five AI-facing tools remain:
 
-## Approval Modes & Brute-Force Defense
+| Tool | Behavior |
+|---|---|
+| `status` | Vault state, approval mode, and observable Playwright sharing |
+| `request_allow(domain, login_url, item, selectors?, grant?, success?)` | Request protected approval of the complete entry and duration |
+| `login(domain)` | Check/reserve the grant, sign in privately, and transfer permitted session state |
+| `list_allowed` | Show authorized item/hosts and permanent, timed, expired, or exhausted grant state |
+| `revoke(domain)` | Remove a grant without another approval; waits behind an earlier login |
 
-| Feature | Easy Mode | Hardcore Mode |
-|---|---|---|
-| **Platform Availability** | Windows only | Windows & macOS |
-| **Vault Unlock** | Master password in protected prompt | Master password in protected prompt |
-| **New Site Approval (`request_allow`)** | Click "OK" in protected prompt | Type master password in protected prompt |
-| **Allowlist Import (`import-v1`)** | Click "OK" per entry | Type master password per entry |
-| **Mode Downgrade (`hardcore` -> `easy`)** | N/A | Type master password in protected prompt |
-| **Prompt Timeout** | 2 minutes (auto-denied on timeout) | 2 minutes (auto-denied on timeout) |
-| **Rate-Limiting Lockout** | N/A | 5 failed attempts = 15-minute lockout |
+Use the Bitwarden item ID or name supplied by the user; do not guess a vault item. Optional selectors cover username, password, submit, and OTP fields.
 
-- **Downgrade Protection:** Switching from Hardcore to Easy requires typing your Bitwarden master password inside a protected prompt. Switching from Easy to Hardcore takes effect immediately.
-- **Lockout:** Entering an incorrect master password 5 times in succession locks all approval operations for 15 minutes to defeat local brute-force attacks.
+Example `request_allow` arguments:
 
----
+```json
+{
+  "domain": "example.com",
+  "login_url": "https://example.com/login",
+  "item": "the Bitwarden item ID supplied by the user",
+  "grant": { "kind": "timed", "minutes": 30 },
+  "success": { "url": "https://example.com/dashboard" }
+}
+```
 
-## MCP Tools Reference
+| Grant | Meaning |
+|---|---|
+| `{ "kind": "once" }` | One attempt after vault/Chrome preflight; failure after reservation still consumes it |
+| `{ "kind": "timed", "minutes": 30 }` | Future logins until the exact approved UTC expiry; integer range 1–1,440 minutes |
+| `{ "kind": "permanent" }` | Permanent future logins |
+| Omitted | Permanent, preserving existing callers; the protected prompt states this |
 
-Claude Code interacts with U-Chan Secrets via five standardized MCP tools:
+The AI proposes policy; the human authorizes it through the protected prompt. V3 clients refuse new options against a service that lacks the corresponding capability.
 
-- `status`: Reports Bitwarden vault lock status (`unlocked`, `locked`, `unauthenticated`), active approval mode (`easy`, `hardcore`), and Playwright CDP connectivity.
-- `request_allow(domain, login_url, item, selectors?)`: Requests user approval to allowlist a website. Shows registrable domain, URL, Bitwarden item name/id, and optional CSS selectors in a protected prompt window.
-- `login(domain)`: Signs in to an allowlisted site inside the service's headless browser using Bitwarden credentials and RFC 6238 TOTP, then injects cookies and localStorage into user Chrome.
-- `list_allowed`: Lists currently allowlisted domains along with their authorized Bitwarden items and hosts.
-- `revoke(domain)`: Removes a domain from the allowlist immediately without prompting (reducing permissions requires no human confirmation).
+Changing identity, hosts, selectors, duration, or success conditions requires a new approval. A timed request that expires while its window is open is refused. Detected backward-clock changes invalidate affected persisted timed grants; renewed approval is required. Clock changes while the service is stopped cannot be reconstructed.
 
-### 2FA / TOTP Support
+Easy mode exists only on Windows. Hardcore approvals require the master password. Protected prompts time out after two minutes. Five incorrect password attempts lock password-checked operations for 15 minutes.
 
-If a login flow presents a 2FA / TOTP challenge (`autocomplete="one-time-code"`, or input named `otp`/`2fa`/`code`), the service computes the code locally using RFC 6238 from the Bitwarden item's Authenticator key (supports SHA1/SHA256/SHA512, custom digits, and custom periods).
-Neither the secret seed nor the generated 6-digit code is ever exposed to the AI model or user Chrome.
+### Login results and 2FA
 
----
+A success condition is one exact approved HTTPS URL or a visible-element selector, such as `{ "selector": "#signed-in-account" }`. Choose evidence specific to the authenticated page: `body` or another generic element is not meaningful proof. The service checks the allowed host around evidence evaluation and transfer.
 
-## Migration from V1
+Without approved evidence, a generic completed flow may transfer filtered state but returns `ok: false` with `authentication_unconfirmed`. Inspect Chrome before continuing. An unmet configured condition prevents transfer. Other fixed result codes distinguish grant expiry/exhaustion, vault/Chrome availability, human verification, timeout, and transfer failure.
 
-If you previously used U-Chan Secrets V1:
+The service supports Bitwarden TOTP for recognized one-time-code fields. Passwords, TOTP seeds, and generated codes stay inside the privileged login flow. CAPTCHA, device verification, and unsupported challenges require the user; the AI must not request the underlying credentials.
 
-1. **Import Existing Allowlist:**
-   ```bash
-   u-chan import-v1
-   ```
-   *Because V1 stored `allowlist.json` in user-writable `%APPDATA%`, Claude or unprivileged scripts could have tampered with it. V2 displays each entry in a protected window for explicit human approval before adding it to the privileged database.*
+## Upgrade, backup, and rollback
 
-2. **Retire Old Scripts & Sessions:**
-   - Delete `%APPDATA%\u-chan-secrets\bw-session` (or `~/Library/Application Support/u-chan-secrets/bw-session`).
-   - Stop using `scripts\unlock.ps1` (replaced by `u-chan unlock`).
+Use a trusted administrator reinstall for the first V3 installation; the thin client alone does not upgrade native helpers or private executables. Windows reinstall stops the service, waits for shutdown, stages a fresh private program copy, preserves the old program under protected `#0 backup`, and reuses service registration. Existing settings and grants remain.
 
-3. **Log Out User-Side Bitwarden CLI:**
-   ```bash
-   bw logout
-   ```
-   *Ensures no active Bitwarden sessions or cached tokens remain accessible to user-level processes.*
+Before the first grant-state mutation, the service creates a protected `#0 backup/v2-before-v3` snapshot and a `schema.json` marker. The snapshot may contain privileged configuration and encrypted vault data: never copy it into a user-readable checkout. Incomplete backups block mutation rather than being overwritten.
 
----
+Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
 
-## Security & Attack Verification
+Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
 
-For detailed security policies, threat modeling, and vulnerability disclosures, see [SECURITY.md](SECURITY.md).
+For V1 data, use `u-chan import-v1 [path]`: each entry requires protected approval. Retire user-side Bitwarden sessions and the old `bw-session` file through a trusted migration process; never copy them into the service as trusted authorization.
 
-To manually test and verify U-Chan Secrets V2 resistance against attacks from a simulated rogue AI, follow the 9-point checklist in [docs/attack-checklist.md](docs/attack-checklist.md).
+## Validation and security
 
----
+```sh
+npm test
+npm run build
+```
+
+[CI](https://github.com/anchuwithdeadline/u-chan-secrets/actions/workflows/ci.yml) runs builds/tests on Windows and macOS. CodeQL checks source separately. Passing these checks does not prove actual SYSTEM/root prompt isolation or certify an installed service.
+
+Before release or reliance on the security boundary, perform the [manual attack checklist](docs/attack-checklist.md). See [validation and remaining native checks](docs/superpowers/research/2026-10-29-v3-validation.md), [security policy](SECURITY.md), and [V3 change notes](CHANGELOG.md).
 
 ## License
 

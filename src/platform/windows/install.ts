@@ -11,6 +11,9 @@ import { AUTH_HELPER_CSHARP } from './assets/auth-src.js'
 import { PROMPT_HELPER_CSHARP } from './assets/prompt-src.js'
 import { SERVICE_HOST_CSHARP } from './assets/service-src.js'
 import { generateRandomPhrase } from '../darwin/lifecycle.js'
+import { assertCompatibleState } from '../../service/state.js'
+import { stageBrowser } from '../runtime-assets.js'
+import { randomUUID } from 'node:crypto'
 
 export const defaultProgramData = (): string => {
   return process.env.ProgramData
@@ -37,6 +40,8 @@ export const defaultGetUserSid = async (exec: ExecFn = defaultExec): Promise<str
 }
 
 export interface WindowsInstallOptions {
+  stageBrowser?: (home: string) => Promise<void>
+  packageRoot?: string
   mode?: ApprovalMode
   phrase?: string
   adminCheck?: () => Promise<boolean>
@@ -64,6 +69,20 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   const binDir = path.join(programData, 'bin')
   const dataDir = path.join(programData, 'bw-data')
   const programDir = path.join(programData, 'program')
+  const stagedProgram = path.join(programData, 'program-stage-' + randomUUID())
+  const packageRoot = opts.packageRoot ?? fileURLToPath(new URL('../../../', import.meta.url))
+  const targetPackage = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'))
+  await assertCompatibleState(programData, Number(String(targetPackage.version).split('.')[0]))
+  const sm = opts.serviceManager ?? new ServiceManager(exec)
+  const priorState = typeof sm.status === 'function' ? await sm.status('u-chan-secrets') : 'not_installed'
+  if (priorState === 'running' || priorState === 'pending') {
+    await sm.stop('u-chan-secrets')
+    const deadline = Date.now() + 30000
+    while (!['stopped', 'not_installed'].includes(await sm.status('u-chan-secrets'))) {
+      if (Date.now() >= deadline) return { ok: false, message: 'service did not stop; installation was not staged' }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  }
 
   // 1. Check UAC level and warn if default
   try {
@@ -74,32 +93,41 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   } catch {}
 
   // 2. Create directories and stage admin-owned program copy
+  await fs.mkdir(programData, { recursive: true })
+  await setAdminOnlyAcl(programData, exec, false)
+  await fs.mkdir(programDir, { recursive: true })
+  await setAdminOnlyAcl(programDir, exec, false)
+  // Retire only V2's dependency junction; its user-side target remains untouched.
+  const legacyModules = path.join(programDir, 'node_modules')
+  if ((await fs.lstat(legacyModules).catch(() => undefined))?.isSymbolicLink()) await fs.unlink(legacyModules)
+  await setAdminOnlyAcl(programData, exec)
   await fs.mkdir(binDir, { recursive: true })
   await fs.mkdir(dataDir, { recursive: true })
-  await fs.mkdir(programDir, { recursive: true })
+  await fs.mkdir(stagedProgram)
   try {
-    const pkgRoot = fileURLToPath(new URL('../../../', import.meta.url))
-    await fs.cp( path.join(pkgRoot, 'dist'), path.join(programDir, 'dist'), { recursive: true })
-    await fs.cp( path.join(pkgRoot, 'package.json'), path.join(programDir, 'package.json'))
+    const pkgRoot = opts.packageRoot ?? fileURLToPath(new URL('../../../', import.meta.url))
+    await fs.cp( path.join(pkgRoot, 'dist'), path.join(stagedProgram, 'dist'), { recursive: true })
+    await fs.cp( path.join(pkgRoot, 'package.json'), path.join(stagedProgram, 'package.json'))
     const srcNm = path.join(pkgRoot, 'node_modules')
-    const destNm = path.join(programDir, 'node_modules')
-    try {
-      await fs.symlink(srcNm, destNm, 'junction')
-    } catch {
+    const destNm = path.join(stagedProgram, 'node_modules')
+    {
+      // Never let a privileged service execute a user-writable dependency junction.
+      const existing = await fs.lstat(destNm).catch(() => undefined)
+      if (existing?.isSymbolicLink()) await fs.unlink(destNm)
       await fs.cp(srcNm, destNm, {
         recursive: true,
+        dereference: true,
         filter: (src) => !/[\\/]\.(vite|vitest-cache|vite-temp)/.test(src),
-      }).catch(() => {})
+      })
     }
-  } catch {}
+  } catch {
+    return { ok: false, message: 'could not stage a private service program copy; service not started' }
+  }
 
   // 3. Set strict Administrator/SYSTEM ACLs
   await setAdminOnlyAcl(programData, exec)
-  await exec('icacls.exe', [binDir, '/grant', 'Users:(OI)(CI)RX']).catch(() => {})
 
-  // 4. Compile C# assets (kill any running helpers first)
-  await exec('taskkill.exe', ['/F', '/IM', 'prompt-helper.exe']).catch(() => {})
-  await exec('taskkill.exe', ['/F', '/IM', 'auth-helper.exe']).catch(() => {})
+  // 4. Compile C# assets after stopping the service; do not kill unrelated helpers.
   const authExe = path.join(binDir, 'auth-helper.exe')
   const promptExe = path.join(binDir, 'prompt-helper.exe')
   const serviceExe = path.join(binDir, 'service-host.exe')
@@ -116,7 +144,10 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   })
 
   // 4b. Write service target configuration so service host runs node + service bundle on boot
-  const nodeExe = process.execPath
+  const nodeExe = path.join(binDir, 'node.exe')
+  await fs.copyFile(process.execPath, nodeExe)
+  try { await (opts.stageBrowser ?? stageBrowser)(programData) }
+  catch { return { ok: false, message: 'could not stage private Chromium; run npx playwright install chromium from the trusted installation, then retry' } }
   const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
   await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 
@@ -138,7 +169,11 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     idleLockMs: 43200000,
     authorizedSid,
   }
-  await fs.writeFile(path.join(programData, 'settings.json'), JSON.stringify(settings, null, 2), 'utf8')
+  try {
+    await fs.writeFile(path.join(programData, 'settings.json'), JSON.stringify(settings, null, 2), { encoding: 'utf8', flag: 'wx' })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+  }
 
   // 6. Migrate user Bitwarden CLI
   const migration = await migrateBitwarden({ exec })
@@ -147,8 +182,20 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   }
 
   // 7. Register and start Windows service
-  const sm = opts.serviceManager ?? new ServiceManager(exec)
-  await sm.create('u-chan-secrets', serviceExe, 'U-Chan Secrets Service')
+  // Normalize ownership of newly copied native/runtime files before starting privileged code.
+  await setAdminOnlyAcl(programData, exec)
+  const backupParent = path.join(programData, '#0 backup')
+  await fs.mkdir(backupParent, { recursive: true })
+  const oldProgram = path.join(backupParent, 'program-before-' + randomUUID())
+  const root = path.resolve(programData) + path.sep
+  if (![programDir, stagedProgram, oldProgram].every(p => path.resolve(p).startsWith(root))) throw new Error('program staging path escaped service home')
+  const oldNames = await fs.readdir(programDir)
+  await fs.rename(programDir, oldProgram)
+  const movedNames = await fs.readdir(oldProgram)
+  if (oldNames.length !== movedNames.length || oldNames.some(name => !movedNames.includes(name))) throw new Error('program backup verification failed')
+  try { await fs.rename(stagedProgram, programDir) }
+  catch (e) { await fs.rename(oldProgram, programDir); throw e }
+  if (priorState === 'not_installed') await sm.create('u-chan-secrets', serviceExe, 'U-Chan Secrets Service')
   await sm.start('u-chan-secrets')
 
   return {

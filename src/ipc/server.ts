@@ -1,6 +1,8 @@
 import net from 'node:net'
 import type { ApprovalMode, ControlApi, CoreApi, Selectors, ToolResult } from '../core/types.js'
 import { FrameReader, FrameTooLarge, encode, type Method, type Response } from './protocol.js'
+import { isResultCode } from '../core/types.js'
+import { validOptions } from '../core/policy.js'
 
 type Api = CoreApi & ControlApi
 type Params = Record<string, unknown>
@@ -17,10 +19,17 @@ const selectorsOf = (v: unknown): Selectors | undefined | typeof BAD => {
 }
 
 const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | typeof BAD> = {
+  capabilities: api => api.capabilities ? api.capabilities() : Promise.resolve({ ok: false, message: 'unknown method' }),
+  diagnose: api => api.diagnose(),
+  manage: api => api.manage(),
   login: (api, p) => (str(p.domain) ? api.login(p.domain) : BAD),
   request_allow: (api, p) => {
     const sel = selectorsOf(p.selectors)
     if (sel === BAD || !str(p.domain) || !str(p.loginUrl) || !str(p.item)) return BAD
+    if (p.options !== undefined) {
+      if (!validOptions(p.options)) return BAD
+      return api.requestAllow(p.domain, p.loginUrl, p.item, sel, p.options)
+    }
     return api.requestAllow(p.domain, p.loginUrl, p.item, sel)
   },
   revoke: (api, p) => (str(p.domain) ? api.revoke(p.domain) : BAD),
@@ -46,8 +55,8 @@ async function dispatch(api: Api, msg: unknown): Promise<Response> {
   try {
     const r = handlers[msg.method as Method](api, msg.params)
     if (r === BAD) return { id, ok: false, message: 'bad request' }
-    const { ok, message } = await r
-    return { id, ok, message }
+    const { ok, message, code } = await r
+    return { id, ok, message, ...(isResultCode(code) ? { code } : {}) }
   } catch {
     return { id, ok: false, message: 'internal error' }
   }

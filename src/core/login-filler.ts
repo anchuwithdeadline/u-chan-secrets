@@ -3,7 +3,7 @@ import { isHostAllowed } from './allowlist.js'
 import { freshTotpCode } from './totp.js'
 import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
-export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
+export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed' | 'unconfirmed'; reason?: string; code?: import('./types.js').ResultCode }
 
 export const NEEDS_YOU = 'needs you — sign in by hand this time'
 const CHALLENGE_CSS =
@@ -66,6 +66,8 @@ export async function fillLogin(
     // No field appeared in the window: handled below as already logged in.
   })
   const [hasUser, hasPass] = await Promise.all([userBox.isVisible(), passBox.isVisible()])
+  const afterWaitHost = badHost()
+  if (afterWaitHost) return afterWaitHost
   if (!hasUser && !hasPass) return { status: 'already_logged_in' }
   if (!hasUser) return { status: 'failed', reason: 'username field not found' }
 

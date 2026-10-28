@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process'
 import { UserFacingError, type PromptRequest, type ProtectedPrompt } from '../../core/types.js'
 import { buildJxaPromptScript } from './prompt-script.js'
+import { buildJxaManagementScript } from './manage-script.js'
+import type { ManagementAction } from '../../core/types.js'
 import { readInstallUid } from './authorize.js'
 
 export interface PromptExecutor {
@@ -35,6 +37,16 @@ export class MacosProtectedPrompt implements ProtectedPrompt {
 
   constructor(private readonly opts: MacosPromptOptions = {}) {
     this.executor = opts.executor ?? defaultPromptExecutor
+  }
+  async manage(req: PromptRequest): Promise<ManagementAction | null> {
+    const uid = this.opts.installUid ?? await readInstallUid(this.opts.ownerPath)
+    if (uid === null || uid === undefined) return null
+    try {
+      const r = await this.executor.exec('/bin/launchctl', ['asuser', String(uid), '/usr/bin/osascript', '-l', 'JavaScript', '-e', buildJxaManagementScript(req)], DEFAULT_PROMPT_TIMEOUT_MS)
+      if (r.exitCode !== 0) return null
+      const action = JSON.parse(r.stdout)
+      return action && typeof action.action === 'string' ? action : null
+    } catch { return null }
   }
 
   async confirm(_req: PromptRequest): Promise<boolean> {

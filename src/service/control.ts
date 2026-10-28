@@ -6,11 +6,15 @@ import { UserFacingError, type AllowEntry, type ApprovalMode, type AuditEvent, t
 import type { AttemptLimiter } from './attempts.js'
 import type { PolicyApprover } from './policy-approver.js'
 import type { SettingsStore } from './settings.js'
+import { GrantCoordinator } from './grants.js'
 
 const BLOCKED = 'too many wrong passwords — try again in 15 minutes'
 const TITLE = 'U-Chan Secrets'
 
 interface Deps {
+  manage?: () => Promise<ToolResult>
+  grants?: GrantCoordinator
+  diagnose?: () => Promise<import('../core/doctor.js').ServiceDiagnostic>
   vault: BitwardenVault
   approver: PolicyApprover
   limiter: AttemptLimiter
@@ -23,7 +27,18 @@ interface Deps {
 
 /** Commands from the `u-chan` CLI. Audit entries never contain passwords or sessions. */
 export class ControlService implements ControlApi {
-  constructor(private readonly d: Deps) {}
+  private readonly grants: GrantCoordinator
+  constructor(private readonly d: Deps) { this.grants = d.grants ?? new GrantCoordinator(d.allowlist) }
+  async capabilities(): Promise<ToolResult> {
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants'] }) }
+  }
+  async diagnose(): Promise<ToolResult> {
+    try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }
+    catch { return { ok: false, message: 'service diagnostics unavailable' } }
+  }
+  async manage(): Promise<ToolResult> {
+    return this.d.manage ? this.d.manage() : { ok: false, message: 'native management is unavailable' }
+  }
 
   private async guarded(action: AuditEvent['action'], fn: () => Promise<ToolResult>): Promise<ToolResult> {
     let result: ToolResult
@@ -86,7 +101,7 @@ export class ControlService implements ControlApi {
   }
 
   importV1(entries: unknown[]): Promise<ToolResult> {
-    return this.guarded('import', async () => {
+    return this.grants.run(() => this.guarded('import', async () => {
       const valid = entries.filter(isValidEntry)
       let imported = 0
       for (const e of valid) {
@@ -107,13 +122,15 @@ export class ControlService implements ControlApi {
           `Bitwarden item: ${entry.item}`,
           `Hosts: ${entry.hosts.join(', ')}`,
           ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
+          'Duration: permanent future logins.',
+          'Revocation does not log out sessions already transferred to Chrome.',
         ])
         if (!ok) continue
         await this.d.allowlist.upsert(entry)
         imported++
       }
       return { ok: true, message: `imported ${imported} of ${valid.length}` }
-    })
+    }))
   }
 
   async audit(limit?: number): Promise<ToolResult> {

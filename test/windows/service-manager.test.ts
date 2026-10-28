@@ -145,6 +145,10 @@ SERVICE_NAME: u-chan-secrets
     const status = await sm.status('u-chan-secrets')
     expect(status).toBe('stopped')
   })
+  it('keeps STOP_PENDING distinct from a completed service shutdown', async () => {
+    const sm = new ServiceManager(async () => ({ stdout: 'STATE : 3 STOP_PENDING', stderr: '' }))
+    expect(await sm.status('u-chan-secrets')).toBe('pending')
+  })
 
   it('status returns not_installed when service does not exist', async () => {
     const fakeExec: ExecFn = vi.fn(async () => {

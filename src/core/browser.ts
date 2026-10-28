@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
 import type { SessionState } from '../service/session-transfer.js'
 import { UserFacingError, type SessionTarget } from './types.js'
+import { abortable } from './abort.js'
 
 export interface BrowserProvider {
   withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>
@@ -29,6 +30,7 @@ export const startChromeScript = (scriptPath: string) => (): Promise<void> =>
 
 /** Attaches to the user's Chrome over CDP so cookies are shared with Playwright MCP. Never closes the browser. */
 export class CdpBrowserProvider implements BrowserProvider {
+  private disconnecting?: Promise<void>
   private browser?: Browser
   private connecting?: Promise<Browser>
 
@@ -49,7 +51,7 @@ export class CdpBrowserProvider implements BrowserProvider {
 
   private async connect(autoLaunch: boolean): Promise<Browser> {
     try {
-      return await chromium.connectOverCDP(this.endpoint)
+      return await chromium.connectOverCDP(this.endpoint, { timeout: 5000 })
     } catch {
       if (!autoLaunch || !this.opts.launch) throw new UserFacingError('Chrome is not running — run scripts/start-chrome.ps1')
     }
@@ -68,23 +70,34 @@ export class CdpBrowserProvider implements BrowserProvider {
     throw fail()
   }
 
-  async withPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
-    const browser = await this.getBrowser(true)
+  disconnect(): Promise<void> {
+    return this.disconnecting ??= (async () => {
+      const browser = this.browser ?? await this.connecting?.catch(() => undefined)
+      this.browser = undefined
+      // For connectOverCDP, close disconnects this transport, not the user's Chrome process.
+      await browser?.close().catch(() => {})
+    })().finally(() => { this.disconnecting = undefined })
+  }
+  async withPage<T>(fn: (page: Page) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const browser = await abortable(this.getBrowser(true), signal, () => this.disconnect(), b => b.close())
     const context = browser.contexts()[0]
     if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
-    const page = await context.newPage()
+    const page = await abortable(context.newPage(), signal, () => this.disconnect(), p => p.close())
+    page.setDefaultTimeout(5000)
     try {
-      return await fn(page)
+      signal?.throwIfAborted()
+      return await abortable(fn(page), signal, () => this.disconnect())
     } finally {
-      await page.close().catch(() => {})
+      await abortable(page.close(), signal, () => this.disconnect()).catch(() => {})
     }
   }
 
-  async withContext<T>(fn: (context: BrowserContext) => Promise<T>): Promise<T> {
-    const browser = await this.getBrowser(true)
+  async withContext<T>(fn: (context: BrowserContext) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const browser = await abortable(this.getBrowser(true), signal, () => this.disconnect(), b => b.close())
     const context = browser.contexts()[0]
     if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
-    return fn(context)
+    signal?.throwIfAborted()
+    return abortable(fn(context), signal, () => this.disconnect())
   }
 
   async connected(): Promise<boolean> {
@@ -101,18 +114,23 @@ export class CdpBrowserProvider implements BrowserProvider {
 export class CdpSessionTarget implements SessionTarget {
   constructor(private readonly provider: CdpBrowserProvider) {}
 
-  userAgent(): Promise<string> {
-    return this.provider.withPage((page) => page.evaluate(() => navigator.userAgent))
+  userAgent(signal?: AbortSignal): Promise<string> {
+    return this.provider.withPage((page) => page.evaluate(() => navigator.userAgent), signal)
   }
+  cancel(): Promise<void> { return this.provider.disconnect() }
 
-  inject(state: SessionState): Promise<void> {
+  inject(state: SessionState, signal?: AbortSignal): Promise<void> {
     return this.provider.withContext(async (context) => {
+      signal?.throwIfAborted()
       await context.addCookies(state.cookies)
       for (const o of state.origins) {
+        signal?.throwIfAborted()
         if (!o.localStorage.length) continue
         const page = await context.newPage()
+        page.setDefaultTimeout(5000)
         try {
           await page.goto(o.origin, { waitUntil: 'commit' })
+          signal?.throwIfAborted()
           await page.evaluate(
             ({ origin, items }) => {
               if (location.origin !== origin) throw new Error('origin mismatch')
@@ -124,6 +142,6 @@ export class CdpSessionTarget implements SessionTarget {
           await page.close().catch(() => {})
         }
       }
-    })
+    }, signal)
   }
 }

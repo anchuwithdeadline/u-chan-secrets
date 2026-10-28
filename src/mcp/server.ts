@@ -10,7 +10,7 @@ async function run(fn: () => Promise<ToolResult>) {
   } catch {
     r = { ok: false, message: 'internal error' }
   }
-  return { content: [{ type: 'text' as const, text: r.message }], isError: !r.ok }
+  return { content: [{ type: 'text' as const, text: r.code ? `[${r.code}] ${r.message}` : r.message }], isError: !r.ok }
 }
 
 const INSTRUCTIONS = [
@@ -33,8 +33,8 @@ const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
 export function withPlaywrightStatus(core: CoreApi, check: () => Promise<PlaywrightCheck>): CoreApi {
   return {
     login: (domain) => core.login(domain),
-    requestAllow: (domain, loginUrl, item, selectors) =>
-      selectors ? core.requestAllow(domain, loginUrl, item, selectors) : core.requestAllow(domain, loginUrl, item),
+    requestAllow: (domain, loginUrl, item, selectors, options) =>
+      options ? core.requestAllow(domain, loginUrl, item, selectors, options) : selectors ? core.requestAllow(domain, loginUrl, item, selectors) : core.requestAllow(domain, loginUrl, item),
     revoke: (domain) => core.revoke(domain),
     listAllowed: () => core.listAllowed(),
     status: async () => {
@@ -49,6 +49,15 @@ const SELECTORS = z
   .object({ username: SELECTOR, password: SELECTOR, submit: SELECTOR, otp: SELECTOR })
   .partial()
   .strict()
+const GRANT = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('once') }).strict(),
+  z.object({ kind: z.literal('permanent') }).strict(),
+  z.object({ kind: z.literal('timed'), minutes: z.number().int().min(1).max(1440) }).strict(),
+])
+const SUCCESS = z.union([
+  z.object({ url: z.string().url().max(2048) }).strict(),
+  z.object({ selector: z.string().trim().min(1).max(1000) }).strict(),
+])
 
 export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
   const server = new McpServer({ name: 'u-chan-secrets', version }, { instructions: INSTRUCTIONS })
@@ -72,10 +81,10 @@ export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
         'Ask to allowlist a site for login. Shows a U-Chan window that the user must approve. ' +
         '`item` is the Bitwarden item name or id the user told you; never guess it. Prefer the item id (a name is a search and may match another item). ' +
         '`selectors` (optional) are CSS selectors for the username, password, submit and otp fields when the form is unusual.',
-      inputSchema: { domain: z.string(), login_url: z.string(), item: z.string(), selectors: SELECTORS.optional() },
+      inputSchema: { domain: z.string(), login_url: z.string(), item: z.string(), selectors: SELECTORS.optional(), grant: GRANT.optional(), success: SUCCESS.optional() },
     },
-    ({ domain, login_url, item, selectors }) =>
-      run(() => (selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))),
+    ({ domain, login_url, item, selectors, grant, success }) =>
+      run(() => (grant || success ? core.requestAllow(domain, login_url, item, selectors, { ...(grant ? { grant } : {}), ...(success ? { success } : {}) }) : selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))),
   )
 
   server.registerTool(

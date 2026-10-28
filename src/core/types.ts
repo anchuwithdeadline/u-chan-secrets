@@ -2,6 +2,10 @@ import type { FillOutcome } from './login-filler.js'
 import type { SessionState } from '../service/session-transfer.js'
 
 export interface AllowEntry {
+  grantId?: string
+  success?: SuccessCondition
+  expiresAt?: string
+  remainingUses?: number
   domain: string
   hosts: string[]
   loginUrl: string
@@ -12,8 +16,8 @@ export interface AllowEntry {
 export interface Credentials { username: string; password: string; totp?: string }
 export type VaultStatus = 'unlocked' | 'locked' | 'unauthenticated' | 'unavailable'
 export interface VaultClient {
-  status(): Promise<VaultStatus>
-  getLogin(item: string): Promise<Credentials>
+  status(signal?: AbortSignal): Promise<VaultStatus>
+  getLogin(item: string, signal?: AbortSignal): Promise<Credentials>
   unlock(password: string): Promise<boolean>
   lock(): Promise<void>
 }
@@ -31,17 +35,28 @@ export interface AuditLog {
 }
 export type Selectors = NonNullable<AllowEntry['selectors']>
 export type ApprovalMode = 'easy' | 'hardcore'
-export type ToolResult = { ok: boolean; message: string }
+export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
+export type ResultCode = typeof RESULT_CODES[number]
+export const isResultCode = (value: unknown): value is ResultCode => typeof value === 'string' && (RESULT_CODES as readonly string[]).includes(value)
+export type ToolResult = { ok: boolean; message: string; code?: ResultCode }
+export type GrantPolicy = { kind: 'once' } | { kind: 'timed'; minutes: number } | { kind: 'permanent' }
+export type SuccessCondition = { url: string } | { selector: string }
+export interface AllowOptions { grant?: GrantPolicy; success?: SuccessCondition }
 /** Message is safe to return to the AI. */
-export class UserFacingError extends Error {}
+export class UserFacingError extends Error {
+  constructor(message: string, public readonly code?: ResultCode) { super(message) }
+}
 export interface CoreApi {
   login(domain: string): Promise<ToolResult>
-  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors): Promise<ToolResult>
+  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult>
   revoke(domain: string): Promise<ToolResult>
   listAllowed(): Promise<ToolResult>
   status(): Promise<ToolResult>
 }
 export interface ControlApi {
+  manage(): Promise<ToolResult>
+  diagnose(): Promise<ToolResult>
+  capabilities(): Promise<ToolResult>
   unlock(): Promise<ToolResult>
   lock(): Promise<ToolResult>
   setMode(mode: ApprovalMode): Promise<ToolResult>
@@ -52,19 +67,24 @@ export interface ControlApi {
 export interface ServiceRestarter {
   restart(): Promise<void>
 }
-export interface PromptRequest { title: string; lines: string[]; phrase: string }
+export interface PromptRequest { title: string; lines: string[]; phrase: string; domains?: string[] }
+export type ManagementAction = { action: 'close' | 'refresh' | 'lock' | 'unlock' | 'revoke' | 'next' | 'previous'; domain?: string }
 /** Platform window owned by the service. Close, timeout or error → false / null. */
 export interface ProtectedPrompt {
+  manage?(req: PromptRequest): Promise<ManagementAction | null>
   confirm(req: PromptRequest): Promise<boolean>
   askPassword(req: PromptRequest): Promise<string | null>
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
 export interface SessionTarget {
-  userAgent(): Promise<string>
-  inject(state: SessionState): Promise<void>
+  userAgent(signal?: AbortSignal): Promise<string>
+  inject(state: SessionState, signal?: AbortSignal): Promise<void>
+  cancel?(): Promise<void>
 }
 export interface LoginRunner {
-  run(entry: AllowEntry, getCreds: () => Promise<Credentials>): Promise<FillOutcome>
+  cancel?(): Promise<void>
+  preflight?(signal?: AbortSignal): Promise<void>
+  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> }): Promise<FillOutcome>
 }
 
 export interface RegistryDist {

@@ -7,6 +7,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using System.Security.Principal;
+using System.IO.Pipes;
+using System.Security.AccessControl;
 
 namespace UChan.Platform.Windows.Assets
 {
@@ -17,6 +20,27 @@ namespace UChan.Platform.Windows.Assets
 
         [DllImport("wtsapi32.dll", SetLastError = true)]
         private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SetTokenInformation(IntPtr token, int kind, ref uint value, int size);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateDesktop(string name, IntPtr device, IntPtr mode, uint flags, uint access, ref SECURITY_ATTRIBUTES attributes);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetThreadDesktop(IntPtr desktop);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SwitchDesktop(IntPtr desktop);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseDesktop(IntPtr desktop);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string sddl, uint revision, out IntPtr descriptor, out uint size);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr LocalFree(IntPtr memory);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateProcess(IntPtr process, uint code);
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern bool DuplicateTokenEx(
@@ -71,7 +95,7 @@ namespace UChan.Platform.Windows.Assets
         private static extern bool CreateProcessAsUser(
             IntPtr hToken,
             string lpApplicationName,
-            string lpCommandLine,
+            StringBuilder lpCommandLine,
             ref SECURITY_ATTRIBUTES lpProcessAttributes,
             ref SECURITY_ATTRIBUTES lpThreadAttributes,
             bool bInheritHandles,
@@ -121,169 +145,120 @@ namespace UChan.Platform.Windows.Assets
         [STAThread]
         public static int Main(string[] args)
         {
-            if (Process.GetCurrentProcess().SessionId == 0)
+            // Never collect secrets or accept approval in the desktop user's identity.
+            if (!WindowsIdentity.GetCurrent().IsSystem) return 1;
+            if (args.Length >= 2 && args[0] == "--relay")
             {
-                return RelayToActiveSession(args);
+                try { args = Encoding.UTF8.GetString(Convert.FromBase64String(args[1])).Split((char)0); }
+                catch { return 1; }
             }
-            return RunDialog(args);
+            if (Process.GetCurrentProcess().SessionId == 0) return RelayToActiveSession(args);
+            for (int i = 0; i + 1 < args.Length; i++)
+            {
+                if (args[i] != "--output-pipe") continue;
+                using (NamedPipeClientStream pipe = new NamedPipeClientStream(".", args[i + 1], PipeDirection.Out))
+                {
+                    try
+                    {
+                        pipe.Connect(10000);
+                        using (StreamWriter writer = new StreamWriter(pipe, new UTF8Encoding(false)))
+                        {
+                            writer.AutoFlush = true;
+                            Console.SetOut(writer);
+                            return RunProtectedDialog(args);
+                        }
+                    }
+                    catch { return 1; }
+                }
+            }
+            return 1;
+        }
+
+        private static int RunProtectedDialog(string[] args)
+        {
+            IntPtr original = OpenInputDesktop(0, false, 0x0100);
+            if (original == IntPtr.Zero) return 1;
+            IntPtr descriptor = IntPtr.Zero;
+            IntPtr desktop = IntPtr.Zero;
+            uint size;
+            try
+            {
+                if (!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;GA;;;SY)", 1, out descriptor, out size)) return 1;
+                SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
+                sa.nLength = Marshal.SizeOf(sa);
+                sa.lpSecurityDescriptor = descriptor;
+                desktop = CreateDesktop("UChan-" + Guid.NewGuid().ToString("N"), IntPtr.Zero, IntPtr.Zero, 0, 0x01FF, ref sa);
+                if (desktop == IntPtr.Zero || !SetThreadDesktop(desktop) || !SwitchDesktop(desktop)) return 1;
+                return RunDialog(args);
+            }
+            finally
+            {
+                SwitchDesktop(original);
+                if (desktop != IntPtr.Zero) CloseDesktop(desktop);
+                CloseDesktop(original);
+                if (descriptor != IntPtr.Zero) LocalFree(descriptor);
+            }
         }
 
         private static int RelayToActiveSession(string[] args)
         {
             uint sessionId = WTSGetActiveConsoleSessionId();
-            if (sessionId == 0xFFFFFFFF)
+            if (sessionId == 0xFFFFFFFF) return 1;
+            IntPtr source;
+            if (!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x000B, out source)) return 1;
+            IntPtr token;
+            bool duplicated = DuplicateTokenEx(source, 0x10000000, IntPtr.Zero, 2, 1, out token);
+            CloseHandle(source);
+            if (!duplicated) return 1;
+            try
             {
-                Console.Error.WriteLine("No active user session");
-                return 1;
-            }
-
-            IntPtr hUserToken;
-            if (!WTSQueryUserToken(sessionId, out hUserToken))
-            {
-                Console.Error.WriteLine("WTSQueryUserToken failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
-            }
-
-            IntPtr hPrimaryToken;
-            if (!DuplicateTokenEx(hUserToken, 0x10000000, IntPtr.Zero, 2, 1, out hPrimaryToken))
-            {
-                CloseHandle(hUserToken);
-                Console.Error.WriteLine("DuplicateTokenEx failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
-            }
-            CloseHandle(hUserToken);
-
-            SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
-            sa.nLength = Marshal.SizeOf(sa);
-            sa.bInheritHandle = true;
-
-            IntPtr hReadPipe, hWritePipe;
-            if (!CreatePipe(out hReadPipe, out hWritePipe, ref sa, 0))
-            {
-                CloseHandle(hPrimaryToken);
-                return FallbackWtsMessage(args, sessionId);
-            }
-
-            SetHandleInformation(hReadPipe, 1, 0);
-
-            STARTUPINFO si = new STARTUPINFO();
-            si.cb = Marshal.SizeOf(si);
-            si.lpDesktop = @"winsta0\\default";
-            si.dwFlags = 0x00000100;
-            si.hStdOutput = hWritePipe;
-            si.hStdError = hWritePipe;
-
-            IntPtr lpEnv = IntPtr.Zero;
-            CreateEnvironmentBlock(out lpEnv, hPrimaryToken, false);
-
-            string exePath = Process.GetCurrentProcess().MainModule.FileName;
-            StringBuilder sb = new StringBuilder();
-            sb.Append("\\"").Append(exePath).Append("\\"");
-            foreach (string a in args)
-            {
-                sb.Append(" \\"").Append(a.Replace("\\"", "\\\\\\\"")).Append("\\"");
-            }
-
-            PROCESS_INFORMATION pi;
-            bool created = CreateProcessAsUser(
-                hPrimaryToken,
-                null,
-                sb.ToString(),
-                ref sa,
-                ref sa,
-                true,
-                0x00000400, // CREATE_UNICODE_ENVIRONMENT
-                lpEnv,
-                null,
-                ref si,
-                out pi
-            );
-
-            CloseHandle(hWritePipe);
-            CloseHandle(hPrimaryToken);
-            if (lpEnv != IntPtr.Zero)
-            {
-                DestroyEnvironmentBlock(lpEnv);
-            }
-
-            if (!created)
-            {
-                CloseHandle(hReadPipe);
-                Console.Error.WriteLine("CreateProcessAsUser failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
-            }
-
-            CloseHandle(pi.hThread);
-
-            StringBuilder output = new StringBuilder();
-            byte[] buf = new byte[1024];
-            uint bytesRead;
-            while (ReadFile(hReadPipe, buf, (uint)buf.Length, out bytesRead, IntPtr.Zero) && bytesRead > 0)
-            {
-                output.Append(Encoding.UTF8.GetString(buf, 0, (int)bytesRead));
-            }
-            CloseHandle(hReadPipe);
-
-            WaitForSingleObject(pi.hProcess, 130000);
-            uint exitCode;
-            GetExitCodeProcess(pi.hProcess, out exitCode);
-            CloseHandle(pi.hProcess);
-
-            if (exitCode == 0)
-            {
-                if (output.Length > 0)
+                if (!SetTokenInformation(token, 12, ref sessionId, 4)) return 1;
+                string name = "UChanPrompt-" + Guid.NewGuid().ToString("N");
+                PipeSecurity security = new PipeSecurity();
+                security.SetAccessRuleProtection(true, false);
+                security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
+                using (NamedPipeServerStream pipe = new NamedPipeServerStream(name, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 4096, 4096, security))
                 {
-                    Console.Write(output.ToString());
+                    List<string> childArgs = new List<string>(args);
+                    childArgs.Add("--output-pipe");
+                    childArgs.Add(name);
+                    string payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join(((char)0).ToString(), childArgs.ToArray())));
+                    string executable = Process.GetCurrentProcess().MainModule.FileName;
+                    StringBuilder command = new StringBuilder();
+                    command.Append((char)34).Append(executable).Append((char)34).Append(" --relay ").Append(payload);
+                    SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
+                    sa.nLength = Marshal.SizeOf(sa);
+                    STARTUPINFO si = new STARTUPINFO();
+                    si.cb = Marshal.SizeOf(si);
+                    si.lpDesktop = string.Concat("winsta0", (char)92, "default");
+                    PROCESS_INFORMATION pi;
+                    // Cross-session handles cannot be inherited; use a SYSTEM-only named pipe.
+                    if (!CreateProcessAsUser(token, executable, command, ref sa, ref sa, false, 0x00000400, IntPtr.Zero, null, ref si, out pi)) return 1;
+                    CloseHandle(pi.hThread);
+                    try
+                    {
+                        if (!pipe.WaitForConnectionAsync().Wait(10000)) return 1;
+                        using (StreamReader reader = new StreamReader(pipe, Encoding.UTF8))
+                        {
+                            var reply = reader.ReadToEndAsync();
+                            if (!reply.Wait(125000) || reply.Result.Length > 2048) return 1;
+                            if (WaitForSingleObject(pi.hProcess, 5000) != 0) return 1;
+                            uint code;
+                            if (!GetExitCodeProcess(pi.hProcess, out code) || code != 0) return 1;
+                            Console.Write(reply.Result);
+                            return 0;
+                        }
+                    }
+                    catch { return 1; }
+                    finally
+                    {
+                        uint code;
+                        if (GetExitCodeProcess(pi.hProcess, out code) && code == 259) TerminateProcess(pi.hProcess, 1);
+                        CloseHandle(pi.hProcess);
+                    }
                 }
-                return 0;
             }
-
-            // If child process failed or could not start, and this is a confirm prompt, fall back to WTSSendMessage
-            return FallbackWtsMessage(args, sessionId);
-        }
-
-        private static int FallbackWtsMessage(string[] args, uint sessionId)
-        {
-            string mode = "confirm";
-            string title = "U-Chan Secrets";
-            string phrase = "u-chan-phrase";
-            string rawLines = "";
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i] == "--mode" && i + 1 < args.Length) mode = args[++i];
-                else if (args[i] == "--title" && i + 1 < args.Length) title = args[++i];
-                else if (args[i] == "--phrase" && i + 1 < args.Length) phrase = args[++i];
-                else if (args[i] == "--lines" && i + 1 < args.Length) rawLines = args[++i];
-            }
-
-            if (mode != "confirm")
-            {
-                return 1;
-            }
-
-            List<string> lines = ParseLines(rawLines);
-            string msg = "Phrase: " + phrase + "\\n\\n" + string.Join("\\n", lines.ToArray()) + "\\n\\nApprove this action?";
-            int response;
-            bool sent = WTSSendMessage(
-                IntPtr.Zero,
-                (int)sessionId,
-                title,
-                title.Length * 2,
-                msg,
-                msg.Length * 2,
-                0x00000004 | 0x00000040 | 0x00040000, // MB_YESNO | MB_ICONQUESTION | MB_TOPMOST
-                120,
-                out response,
-                true
-            );
-
-            // response == 6 is IDYES
-            if (sent && response == 6)
-            {
-                return 0;
-            }
-            return 1;
+            finally { CloseHandle(token); }
         }
 
         private static int RunDialog(string[] args)
@@ -305,6 +280,14 @@ namespace UChan.Platform.Windows.Assets
             }
 
             List<string> lines = ParseLines(rawLines);
+
+            if (mode == "manage")
+            {
+                List<string> domains = new List<string>();
+                for (int i = 0; i + 1 < args.Length; i++)
+                    if (args[i] == "--domains") domains = ParseLines(args[i + 1]);
+                return RunManagement(title, phrase, lines, domains);
+            }
 
             Form form = new Form();
             form.Text = title;
@@ -363,6 +346,7 @@ namespace UChan.Platform.Windows.Assets
                 txtPassword.Location = new Point(16, yOffset);
                 txtPassword.Size = new Size(428, 24);
                 txtPassword.UseSystemPasswordChar = true;
+                txtPassword.MaxLength = 512;
                 contentPanel.Controls.Add(txtPassword);
             }
 
@@ -438,6 +422,90 @@ namespace UChan.Platform.Windows.Assets
             }
 
             return 1;
+        }
+
+        private static int RunManagement(string title, string phrase, List<string> lines, List<string> domains)
+        {
+            using (Form form = new Form())
+            using (Timer timer = new Timer())
+            {
+                form.Text = title;
+                form.Font = new Font("Segoe UI", 10f);
+                form.StartPosition = FormStartPosition.CenterScreen;
+                form.ClientSize = new Size(780, 650);
+                form.MinimumSize = new Size(640, 520);
+                form.TopMost = true;
+                TableLayoutPanel layout = new TableLayoutPanel();
+                layout.Dock = DockStyle.Fill;
+                layout.Padding = new Padding(16);
+                layout.ColumnCount = 1;
+                layout.RowCount = 5;
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+                Label banner = new Label();
+                banner.Text = "Phrase: " + phrase;
+                banner.Dock = DockStyle.Fill;
+                banner.Font = new Font(form.Font.FontFamily, 12, FontStyle.Bold);
+                banner.ForeColor = Color.FromArgb(16, 44, 87);
+                TextBox details = new TextBox();
+                details.Multiline = true;
+                details.ReadOnly = true;
+                details.TabStop = false;
+                details.HideSelection = true;
+                details.WordWrap = true;
+                details.ScrollBars = ScrollBars.Vertical;
+                details.Dock = DockStyle.Fill;
+                details.Text = string.Join(Environment.NewLine, lines.ToArray());
+                Label label = new Label();
+                label.Text = "Select the exact domain to revoke:";
+                label.Dock = DockStyle.Fill;
+                ComboBox select = new ComboBox();
+                select.DropDownStyle = ComboBoxStyle.DropDownList;
+                select.Dock = DockStyle.Fill;
+                select.Items.AddRange(domains.ToArray());
+                if (domains.Count > 0) select.SelectedIndex = 0;
+                FlowLayoutPanel buttons = new FlowLayoutPanel();
+                buttons.Dock = DockStyle.Fill;
+                buttons.FlowDirection = FlowDirection.RightToLeft;
+                string[] commands = { "close", "revoke", "unlock", "lock", "next", "previous", "refresh" };
+                string[] labels = { "Close", "Revoke selected", "Unlock", "Lock", "Next", "Previous", "Refresh" };
+                for (int i = 0; i < commands.Length; i++)
+                {
+                    string command = commands[i];
+                    Button button = new Button();
+                    button.Text = labels[i];
+                    button.AutoSize = true;
+                    button.Height = 32;
+                    button.Enabled = command != "revoke" || domains.Count > 0;
+                    button.Click += delegate {
+                        string value = command;
+                        if (command == "revoke")
+                        {
+                            if (select.SelectedIndex < 0 || select.SelectedIndex >= domains.Count) return;
+                            value += ":" + domains[select.SelectedIndex];
+                        }
+                        Console.Write(value);
+                        form.DialogResult = DialogResult.OK;
+                        form.Close();
+                    };
+                    buttons.Controls.Add(button);
+                    if (command == "close") form.CancelButton = button;
+                    if (command == "refresh") form.AcceptButton = button;
+                }
+                layout.Controls.Add(banner, 0, 0);
+                layout.Controls.Add(details, 0, 1);
+                layout.Controls.Add(label, 0, 2);
+                layout.Controls.Add(select, 0, 3);
+                layout.Controls.Add(buttons, 0, 4);
+                form.Controls.Add(layout);
+                timer.Interval = 120000;
+                timer.Tick += delegate { form.Close(); };
+                form.Shown += delegate { select.Focus(); timer.Start(); };
+                return form.ShowDialog() == DialogResult.OK ? 0 : 1;
+            }
         }
 
         private static List<string> ParseLines(string raw)

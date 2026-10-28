@@ -17,6 +17,7 @@ afterAll(async () => {
 })
 
 const entry = (): AllowEntry => ({
+  success: { selector: 'h1' },
   domain: '127.0.0.1', hosts: ['127.0.0.1'], loginUrl: `http://127.0.0.1:${fx.port}/single`, item: 'x',
 })
 const hostCheck = (url: string) => new URL(url).hostname === '127.0.0.1'
@@ -62,6 +63,6 @@ describe('IsolatedLogin', () => {
   it('isolated-login: inject failure', async () => {
     const target = mkTarget(vi.fn(async (_s: SessionState) => { throw new Error('secret-detail') }))
     const r = await new IsolatedLogin({ launch: async () => browser, target, timeoutMs: 5000, hostCheck }).run(entry(), creds)
-    expect(r).toEqual({ status: 'failed', reason: 'could not hand the session to Chrome' })
+    expect(r).toEqual({ status: 'failed', reason: 'could not hand the session to Chrome', code: 'session_transfer_failed' })
   }, 30000)
 })

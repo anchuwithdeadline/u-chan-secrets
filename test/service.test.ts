@@ -39,7 +39,7 @@ afterEach(async () => {
 
 describe('login', () => {
   it('rejects unknown domain without touching vault', async () => {
-    expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain is not allowlisted — use request_allow' })
+    expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain is not allowlisted — use request_allow', code: 'grant_missing' })
     expect(vault.getLogin).not.toHaveBeenCalled()
   })
   it('uses the runner with the stored entry', async () => {
@@ -117,8 +117,10 @@ describe('requestAllow', () => {
     expect(approve).toHaveBeenCalledWith('U-Chan Secrets', [
       'Allow the AI to sign in?', 'Domain: example.com', 'Login URL: https://auth.example.com/login',
       'Bitwarden item: ex', 'Hosts: example.com, auth.example.com',
+      'Duration: permanent future logins.',
+      'Expiry and revocation do not log out sessions already transferred to Chrome.',
     ])
-    expect(events[0].result).toBe('approved')
+    expect(events[0].result).toBe('approved; permanent')
   })
   it('accumulates hosts from existing entry', async () => {
     await store.upsert(entry)
@@ -128,7 +130,7 @@ describe('requestAllow', () => {
   it('strips control characters before the dialog', async () => {
     await svc.requestAllow('example.com\r\n', 'https://example.com/login ', 'it\nem\u0007\t')
     const lines = approve.mock.calls[0][1] as string[]
-    expect(lines).toHaveLength(5)
+    expect(lines).toHaveLength(7)
     expect(lines[3]).toBe('Bitwarden item: item')
     expect((await store.list())[0].item).toBe('item')
   })
@@ -186,7 +188,7 @@ describe('revoke / list / status', () => {
   })
   it('lists entries', async () => {
     await store.upsert({ ...entry, hosts: ['example.com', 'a.example.com'] })
-    expect(await svc.listAllowed()).toEqual({ ok: true, message: 'example.com — ex — example.com, a.example.com' })
+    expect(await svc.listAllowed()).toEqual({ ok: true, message: 'example.com — ex — example.com, a.example.com — permanent' })
   })
   it('status shows mode', async () => {
     expect(await svc.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: hardcore' })

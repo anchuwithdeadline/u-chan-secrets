@@ -3,20 +3,14 @@ import { setAdminOnlyAcl, type ExecFn } from '../../src/platform/windows/acl.js'
 import { UserFacingError } from '../../src/core/types.js'
 
 describe('setAdminOnlyAcl', () => {
-  it('invokes icacls with inheritance removal and admin-only grant', async () => {
+  it('invokes a bounded native ACL operation without shell-interpolating the directory', async () => {
     const fakeExec: ExecFn = vi.fn(async (_file: string, _args: string[]) => {
       return { stdout: 'successfully processed 1 files', stderr: '' }
     })
 
     await setAdminOnlyAcl('C:\\ProgramData\\u-chan-secrets', fakeExec)
 
-    expect(fakeExec).toHaveBeenCalledWith('icacls.exe', [
-      'C:\\ProgramData\\u-chan-secrets',
-      '/inheritance:r',
-      '/grant:r',
-      'SYSTEM:(OI)(CI)F',
-      'Administrators:(OI)(CI)F',
-    ])
+    expect(fakeExec).toHaveBeenCalledWith('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)])
   })
 
   it('propagates icacls failure as user-facing error when exec rejects', async () => {

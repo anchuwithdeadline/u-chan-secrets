@@ -5,6 +5,10 @@ import { UserFacingError } from '../src/core/types.js'
 import { platformAdapters } from '../src/platform/index.js'
 
 describe('macOS protected prompt', () => {
+  it('returns management actions while keeping approval in the protected password flow', async () => {
+    const prompt = new MacosProtectedPrompt({ installUid: 501, executor: { exec: async () => ({ stdout: '{"action":"unlock"}', exitCode: 0 }) } })
+    expect(await prompt.manage({ title: 'Manage', phrase: 'phrase', lines: [], domains: [] })).toEqual({ action: 'unlock' })
+  })
   const req = {
     title: 'U-Chan Approval',
     lines: ['Domain: github.com', 'Item: GitHub Personal'],

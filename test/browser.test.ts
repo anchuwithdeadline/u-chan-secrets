@@ -29,6 +29,19 @@ afterAll(async () => {
 })
 
 describe('CdpBrowserProvider', () => {
+  it('cancels stalled CDP evaluation without closing the shared Chrome process', async () => {
+    const provider = new CdpBrowserProvider(`http://127.0.0.1:${port}`)
+    const controller = new AbortController()
+    const operation = provider.withPage(async page => {
+      const timer = setTimeout(() => controller.abort(), 50)
+      try { return await page.evaluate(() => new Promise(() => {})) }
+      finally { clearTimeout(timer) }
+    }, controller.signal)
+    await expect(operation).rejects.toThrow()
+    expect(chrome.isConnected()).toBe(true)
+    const context = await chrome.newContext()
+    await context.close()
+  })
   it('shares cookies with an independent CDP connection', async () => {
     const endpoint = `http://127.0.0.1:${port}`
     const provider = new CdpBrowserProvider(endpoint)
