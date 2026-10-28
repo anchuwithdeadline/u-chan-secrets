@@ -2,6 +2,7 @@ import type net from 'node:net'
 import { UserFacingError, type ProtectedPrompt } from '../core/types.js'
 import { windowsPlatformAdapters } from './windows/index.js'
 import { createDarwinAuthorizer } from './darwin/authorize.js'
+import { MacosProtectedPrompt } from './darwin/prompt.js'
 import type { PeerCredResolver } from './darwin/peercred.js'
 
 export interface PlatformAdapters {
@@ -24,14 +25,11 @@ export function darwinPlatformAdapters(opts?: PlatformAdapterOptions): PlatformA
     installUid: opts?.installUid,
     resolvePeerCred: opts?.resolvePeerCred,
   })
-  const prompt: ProtectedPrompt = {
-    confirm: async () => {
-      throw new UserFacingError('click-to-approve easy mode is disabled on macOS')
-    },
-    askPassword: async () => {
-      throw new UserFacingError('macOS protected prompt not implemented yet')
-    },
-  }
+  const executor = opts?.execPrompt ? { exec: opts.execPrompt } : undefined
+  const prompt = new MacosProtectedPrompt({
+    installUid: opts?.installUid,
+    executor,
+  })
   return { prompt, authorize }
 }
 
