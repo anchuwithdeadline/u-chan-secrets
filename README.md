@@ -68,6 +68,15 @@ flowchart TD
 
 ### Windows Installation
 
+#### Option A: Quick Automated Setup (Recommended)
+If installing from source or setting up locally, right-click and run as Administrator (or execute from an elevated terminal):
+```cmd
+scripts\debug-install.bat
+```
+*This elevated script automates stopping old helper instances, compiling native C# helper assets, applying file permissions, installing and starting the service, and prompting for your Bitwarden vault login.*
+
+#### Option B: Manual Installation
+
 1. Install the CLI package globally:
    ```cmd
    npm install -g u-chan-secrets
@@ -78,6 +87,13 @@ flowchart TD
    u-chan install
    ```
    *The installer compiles native C# helper assets, configures file ACLs on `%ProgramData%\u-chan-secrets`, registers the `u-chan-secrets` Windows service under `SYSTEM`, sets up your anti-phishing secret phrase, and prompts for your initial approval mode (Easy or Hardcore).*
+
+3. Log in to Bitwarden for the privileged service store:
+   Because the service runs in isolated system storage (`%ProgramData%\u-chan-secrets\bw-data`), log in to Bitwarden once using the helper script:
+   ```cmd
+   scripts\login-bw.bat
+   ```
+   *(Or from an elevated command prompt: `set BITWARDENCLI_APPDATA_DIR=%ProgramData%\u-chan-secrets\bw-data && bw login`)*
 
 > [!CRITICAL]
 > **Windows UAC Security Notice**
@@ -99,6 +115,12 @@ flowchart TD
    sudo u-chan install
    ```
    *The installer creates `/Library/Application Support/u-chan-secrets` with `0700` root permissions, writes the launchd plist to `/Library/LaunchDaemons/com.uchan.secrets.plist`, starts the daemon, configures your anti-phishing secret phrase, and migrates Bitwarden CLI sessions.*
+
+3. Log in to Bitwarden for the daemon store:
+   Because the daemon uses isolated root storage, run a one-time login for the service store:
+   ```bash
+   sudo BITWARDENCLI_APPDATA_DIR="/Library/Application Support/u-chan-secrets/bw-data" bw login
+   ```
 
 > [!NOTE]
 > **macOS: Hardcore Mode Enforced**
@@ -160,6 +182,15 @@ The `u-chan` CLI provides control over service lifecycle, vault state, and secur
 
 *\*Triggers protected prompt window rendered by privileged service.*
 
+### Helper Scripts
+
+| Script | Platform | Elevated | Description |
+|---|---|---|---|
+| `scripts\debug-install.bat` | Windows | Yes | One-click build, service installation, ACL configuration, and Bitwarden login |
+| `scripts\login-bw.bat` | Windows | Yes | Elevated prompt to log into Bitwarden inside the service storage (`%ProgramData%\u-chan-secrets\bw-data`) |
+| `scripts\start-chrome.ps1` | Windows | No | Starts dedicated Google Chrome instance with CDP on port 9222 |
+| `scripts/start-chrome.sh` | macOS | No | Starts dedicated Google Chrome instance with CDP on port 9222 |
+
 ### Daily Workflow
 
 1. **Start Chrome:**
@@ -167,6 +198,7 @@ The `u-chan` CLI provides control over service lifecycle, vault state, and secur
 2. **Unlock Vault:**
    `u-chan unlock`
    *Check that your anti-phishing secret phrase matches, then enter your master password. The session is held in service memory.*
+   *(Note: Ensure you completed the one-time Bitwarden login during installation).*
 3. **Run Claude Code:**
    `claude`
    *Claude can now authenticate to allowlisted websites on demand.*
