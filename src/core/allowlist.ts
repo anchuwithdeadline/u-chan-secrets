@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { UserFacingError, type AllowEntry } from './types.js'
+import { validOptions } from './policy.js'
 
 export class AllowlistStore {
-  constructor(private readonly path: string) {}
+  constructor(private readonly path: string, private readonly beforeWrite?: () => Promise<void>) {}
 
   async list(): Promise<AllowEntry[]> {
     let raw: string
@@ -30,6 +31,7 @@ export class AllowlistStore {
   }
 
   async upsert(entry: AllowEntry): Promise<void> {
+    if (!isValidEntry(entry)) throw new UserFacingError('invalid grant policy', 'invalid_policy')
     const d = normalizeDomain(entry.domain)
     if (!d) throw new UserFacingError('domain is empty or invalid')
     const rest = (await this.list()).filter((e) => e.domain !== d)
@@ -47,6 +49,7 @@ export class AllowlistStore {
   }
 
   private async write(entries: AllowEntry[]): Promise<void> {
+    await this.beforeWrite?.()
     await mkdir(dirname(this.path), { recursive: true })
     const tmp = `${this.path}.${process.pid}.${Date.now()}.tmp`
     await writeFile(tmp, JSON.stringify(entries, null, 2))
@@ -63,6 +66,10 @@ export function isValidEntry(e: unknown): e is AllowEntry {
     typeof o.item === 'string' &&
     Array.isArray(o.hosts) &&
     o.hosts.every((h) => typeof h === 'string')
+    && (o.expiresAt === undefined || (typeof o.expiresAt === 'string' && Number.isFinite(Date.parse(o.expiresAt)) && new Date(o.expiresAt).toISOString() === o.expiresAt))
+    && (o.remainingUses === undefined || (Number.isSafeInteger(o.remainingUses) && (o.remainingUses as number) >= 0))
+    && (o.grantId === undefined || (typeof o.grantId === 'string' && o.grantId.length > 0 && o.grantId.length <= 100))
+    && (o.success === undefined || validOptions({ success: o.success }))
   )
 }
 

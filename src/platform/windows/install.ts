@@ -11,6 +11,7 @@ import { AUTH_HELPER_CSHARP } from './assets/auth-src.js'
 import { PROMPT_HELPER_CSHARP } from './assets/prompt-src.js'
 import { SERVICE_HOST_CSHARP } from './assets/service-src.js'
 import { generateRandomPhrase } from '../darwin/lifecycle.js'
+import { assertCompatibleState } from '../../service/state.js'
 
 export const defaultProgramData = (): string => {
   return process.env.ProgramData
@@ -65,6 +66,9 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   const binDir = path.join(programData, 'bin')
   const dataDir = path.join(programData, 'bw-data')
   const programDir = path.join(programData, 'program')
+  const packageRoot = opts.packageRoot ?? fileURLToPath(new URL('../../../', import.meta.url))
+  const targetPackage = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'))
+  await assertCompatibleState(programData, Number(String(targetPackage.version).split('.')[0]))
 
   // 1. Check UAC level and warn if default
   try {

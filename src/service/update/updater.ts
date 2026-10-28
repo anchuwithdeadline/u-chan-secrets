@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { assertCompatibleState } from '../state.js'
 import { promisify } from 'node:util'
 import type { PackageVerifier, ServiceRestarter, ToolResult } from '../../core/types.js'
 
@@ -62,6 +63,7 @@ export class ServiceUpdater {
         return { ok: true, message: `already up to date (version ${this.d.currentVersion})` }
       }
       const targetVersion = check.latestVersion
+      await assertCompatibleState(dirname(this.d.programDir), Number(targetVersion.split('.')[0]))
 
       const verification = await this.d.verifier.verify(targetVersion)
       if (!verification.ok || !verification.tarball) {

@@ -2,6 +2,7 @@ import type { FillOutcome } from './login-filler.js'
 import type { SessionState } from '../service/session-transfer.js'
 
 export interface AllowEntry {
+  grantId?: string
   success?: SuccessCondition
   expiresAt?: string
   remainingUses?: number

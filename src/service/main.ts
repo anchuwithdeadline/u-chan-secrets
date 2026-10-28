@@ -21,6 +21,8 @@ import { SettingsStore } from './settings.js'
 import { NpmPackageVerifier } from './update/verifier.js'
 import { ServiceUpdater } from './update/updater.js'
 import { diagnoseService } from './doctor.js'
+import { GrantCoordinator } from './grants.js'
+import { ensureV3State } from './state.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -56,13 +58,15 @@ export async function runService(
     const limiter = new AttemptLimiter()
     // One approver and one limiter: lockouts count across approvals, unlock and mode changes.
     const approver = new PolicyApprover({ prompt: adapters.prompt, checker: vault, settings, limiter, platform })
-    const allowlist = new AllowlistStore(cfg.allowlistPath)
+    let stateReady: Promise<void> | undefined
+    const allowlist = new AllowlistStore(cfg.allowlistPath, () => stateReady ??= ensureV3State(cfg.home).catch(e => { stateReady = undefined; throw e }))
+    const grants = new GrantCoordinator(allowlist)
     const audit = new FileAuditLog(cfg.auditPath)
     const login = new IsolatedLogin({
       launch: () => chromium.launch({ headless: true }),
       target: new CdpSessionTarget(new CdpBrowserProvider(loadConfig(env, platform).cdpEndpoint)),
     })
-    const core = new CoreService({ vault, allowlist, approver, audit, login, mode: () => approver.effectiveMode() })
+    const core = new CoreService({ vault, allowlist, grants, approver, audit, login, mode: () => approver.effectiveMode() })
 
     let currentVersion = '2.0.0'
     try {
@@ -83,7 +87,7 @@ export async function runService(
       currentVersion,
     })
 
-    const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform, updater, diagnose: () => diagnoseService(cfg.home, vault, platform) })
+    const control = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose: () => diagnoseService(cfg.home, vault, platform) })
     const api: CoreApi & ControlApi = {
       capabilities: () => control.capabilities(),
       diagnose: () => control.diagnose(),

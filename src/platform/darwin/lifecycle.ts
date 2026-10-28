@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import type { ApprovalMode } from '../../core/types.js'
 import { generateLaunchdPlist, PLIST_LABEL, PLIST_PATH } from './plist.js'
+import { assertCompatibleState } from '../../service/state.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -112,6 +113,10 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
   const programDir = path.posix.join(homeDir, 'program')
   const socketDir = deps?.socketDir ?? '/var/run/u-chan-secrets'
   const plistPath = deps?.plistPath ?? PLIST_PATH
+  if (!deps?.fs) {
+    const pkg = JSON.parse(await fs.readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
+    await assertCompatibleState(homeDir, Number(String(pkg.version).split('.')[0]))
+  }
 
   await fsOps.mkdir(homeDir, { recursive: true, mode: 0o700 })
   await fsOps.mkdir(socketDir, { recursive: true, mode: 0o755 })
