@@ -1,7 +1,7 @@
 # U-Chan Secrets V3: easier daily use with temporary approvals
 
 Date: 2026-10-29
-Status: draft for design approval
+Status: approved by the user on 2026-10-29; implementation planning in progress
 
 ## Intent and agreed direction
 
