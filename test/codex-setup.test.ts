@@ -1,12 +1,13 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, readFile, readdir, rm, writeFile, symlink } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile, symlink, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { configureCodex } from '../src/client/codex-setup.js'
 const dirs: string[] = []
 afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }) })
 async function fixture(entries: Record<string, any> = {}) {
-  const configDir = await mkdtemp(join(tmpdir(), 'ucs-codex-')); dirs.push(configDir)
+  // macOS exposes its temporary root through /var; use the actual fixture directory, not that system alias.
+  const configDir = await realpath(await mkdtemp(join(tmpdir(), 'ucs-codex-'))); dirs.push(configDir)
   const original = '# unrelated fixture\n[other]\nvalue = "SECRET_SENTINEL"\n'
   await writeFile(join(configDir, 'config.toml'), original)
   const calls: string[][] = []
