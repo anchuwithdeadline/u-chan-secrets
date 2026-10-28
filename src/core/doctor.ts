@@ -156,13 +156,13 @@ export async function commandState(file: string, args: string[], passes: (stdout
     })
   })
 }
-export async function chromeState(endpoint: string): Promise<DiagnosticState> {
+export async function chromeState(endpoint: string, timeoutMs = 5000): Promise<DiagnosticState> {
   try {
     const origin = safeCdpOrigin(endpoint)
     if (!origin) return 'fail'
     const url = new URL('/json/version', origin)
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.protocol !== 'http:') return 'fail'
-    const r = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: 'error' })
+    const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'error' })
     const json = await r.json() as { webSocketDebuggerUrl?: unknown }
     return r.ok && typeof json.webSocketDebuggerUrl === 'string' ? 'pass' : 'fail'
   } catch { return 'fail' }
