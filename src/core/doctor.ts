@@ -34,8 +34,9 @@ export function checkPlaywrightCdp(procs: Proc[], selfPid: number, expectedEndpo
   if (expectedEndpoint !== undefined) {
     const expected = safeCdpOrigin(expectedEndpoint)
     return expected && ours.every(p => {
-      const match = /(?:^|\s)--cdp-endpoint(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s]+))/.exec(p.cmd)
-      return match && safeCdpOrigin(match[1] ?? match[2] ?? match[3]) === expected
+      const matches = [...p.cmd.matchAll(/(?:^|\s)--cdp-endpoint(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s]+))/g)]
+      const match = matches[0]
+      return matches.length === 1 && match && safeCdpOrigin(match[1] ?? match[2] ?? match[3]) === expected
     }) ? 'ok' : 'missing'
   }
   return ours.some((p) => p.cmd.includes('--cdp-endpoint')) ? 'ok' : 'missing'
@@ -91,7 +92,7 @@ export function safeVersion(value: unknown): string | undefined {
   return typeof value === 'string' && value.length <= 64 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value) ? value : undefined
 }
 export function safeCdpOrigin(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
+  if (typeof value !== 'string' || !/^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::[1-9]\d{0,4})?\/?$/i.test(value)) return undefined
   try {
     const url = new URL(value)
     return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)

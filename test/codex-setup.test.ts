@@ -16,7 +16,7 @@ async function fixture(entries: Record<string, any> = {}) {
     calls.push(args)
     const [mcp, action, name] = args
     expect(mcp).toBe('mcp')
-    if (action === 'get') return entries[name] ? { code: 0, stdout: JSON.stringify(entries[name]), stderr: '' } : { code: 1, stdout: '', stderr: `Error: No MCP server named '${name}' found.` }
+    if (action === 'get') return entries[name] ? { code: 0, stdout: JSON.stringify(entries[name]), stderr: '' } : { code: 1, stdout: '', stderr: `WARNING: disposable fixture warning\nError: No MCP server named '${name}' found.` }
     mutations++
     if (mutations === failAt) return { code: 1, stdout: '', stderr: 'SECRET_SENTINEL' }
     // Simulate the official CLI preserving unrelated configuration, including concurrent edits.
@@ -84,4 +84,14 @@ it('refuses a redirected backup directory without mutating configuration', async
   expect(await configureCodex({ ...f.options, apply: true }, f.deps)).toMatchObject({ state: 'unavailable', changed: false })
   expect(f.calls.every(c => c[1] === 'get')).toBe(true)
   expect(await readdir(elsewhere)).toEqual([])
+})
+it('preserves compatible enabled custom environment and timeout settings without losing readiness', async () => {
+  const f = await fixture()
+  const matching = entry(f.options.nodePath, [f.options.entryPath])
+  const playwright = entry('npx', ['@playwright/mcp@latest','--cdp-endpoint',f.options.endpoint])
+  const g = await fixture({ u_chan_secrets: { ...matching, tool_timeout_sec: 90, transport: { ...matching.transport, env: { KEY: 'SECRET_SENTINEL' } } }, playwright })
+  const r = await configureCodex({ ...g.options, apply: true, replaceExisting: true }, g.deps)
+  expect(r).toMatchObject({ state: 'ready', changed: false })
+  expect(g.calls.every(c => c[1] === 'get')).toBe(true)
+  expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
 })

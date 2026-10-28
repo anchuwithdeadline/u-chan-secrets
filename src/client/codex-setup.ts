@@ -76,12 +76,13 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
     for (const entry of desired) {
       const r = await d.exec(['mcp', 'get', entry.name, '--json'])
       if (r.code !== 0) {
-        if (r.stderr.trim() !== `Error: No MCP server named '${entry.name}' found.`) return result('unavailable', 'Could not inspect Codex registrations.')
+        if (r.stderr.trim().split(/\r?\n/).at(-1) !== `Error: No MCP server named '${entry.name}' found.`) return result('unavailable', 'Could not inspect Codex registrations.')
         pending.push({ entry, replace: false }); continue
       }
       const current = JSON.parse(r.stdout)
+      if (current?.enabled === true && current.transport?.type === 'stdio'
+        && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)) continue
       if (!simple(current, entry.name)) return result('manual', 'Custom Codex settings preserved; configure this registration manually.')
-      if (current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)) continue
       pending.push({ entry, replace: true })
     }
     if (pending.length === 0) return result('ready', 'Codex registrations match; active session ownership is unverified.')

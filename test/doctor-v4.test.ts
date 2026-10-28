@@ -31,11 +31,13 @@ it('requires safe elevation policy and refuses unsafe CDP origins without exposi
   const report = await runDoctor({ ...deps, elevation: async () => 'fail' })
   expect(report.checks.find(c => c.id === 'uac')?.state).toBe('fail')
   expect(safeCdpOrigin(endpoint)).toBe(endpoint)
-  for (const value of ['http://user:SECRET@127.0.0.1:9222', 'http://0.0.0.0:9222', 'https://127.0.0.1:9222', endpoint + '/?token=SECRET']) expect(safeCdpOrigin(value)).toBeUndefined()
+  for (const value of ['http://user:SECRET@127.0.0.1:9222', 'http://0.0.0.0:9222', 'https://127.0.0.1:9222', endpoint + '/?token=SECRET', endpoint + '/..', endpoint + '/%2e%2e', ' ' + endpoint]) expect(safeCdpOrigin(value)).toBeUndefined()
 })
 it('compares the actual process CDP value instead of accepting any endpoint flag', () => {
   const procs = [{ pid: 1, ppid: 0, name: 'codex.exe', cmd: 'codex' }, { pid: 2, ppid: 1, name: 'node.exe', cmd: 'u-chan' }, { pid: 3, ppid: 1, name: 'node.exe', cmd: '@playwright/mcp --cdp-endpoint http://127.0.0.1:9223' }]
   expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('missing')
   procs[2].cmd = '@playwright/mcp --cdp-endpoint="http://127.0.0.1:9222"'
   expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('ok')
+  procs[2].cmd += ' --cdp-endpoint=http://127.0.0.1:9223'
+  expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('missing')
 })

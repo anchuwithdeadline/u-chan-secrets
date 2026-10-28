@@ -12,7 +12,7 @@ it('keeps default setup read-only and unknown sharing explicit; locked vault is 
   expect(r).toMatchObject({ state: 'configured', sharing: 'unobserved', restartRequired: false, changed: false })
   expect(d.configure).toHaveBeenCalledWith({ apply: false, replaceExisting: false })
   expect(d.startBrowser).not.toHaveBeenCalled()
-  expect(r.actions).toContainEqual({ id: 'vault', message: 'Run u-chan unlock.', required: false })
+  expect(r.actions).toContainEqual({ id: 'unlock_vault', message: 'Run u-chan unlock.', required: false })
   expect(setupExitCode(r)).toBe(0)
 })
 it('refuses elevated or unsafe/mismatched targets before client or browser calls', async () => {
@@ -40,6 +40,7 @@ it('starts only unhealthy Chrome and reruns diagnostics even after startup failu
 it('keeps matching process configuration distinct from active proof and forces restart after changes', async () => {
   const d = fixture(); d.doctor.mockResolvedValue(report({ playwright: 'pass' }))
   expect((await runSetup(options, d)).sharing).toBe('process_configured')
+  expect((await runSetup(options, d)).actions.some(a => a.message.includes('ownership is unverified'))).toBe(true)
   d.configure.mockResolvedValue({ state: 'ready', changed: true, message: 'Saved.' })
   const r = await runSetup({ ...options, apply: true }, d)
   expect(r).toMatchObject({ state: 'configured', restartRequired: true, changed: true })
