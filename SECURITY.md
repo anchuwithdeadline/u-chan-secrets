@@ -8,7 +8,8 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 | Source line | Status |
 |---|---|
-| 3.x | Current development line; native release checks remain required |
+| 4.x | Development branch; source and native release gates remain required |
+| 3.x | Previous source line; Windows closeout and package authentication gates remain explicit |
 | 2.x | Previous architecture; upgrade to V3 source through the documented trusted reinstall flow |
 | 1.x | Deprecated; its user-writable session/authorization storage is outside the V3 boundary |
 
@@ -67,6 +68,12 @@ A shared deadline covers preflight, vault subprocesses, browser initialization, 
 Doctor is read-only: it returns fixed safe findings and next actions, without credential retrieval or automatic repair. A known browser-sharing mismatch fails diagnosis; unobservable sharing is advisory.
 
 Management shows sanitized state/activity and supports lock, unlock, refresh, and revocation. It cannot create or extend grants. Native helper output requests an action; the service revalidates the action/target. Unlock requires the protected password flow after the management dialog closes.
+
+V4 setup runs only as a non-elevated desktop process. Automatic configuration supports the official Codex CLI on Windows; it does not execute user-owned clients or Chrome under administrator authority. Default setup is read-only. Explicit flags permit narrow MCP registration changes and dedicated browser startup. Existing advanced settings are preserved, and existing config bytes are backed up before mutation. A partial failure never restores an obsolete whole configuration over unrelated concurrent changes.
+
+Setup accepts only HTTP loopback browser origins without URL credentials, path, query, or fragment. Known service/desktop target mismatches block automatic configuration and startup. Setup never changes UAC or installs the service. Version checks use actual package metadata; absent or invalid metadata is unknown. Process arguments and saved registrations are configuration evidence, not proof of active AI-session browser ownership.
+
+The V4 `allow` command proposes policy through the existing protected service approval. It cannot edit the protected grant store. Its default is one login attempt; omitting a success condition still permits an explicitly unconfirmed result. Protocol and protected-state schema remain version 3.
 
 ## Install, migration, and update integrity
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.0 development
+
+- Add read-only guided setup for Windows/Codex, with explicit flags for registration changes and dedicated Chrome startup.
+- Preserve advanced Codex settings, back up existing configuration before mutation, and retain completed changes on partial failure.
+- Refuse elevated setup and unsafe or known mismatched browser targets. Service installation and UAC configuration remain separate trusted operations.
+- Compare actual CLI/service versions and browser targets; display installed service version, browser health, and fixed next actions in native management.
+- Distinguish observed process configuration from unverified active AI-session ownership.
+- Add `u-chan allow` with one-attempt default, explicit timed/permanent policy, and optional login success URL/selector.
+- Keep protocol 3, protected-state schema 3, native helpers, and runtime dependencies unchanged. Source integration does not establish publication, installation, or native security verification.
+
 ## 3.0.3
 
 - Correct npm update verification to use the current pinned registry key and ECDSA-SHA256 over `name@version:dist.integrity`.
