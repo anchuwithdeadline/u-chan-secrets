@@ -51,7 +51,7 @@ describe('Windows Service Installer', () => {
     })
   })
 
-  it('performs full install workflow successfully', async () => {
+  it('performs full install workflow successfully', { timeout: 60000 }, async () => {
     const executedCommands: Array<{ file: string; args: string[] }> = []
     const fakeExec: ExecFn = vi.fn(async (file, args) => {
       executedCommands.push({ file, args })

@@ -81,7 +81,11 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     const pkgRoot = fileURLToPath(new URL('../../../', import.meta.url))
     await fs.cp( path.join(pkgRoot, 'dist'), path.join(programDir, 'dist'), { recursive: true })
     await fs.cp( path.join(pkgRoot, 'package.json'), path.join(programDir, 'package.json'))
-
+    // ESM ignores NODE_PATH: the service resolves deps from programDir/node_modules.
+    await fs.cp(path.join(pkgRoot, 'node_modules'), path.join(programDir, 'node_modules'), {
+      recursive: true,
+      filter: (src) => !/[\\/]\.(vite|vitest-cache|vite-temp)/.test(src),
+    })
   } catch {}
 
   // 3. Set strict Administrator/SYSTEM ACLs
@@ -106,8 +110,7 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   // 4b. Write service target configuration so service host runs node + service bundle on boot
   const nodeExe = process.execPath
   const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
-  const nodeModulesFallback = path.join(fileURLToPath(new URL('../../../', import.meta.url)), 'node_modules')
-  await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n${nodeModulesFallback}\n`, 'utf8')
+  await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 
   // 4c. Ensure bw.exe is copied to binDir if found on the system
   try {
