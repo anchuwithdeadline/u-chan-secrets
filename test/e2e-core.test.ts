@@ -58,7 +58,7 @@ describe('e2e-core: MCP → IPC → service', () => {
     const approver = new PolicyApprover({ prompt, checker: vault, settings, limiter, platform: 'win32' })
     const allowlist = new AllowlistStore(join(dir, 'allowlist.json'))
     const events: AuditEvent[] = []
-    const audit = { record: async (e: AuditEvent) => void events.push(e) }
+    const audit = { record: async (e: AuditEvent) => void events.push(e), readTail: async () => [] }
     const runner: LoginRunner = {
       run: async (_entry, getCreds) => {
         const c = await getCreds()
@@ -77,6 +77,8 @@ describe('e2e-core: MCP → IPC → service', () => {
       lock: () => control.lock(),
       setMode: (m) => control.setMode(m),
       importV1: (e) => control.importV1(e),
+      audit: (l) => control.audit(l),
+      update: () => control.update(),
     }
     const path = pipePath(dir)
     servers.push(await startIpcServer(path, api))

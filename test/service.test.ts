@@ -30,7 +30,7 @@ beforeEach(async () => {
   vault = { status: async () => vaultStatus, unlock: async () => true, lock: async () => {}, getLogin: vi.fn(async () => ({ username: 'u', password: 'hunter2' })) }
   approve = vi.fn(async (_t: string, _l: string[]) => true)
   const login = { run: async (e: AllowEntry, g: () => Promise<never>) => { runs.push(e); return fill.impl(e, g) } }
-  svc = new CoreService({ vault, allowlist: store, approver: { ask: approve }, audit: { record: async (e) => void events.push(e) }, login, mode: async () => mode })
+  svc = new CoreService({ vault, allowlist: store, approver: { ask: approve }, audit: { record: async (e) => void events.push(e), readTail: async () => [] }, login, mode: async () => mode })
 })
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -96,7 +96,7 @@ describe('login', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const s = new CoreService({
       vault, allowlist: store, approver: { ask: approve },
-      audit: { record: async () => { throw new Error('disk') } },
+      audit: { record: async () => { throw new Error('disk') }, readTail: async () => [] },
       login: { run: async () => ({ status: 'logged_in' }) }, mode: async () => 'easy',
     })
     expect(await s.login('example.com')).toEqual({ ok: true, message: 'logged in' })

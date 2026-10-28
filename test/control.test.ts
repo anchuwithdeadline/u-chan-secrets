@@ -161,7 +161,7 @@ describe('control: audit', () => {
     ]
     const ctl = new ControlService({
       vault: vault as never, approver: approver as never, limiter, settings, allowlist,
-      audit: { record: async (e) => void events.push(e), readTail: async () => records } as never,
+      audit: { record: async (e: AuditEvent) => void events.push(e), readTail: async () => records },
       platform: 'win32',
     })
     const res = await ctl.audit()
@@ -174,7 +174,7 @@ describe('control: audit', () => {
   it('returns clean message when audit log is empty', async () => {
     const ctl = new ControlService({
       vault: vault as never, approver: approver as never, limiter, settings, allowlist,
-      audit: { record: async (e) => void events.push(e), readTail: async () => [] } as never,
+      audit: { record: async (e: AuditEvent) => void events.push(e), readTail: async () => [] },
       platform: 'win32',
     })
     expect(await ctl.audit()).toEqual({ ok: true, message: 'no audit log entries' })
