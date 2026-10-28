@@ -1,6 +1,6 @@
 # V3 local validation and release boundary
 
-Date: 2026-10-29. Implementation branch: feat/v3-usability. This report records local validation, PR verification, and source integration through [PR #4](https://github.com/anchuwithdeadline/u-chan-secrets/pull/4). No package publication, live installation, or deployment is established by this report.
+Date: 2026-10-29. Implementation branch: feat/v3-usability. This living report preserves initial evidence and subsequent installed follow-up. The [Windows closeout](2026-10-29-v3-windows-closeout.md) records current scope, verification limits and outstanding gates; initial pending items below are historical, not a replacement for that status.
 
 ## Verified locally
 
@@ -14,7 +14,7 @@ Date: 2026-10-29. Implementation branch: feat/v3-usability. This report records 
 
 Initial local verification: **352 tests passed across 46 test files; TypeScript build passed; git diff --check passed.** Packaging dry run contained 64 expected files and no unexpected paths. This initial result did not claim CI or publication.
 
-## Pending platform checks
+## Initial pending platform checks
 
 - Actual installed Windows SYSTEM/session/desktop isolation, keyboard hooks, synthetic input, per-prompt pipe ACLs, permission inheritance, native dependency search paths, and desktop restoration.
 - A trusted elevated install/reinstall/update rehearsal with disposable state.
