@@ -84,6 +84,7 @@ export async function runService(
 
     const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform, updater })
     const api: CoreApi & ControlApi = {
+      capabilities: () => control.capabilities(),
       login: (domain) => core.login(domain),
       requestAllow: (domain, loginUrl, item, selectors) => core.requestAllow(domain, loginUrl, item, selectors),
       revoke: (domain) => core.revoke(domain),

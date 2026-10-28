@@ -2,6 +2,9 @@ import type { FillOutcome } from './login-filler.js'
 import type { SessionState } from '../service/session-transfer.js'
 
 export interface AllowEntry {
+  success?: SuccessCondition
+  expiresAt?: string
+  remainingUses?: number
   domain: string
   hosts: string[]
   loginUrl: string
@@ -31,17 +34,24 @@ export interface AuditLog {
 }
 export type Selectors = NonNullable<AllowEntry['selectors']>
 export type ApprovalMode = 'easy' | 'hardcore'
-export type ToolResult = { ok: boolean; message: string }
+export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
+export type ResultCode = typeof RESULT_CODES[number]
+export const isResultCode = (value: unknown): value is ResultCode => typeof value === 'string' && (RESULT_CODES as readonly string[]).includes(value)
+export type ToolResult = { ok: boolean; message: string; code?: ResultCode }
+export type GrantPolicy = { kind: 'once' } | { kind: 'timed'; minutes: number } | { kind: 'permanent' }
+export type SuccessCondition = { url: string } | { selector: string }
+export interface AllowOptions { grant?: GrantPolicy; success?: SuccessCondition }
 /** Message is safe to return to the AI. */
 export class UserFacingError extends Error {}
 export interface CoreApi {
   login(domain: string): Promise<ToolResult>
-  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors): Promise<ToolResult>
+  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult>
   revoke(domain: string): Promise<ToolResult>
   listAllowed(): Promise<ToolResult>
   status(): Promise<ToolResult>
 }
 export interface ControlApi {
+  capabilities(): Promise<ToolResult>
   unlock(): Promise<ToolResult>
   lock(): Promise<ToolResult>
   setMode(mode: ApprovalMode): Promise<ToolResult>

@@ -23,6 +23,14 @@ async function connect(core: Partial<Core>) {
 }
 
 describe('mcp server', () => {
+  it('carries V3 approval policy and success condition through MCP', async () => {
+    let args: unknown[] = []
+    const c = await connect({ requestAllow: async (...a: unknown[]) => { args = a; return { ok: true, message: 'approved' } } } as Partial<Core>)
+    const grant = { kind: 'once' }, success = { url: 'https://a.com/home' }
+    await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/login', item: 'A', grant, success } })
+    expect(args[4]).toEqual({ grant, success })
+    await c.close()
+  })
   it('lists the five tools', async () => {
     const c = await connect({})
     const { tools } = await c.listTools()

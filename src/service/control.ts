@@ -24,6 +24,9 @@ interface Deps {
 /** Commands from the `u-chan` CLI. Audit entries never contain passwords or sessions. */
 export class ControlService implements ControlApi {
   constructor(private readonly d: Deps) {}
+  async capabilities(): Promise<ToolResult> {
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: [] }) }
+  }
 
   private async guarded(action: AuditEvent['action'], fn: () => Promise<ToolResult>): Promise<ToolResult> {
     let result: ToolResult
