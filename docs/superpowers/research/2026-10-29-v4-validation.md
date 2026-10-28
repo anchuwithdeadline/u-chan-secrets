@@ -5,7 +5,7 @@ Date: 2026-10-29. Scope: Windows desktop guided setup, installed-version/browser
 ## Source verification
 
 - Baseline: 356 tests across 47 files and TypeScript build passed before V4 implementation.
-- Implementation: 377 tests across 51 files passed after Tasks 1–4. TypeScript build passed with source version 4.0.0.
+- Implementation: final local suite passed 380 tests across 51 files. Production TypeScript build and whole-project `tsc --noEmit` passed with source version 4.0.0.
 - Tests cover exact service/client versions, missing/invalid metadata, browser-target values, UAC failure, advanced Codex configuration preservation, original-byte backups, redirected backup refusal, partial changes, elevated refusal, setup flags/states, and grant policy/success-condition parsing.
 - Protocol 3, protected-state schema 3, native helpers, and dependency ranges remain unchanged.
 
@@ -17,6 +17,22 @@ Service registration, authenticated IPC, protected assets/permissions, locked-va
 
 No development registration was applied to the user's active client. No V4 service reinstall, protected vault unlock, real grant creation, or browser-session mutation was performed by this check.
 
+A repeated read-only host check compared SHA-256 before and after: the active Codex configuration bytes remained unchanged.
+
+## Official CLI and launcher rehearsal
+
+A real official Codex CLI rehearsal used a disposable config directory, never the active user's configuration. Inspection reported missing; explicit application saved both registrations; a repeat inspection reported ready without changes. Backup bytes matched the original file. Codex can prepend warnings to a missing-registration error, so the implementation recognizes the exact final error line while keeping raw stderr private.
+
+The packaged Chrome launcher parsed and exited successfully against the existing healthy endpoint; no new browser was started. This host blocks unsigned PowerShell files under its normal execution policy. Explicit setup startup therefore uses a process-local execution policy for the packaged launcher, without changing machine policy or elevating. Background persistence after an actual new launch remains unverified.
+
+## Review and package
+
+Independent review and follow-up review found no remaining material issue at `f0a7270`. Reproducing regressions covered compatible custom settings, conflicting target environment, duplicate CDP flags, normalized non-origin URL input, fixed action IDs, active-ownership caveats, and concurrent browser/permission probe timing. Review also corrected a validation-label error: build-config type checking excludes test types; whole-project checking passed separately after fixture alignment.
+
+The clean worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expected files, 73,172 bytes, zero unexpected package paths. SHA-256: `9392c517e67392fd7d798097870450daec1cfbc06b11257877ce66751660ecdf`. The artifact is prepared locally, not published or installed.
+
+[Draft PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and live CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
+
 ## Release boundaries
 
 - V3's tightened native adversarial/browser harness still needs a fresh privileged run with physical UAC consent. Earlier fixture evidence does not satisfy the tightened revision.
@@ -25,4 +41,4 @@ No development registration was applied to the user's active client. No V4 servi
 - macOS build/test CI is separate from runtime verification. No Mac runtime was tested.
 - Active AI-session browser ownership remains independently unverified by process/configuration heuristics.
 
-Independent review, final package inspection, and CI results are recorded below when available.
+Draft PR approval and source CI do not establish native release readiness.
