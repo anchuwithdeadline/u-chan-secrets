@@ -15,6 +15,8 @@ echo       U-Chan Secrets V2 Installation & Setup
 echo ========================================================
 echo.
 echo [*] Step 1: Stopping previous service (if any)...
+taskkill /F /IM prompt-helper.exe >nul 2>&1
+taskkill /F /IM auth-helper.exe >nul 2>&1
 call node dist\cli.js uninstall
 echo.
 echo [*] Step 2: Installing U-Chan Windows Service...

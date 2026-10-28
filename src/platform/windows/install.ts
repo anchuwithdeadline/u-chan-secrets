@@ -97,7 +97,9 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   await setAdminOnlyAcl(programData, exec)
   await exec('icacls.exe', [binDir, '/grant', 'Users:(OI)(CI)RX']).catch(() => {})
 
-  // 4. Compile C# assets
+  // 4. Compile C# assets (kill any running helpers first)
+  await exec('taskkill.exe', ['/F', '/IM', 'prompt-helper.exe']).catch(() => {})
+  await exec('taskkill.exe', ['/F', '/IM', 'auth-helper.exe']).catch(() => {})
   const authExe = path.join(binDir, 'auth-helper.exe')
   const promptExe = path.join(binDir, 'prompt-helper.exe')
   const serviceExe = path.join(binDir, 'service-host.exe')
