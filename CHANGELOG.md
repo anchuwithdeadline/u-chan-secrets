@@ -3,6 +3,7 @@
 ## 3.0.2
 
 - Run Windows protected dialogs on a clean STA thread. The relay thread could already own CLR/COM windows, causing desktop assignment to fail with Windows error 170 before any prompt appeared.
+- Inspect Windows ACL rules as SIDs directly, avoiding repeated account-name translation while retaining explicit and inherited rule checks across the full protected tree.
 - Add an administrator-run, no-password native regression probe for actual SYSTEM relay, protected desktop entry, desktop restoration, and reply transport. Evidence remains under protected `#0 backup`; its temporary scheduled task is removed.
 - This native-helper change requires a trusted administrator reinstall. Existing owner, settings, and grants remain intact.
 
