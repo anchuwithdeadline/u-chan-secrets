@@ -59,7 +59,7 @@ export async function startFixture(): Promise<Fixture> {
       case '/': return fxState.bounceRoot ? redirect(`http://localhost:${port}/dash`) : send('<p>root</p>')
       case '/redirect-evil': return redirect(`http://localhost:${port}/single`)
       case '/late':
-        return send(`<div id="m"></div><script>setTimeout(()=>{document.getElementById('m').innerHTML=${JSON.stringify(singleForm)}},500)</script>`)
+        return send(`<div id="m"></div><template id="tpl">${singleForm}</template><script>setTimeout(()=>{const t=document.getElementById('tpl');document.getElementById('m').appendChild(t.content.cloneNode(true))},500)</script>`)
       case '/disabled-pass':
         return send(`<form method="post" action="/single"><input type="email" name="email"><input type="password" name="password" disabled><button type="submit">Login</button></form>`)
       case '/nav-evil':
@@ -73,7 +73,7 @@ export async function startFixture(): Promise<Fixture> {
       case '/spa-remount': {
         // SPA: submit re-renders the form (old nodes detached), then navigates later.
         const form = `<form><input type="email" name="email"><input type="password" name="password"><button type="submit">Login</button></form>`
-        return send(`<div id="m">${form}</div><script>m.addEventListener('submit',(e)=>{e.preventDefault();m.innerHTML=${JSON.stringify(form)};setTimeout(()=>{location.href='/dash'},1200)})</script>`)
+        return send(`<div id="m">${form}</div><template id="tpl">${form}</template><script>const m=document.getElementById('m');const tpl=document.getElementById('tpl');m.addEventListener('submit',(e)=>{e.preventDefault();m.replaceChildren(tpl.content.cloneNode(true));setTimeout(()=>{location.href='/dash'},1200)})</script>`)
       }
       case '/captcha':
         return send(`${singleForm}<iframe src="/recaptcha/api2/anchor"></iframe>`)
