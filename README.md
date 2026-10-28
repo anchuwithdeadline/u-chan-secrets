@@ -2,7 +2,7 @@
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.2`; merging this repository does not publish an npm package or update an installed service.
+V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.3`; merging this repository does not publish an npm package or update an installed service.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
@@ -199,6 +199,8 @@ Before the first grant-state mutation, the service creates a protected `#0 backu
 Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
 
 Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
+
+Versions 3.0.0–3.0.2 have an npm signature-verification defect and cannot reliably bootstrap their own update. Install the matching corrected package from a trusted shell, then use the administrator reinstall above. Version 3.0.3 requires SHA-512 integrity and a valid signature from its pinned npm key; unsigned repository-attestation JSON cannot replace that signature. Future signing-key rotation fails closed and requires a trusted verifier upgrade.
 
 For V1 data, use `u-chan import-v1 [path]`: each entry requires protected approval. Retire user-side Bitwarden sessions and the old `bw-session` file through a trusted migration process; never copy them into the service as trusted authorization.
 

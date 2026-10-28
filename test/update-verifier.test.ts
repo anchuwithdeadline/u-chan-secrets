@@ -65,7 +65,7 @@ describe('NpmPackageVerifier', () => {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     const npmPublicKey = publicKey.export({ type: 'spki', format: 'pem' }).toString()
 
-    const signedStr = `u-chan-secrets@${newVersion}:${shasum}`
+    const signedStr = `u-chan-secrets@${newVersion}:${sri}`
     const sig = crypto.sign('sha256', Buffer.from(signedStr), privateKey).toString('base64')
 
     const metadata: PackageMetadata = {
@@ -193,6 +193,9 @@ describe('NpmPackageVerifier', () => {
     const tarball = Buffer.from('package-tarball-content')
     const shasum = crypto.createHash('sha1').update(tarball).digest('hex')
     const sri = 'sha512-' + crypto.createHash('sha512').update(tarball).digest('base64')
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const npmPublicKey = publicKey.export({ type: 'spki', format: 'pem' }).toString()
+    const sig = crypto.sign('sha256', Buffer.from(`u-chan-secrets@${newVersion}:${sri}`), privateKey).toString('base64')
 
     const metadata: PackageMetadata = {
       'dist-tags': { latest: newVersion },
@@ -203,6 +206,7 @@ describe('NpmPackageVerifier', () => {
             tarball: `https://registry.npmjs.org/u-chan-secrets/-/u-chan-secrets-${newVersion}.tgz`,
             shasum,
             integrity: sri,
+            signatures: [{ keyid: 'fixture-key', sig }],
             attestations: { url: 'https://registry.npmjs.org/-/npm/v1/attestations/u-chan-secrets@2.1.0' },
           },
         },
@@ -232,7 +236,7 @@ describe('NpmPackageVerifier', () => {
       } as unknown as Response
     })
 
-    const verifier = new NpmPackageVerifier({ fetcher, expectedRepo: 'https://github.com/anchuwithdeadline/u-chan-secrets' })
+    const verifier = new NpmPackageVerifier({ fetcher, npmPublicKey, expectedRepo: 'https://github.com/anchuwithdeadline/u-chan-secrets' })
     const result = await verifier.verify(newVersion)
     expect(result).toEqual({ ok: false, error: 'provenance repository mismatch' })
   })
@@ -293,6 +297,31 @@ describe('NpmPackageVerifier', () => {
     })
     const verifier = new NpmPackageVerifier({ fetcher })
     expect(await verifier.verify(newVersion)).toEqual({ ok: false, error: 'registry signature verification failed' })
+  })
+
+  it('rejects unsigned bytes even when unverified attestation JSON claims the expected repository', async () => {
+    const bytes = Buffer.from('unsigned attacker package')
+    const integrity = 'sha512-' + crypto.createHash('sha512').update(bytes).digest('base64')
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('.tgz')) return { ok: true, arrayBuffer: async () => bytes } as unknown as Response
+      if (String(url).includes('attestations')) return { ok: true, json: async () => ({ repository: 'https://github.com/anchuwithdeadline/u-chan-secrets' }) } as unknown as Response
+      return { ok: true, json: async () => ({ versions: { [newVersion]: { dist: {
+        tarball: 'https://registry.npmjs.org/fixture.tgz', integrity,
+        attestations: { url: 'https://registry.npmjs.org/attestations/fixture' },
+      } } } }) } as unknown as Response
+    })
+    expect(await new NpmPackageVerifier({ fetcher }).verify(newVersion)).toMatchObject({ ok: false, error: 'registry signature verification failed' })
+  })
+
+  it('fails closed when a custom public key is empty', async () => {
+    const bytes = Buffer.from('attacker bytes with a fake signature')
+    const integrity = 'sha512-' + crypto.createHash('sha512').update(bytes).digest('base64')
+    const fetcher = vi.fn(async (url: string | URL | Request) => String(url).endsWith('.tgz')
+      ? { ok: true, arrayBuffer: async () => bytes } as unknown as Response
+      : { ok: true, json: async () => ({ versions: { [newVersion]: { dist: {
+        tarball: 'https://registry.npmjs.org/fixture.tgz', integrity, signatures: [{ keyid: 'fake', sig: 'AA==' }],
+      } } } }) } as unknown as Response)
+    expect(await new NpmPackageVerifier({ npmPublicKey: '', fetcher }).verify(newVersion)).toMatchObject({ ok: false, error: 'registry signature verification failed' })
   })
 
   it('compares numeric prerelease versions accurately', () => {

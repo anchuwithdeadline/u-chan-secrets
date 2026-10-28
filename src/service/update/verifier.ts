@@ -2,9 +2,10 @@ import crypto from 'node:crypto'
 import type { PackageMetadata, PackageVerifier, VerificationOutcome } from '../../core/types.js'
 
 export const DEFAULT_NPM_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1Olb3/MAFFxXKHiIkQO5cJ3Yhl5i
-6UPp+IhuteBJbuHcA5UogKo0EWtlWwW6KSaKoTNEYL7JlCQiVnkhBktUgg==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEY6Ya7W++7aUPzvMTrezH6Ycx3c+H
+OKYCcNGybJZSCJq/fd7Qa8uuAKtdIkUQtQiEKERhAmE5lMMJhP8OkDOa2g==
 -----END PUBLIC KEY-----`
+export const DEFAULT_NPM_KEY_ID = 'SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U'
 
 export interface VerifierOptions {
   packageName?: string
@@ -87,7 +88,7 @@ export class NpmPackageVerifier implements PackageVerifier {
   private readonly packageName: string
   private readonly registryUrl: string
   private readonly npmPublicKey: string
-  private readonly requireSignature: boolean
+  private readonly npmKeyId?: string
   private readonly expectedRepo: string
   private readonly fetcher: typeof fetch
 
@@ -95,7 +96,7 @@ export class NpmPackageVerifier implements PackageVerifier {
     this.packageName = opts.packageName ?? 'u-chan-secrets'
     this.registryUrl = (opts.registryUrl ?? 'https://registry.npmjs.org').replace(/\/$/, '')
     this.npmPublicKey = opts.npmPublicKey ?? DEFAULT_NPM_PUBLIC_KEY
-    this.requireSignature = opts.npmPublicKey !== undefined
+    this.npmKeyId = opts.npmPublicKey === undefined ? DEFAULT_NPM_KEY_ID : undefined
     this.expectedRepo = opts.expectedRepo ?? 'https://github.com/anchuwithdeadline/u-chan-secrets'
     this.fetcher = opts.fetcher ?? globalThis.fetch
   }
@@ -148,17 +149,17 @@ export class NpmPackageVerifier implements PackageVerifier {
 
       // 2. ECDSA signature check
       const hasSignatures = Array.isArray(dist.signatures) && dist.signatures.length > 0
-      const hasAttestations = Boolean(dist.attestations?.url)
-      if (!hasSignatures && (this.requireSignature || !hasAttestations)) {
+      if (!hasSignatures) {
         return { ok: false, error: 'registry signature verification failed' }
       }
-      if (hasSignatures && this.npmPublicKey) {
-        const signedStr = `${this.packageName}@${targetVersion}:${dist.shasum}`
+      if (hasSignatures) {
+        const signedStr = `${this.packageName}@${targetVersion}:${dist.integrity}`
         const signedData = Buffer.from(signedStr, 'utf8')
         let valid = false
         for (const s of dist.signatures!) {
+          if (this.npmKeyId && s.keyid !== this.npmKeyId) continue
           try {
-            if (crypto.verify(null, signedData, this.npmPublicKey, Buffer.from(s.sig, 'base64'))) {
+            if (crypto.verify('sha256', signedData, this.npmPublicKey, Buffer.from(s.sig, 'base64'))) {
               valid = true
               break
             }
@@ -170,6 +171,7 @@ export class NpmPackageVerifier implements PackageVerifier {
       }
 
       // 3. Provenance check
+      // Repository metadata is an additional policy check, never a substitute for a valid signature.
       if (dist.attestations?.url) {
         const attRes = await this.fetcher(dist.attestations.url)
         if (!attRes.ok) {

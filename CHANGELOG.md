@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.3
+
+- Correct npm update verification to use the current pinned registry key and ECDSA-SHA256 over `name@version:dist.integrity`.
+- Require a valid registry signature even when attestation JSON claims the expected repository. Empty custom public keys fail closed.
+- Keep SHA-512 integrity checks mandatory. Repository metadata is not a claim of cryptographic Sigstore verification.
+- Versions 3.0.0–3.0.2 need a trusted administrator reinstall to bootstrap the corrected verifier. Native helpers and runtime dependencies are unchanged from 3.0.2.
+
 ## 3.0.2
 
 - Run Windows protected dialogs on a clean STA thread. The relay thread could already own CLR/COM windows, causing desktop assignment to fail with Windows error 170 before any prompt appeared.
