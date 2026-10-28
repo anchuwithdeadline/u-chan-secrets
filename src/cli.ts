@@ -11,7 +11,7 @@ import { MAX_FRAME, encode } from './ipc/protocol.js'
 import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, type DiagnosticReport } from './core/doctor.js'
 import { loadConfig } from './core/config.js'
 
-const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json]'
+const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
 export interface CliDeps {
   doctor?: () => Promise<DiagnosticReport>
@@ -158,6 +158,8 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     call = () => d.connect({}).audit(limit)
   } else if (cmd === 'update' && arg === undefined) {
     call = () => d.connect({ timeoutMs: 120000 }).update()
+  } else if (cmd === 'manage' && arg === undefined) {
+    call = () => d.connect({ timeoutMs: 15 * 60_000 }).manage()
   }
 
   if (!call) {

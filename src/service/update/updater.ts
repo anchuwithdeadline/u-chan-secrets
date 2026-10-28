@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { assertCompatibleState } from '../state.js'
 import { promisify } from 'node:util'
@@ -111,6 +111,27 @@ export class ServiceUpdater {
       if (!existsSync(join(sourceDir, 'dist', 'cli.js'))) {
         await rm(stageDir, { recursive: true, force: true }).catch(() => {})
         return { ok: false, message: 'staged package is invalid: missing dist/cli.js' }
+      }
+
+      const installed = JSON.parse(await readFile(join(this.d.programDir, 'package.json'), 'utf8'))
+      const staged = JSON.parse(await readFile(pkgPath, 'utf8'))
+      const dependencies = (p: { dependencies?: Record<string, string> }) => JSON.stringify(Object.entries(p.dependencies ?? {}).sort(([a], [b]) => a.localeCompare(b)))
+      if (dependencies(installed) !== dependencies(staged)) {
+        return { ok: false, message: 'update needs different dependencies; perform a trusted administrator reinstall' }
+      }
+      for (const file of ['prompt-src.js', 'auth-src.js', 'service-src.js']) {
+        const relative = join('dist', 'platform', 'windows', 'assets', file)
+        const current = join(this.d.programDir, relative), next = join(sourceDir, relative)
+        if (existsSync(current) && (!existsSync(next) || await readFile(current, 'utf8') !== await readFile(next, 'utf8'))) {
+          return { ok: false, message: 'update changes native helpers; perform a trusted administrator reinstall' }
+        }
+      }
+      const modules = join(this.d.programDir, 'node_modules')
+      if (existsSync(modules)) {
+        await cp(modules, join(sourceDir, 'node_modules'), { recursive: true, filter: async p => {
+          if ((await lstat(p)).isSymbolicLink()) throw new Error('private dependencies contain a link; reinstall from a trusted administrator terminal')
+          return true
+        } })
       }
 
       const backupDir = `${this.d.programDir}.bak`

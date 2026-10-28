@@ -8,6 +8,13 @@ import {
 import type { PromptRequest } from '../../src/core/types.js'
 
 describe('WindowsProtectedPrompt', () => {
+  it('returns a requested management action without treating it as approval', async () => {
+    const prompt = new WindowsProtectedPrompt({
+      phrase: 'phrase', promptExePath: 'test.exe',
+      execFile: (_f, _a, _o, callback) => callback(null, 'revoke:a.com', ''),
+    })
+    expect(await prompt.manage({ title: 'Manage', phrase: 'phrase', lines: [], domains: ['a.com'] })).toEqual({ action: 'revoke', domain: 'a.com' })
+  })
   const sampleReq: PromptRequest = {
     title: 'Unlock Vault',
     lines: ['Domain: example.com', 'Action: autofill'],
@@ -232,7 +239,7 @@ describe('WindowsProtectedPrompt', () => {
           '--lines',
           JSON.stringify(['Line 1', 'Line 2']),
         ],
-        expect.objectContaining({ timeout: 30000 }),
+        expect.objectContaining({ timeout: 50000 }),
         expect.any(Function)
       )
     })

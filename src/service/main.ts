@@ -23,6 +23,8 @@ import { ServiceUpdater } from './update/updater.js'
 import { diagnoseService } from './doctor.js'
 import { GrantCoordinator } from './grants.js'
 import { ensureV3State } from './state.js'
+import { ManagementService } from './manage.js'
+import { privateBrowserPath } from '../platform/runtime-assets.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -39,7 +41,7 @@ export async function runService(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<net.Server> {
   const cfg = serviceConfig(env, platform)
-  const defaultBw = platform === 'win32' ? join(cfg.home, 'bin', 'bw.exe') : '/usr/local/bin/bw'
+  const defaultBw = join(cfg.home, 'bin', platform === 'win32' ? 'bw.exe' : 'bw')
   if (!env.U_CHAN_BW && existsSync(defaultBw)) {
     env.U_CHAN_BW = defaultBw
   }
@@ -63,12 +65,12 @@ export async function runService(
     const grants = new GrantCoordinator(allowlist)
     const audit = new FileAuditLog(cfg.auditPath)
     const login = new IsolatedLogin({
-      launch: () => chromium.launch({ headless: true }),
+      launch: async () => chromium.launch({ headless: true, executablePath: await privateBrowserPath(cfg.home), timeout: 15000 }),
       target: new CdpSessionTarget(new CdpBrowserProvider(loadConfig(env, platform).cdpEndpoint)),
     })
     const core = new CoreService({ vault, allowlist, grants, approver, audit, login, mode: () => approver.effectiveMode() })
 
-    let currentVersion = '2.0.0'
+    let currentVersion = '3.0.0'
     try {
       currentVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
     } catch {}
@@ -87,10 +89,17 @@ export async function runService(
       currentVersion,
     })
 
-    const control = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose: () => diagnoseService(cfg.home, vault, platform) })
+    const diagnose = () => diagnoseService(cfg.home, vault, platform)
+    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, manage: () => manager.open() })
+    const manager = new ManagementService({
+      store: allowlist, grants, vault, audit, diagnose, phrase: async () => (await settings.get()).phrase,
+      show: req => adapters.prompt.manage ? adapters.prompt.manage(req) : Promise.reject(new Error('unsupported')),
+      lock: () => control.lock(), unlock: () => control.unlock(), revoke: domain => core.revoke(domain),
+    })
     const api: CoreApi & ControlApi = {
       capabilities: () => control.capabilities(),
       diagnose: () => control.diagnose(),
+      manage: () => control.manage(),
       login: (domain) => core.login(domain),
       requestAllow: (domain, loginUrl, item, selectors, options) => core.requestAllow(domain, loginUrl, item, selectors, options),
       revoke: (domain) => core.revoke(domain),

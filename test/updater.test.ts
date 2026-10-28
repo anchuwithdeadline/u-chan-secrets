@@ -58,6 +58,21 @@ describe('ServiceUpdater', () => {
     expect(verifier.verify).not.toHaveBeenCalled()
     expect(restarter.restart).not.toHaveBeenCalled()
   })
+  it('preserves installed private dependencies when replacing a package without bundled node_modules', async () => {
+    await mkdir(join(programDir, 'node_modules'), { recursive: true })
+    await writeFile(join(programDir, 'node_modules', 'fixture'), 'private dependency')
+    const updater = new ServiceUpdater({
+      verifier, restarter, programDir, stagingDir, currentVersion: '2.0.0',
+      extractArchive: async (_b, dest) => {
+        await mkdir(join(dest, 'dist'), { recursive: true })
+        await writeFile(join(dest, 'package.json'), '{"name":"u-chan-secrets","version":"2.1.0"}')
+        await writeFile(join(dest, 'dist', 'index.js'), '')
+        await writeFile(join(dest, 'dist', 'cli.js'), '')
+      },
+    })
+    expect((await updater.update()).ok).toBe(true)
+    expect(await readFile(join(programDir, 'node_modules', 'fixture'), 'utf8')).toBe('private dependency')
+  })
 
   it('stages verified package, validates files, and performs atomic replacement', async () => {
     const extractArchive = vi.fn(async (_tarball: Buffer, destDir: string) => {

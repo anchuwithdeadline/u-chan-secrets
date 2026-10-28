@@ -54,6 +54,7 @@ export interface CoreApi {
   status(): Promise<ToolResult>
 }
 export interface ControlApi {
+  manage(): Promise<ToolResult>
   diagnose(): Promise<ToolResult>
   capabilities(): Promise<ToolResult>
   unlock(): Promise<ToolResult>
@@ -66,9 +67,11 @@ export interface ControlApi {
 export interface ServiceRestarter {
   restart(): Promise<void>
 }
-export interface PromptRequest { title: string; lines: string[]; phrase: string }
+export interface PromptRequest { title: string; lines: string[]; phrase: string; domains?: string[] }
+export type ManagementAction = { action: 'close' | 'refresh' | 'lock' | 'unlock' | 'revoke' | 'next' | 'previous'; domain?: string }
 /** Platform window owned by the service. Close, timeout or error → false / null. */
 export interface ProtectedPrompt {
+  manage?(req: PromptRequest): Promise<ManagementAction | null>
   confirm(req: PromptRequest): Promise<boolean>
   askPassword(req: PromptRequest): Promise<string | null>
 }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type { ApprovalMode } from '../../core/types.js'
 import { generateLaunchdPlist, PLIST_LABEL, PLIST_PATH } from './plist.js'
 import { assertCompatibleState } from '../../service/state.js'
+import { stageBrowser } from '../runtime-assets.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -32,7 +33,7 @@ const defaultFs = {
   chmod: (p: string, mode: number) => fs.chmod(p, mode),
   chown: (p: string, uid: number, gid: number) => fs.chown(p, uid, gid),
   rm: (p: string, opts?: { recursive?: boolean; force?: boolean }) => fs.rm(p, opts),
-  cp: (src: string, dest: string, opts?: { recursive?: boolean }) => fs.cp(src, dest, opts),
+  cp: (src: string, dest: string, opts?: { recursive?: boolean }) => fs.cp(src, dest, { ...opts, dereference: true }),
   exists: (p: string): Promise<boolean> => fs.access(p).then(() => true, () => false),
 }
 
@@ -125,7 +126,7 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
   if (pkgRoot && (!deps?.fs || deps.fs.cp)) {
     try {
       await fsOps.cp?.(pkgRoot, programDir, { recursive: true })
-    } catch {}
+    } catch { return { ok: false, message: 'could not stage private service files; daemon not started' } }
   }
 
   const ownerPath = path.posix.join(homeDir, 'owner.json')
@@ -144,7 +145,18 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
     await fsOps.writeFile(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 })
   }
 
-  const nodePath = deps?.nodePath ?? process.execPath
+  let nodePath = deps?.nodePath ?? process.execPath
+  if (!deps?.fs) {
+    const bin = path.posix.join(homeDir, 'bin')
+    await fs.mkdir(bin, { recursive: true, mode: 0o700 })
+    await fs.copyFile(nodePath, path.posix.join(bin, 'node'))
+    nodePath = path.posix.join(bin, 'node')
+    const bw = await exec('/usr/bin/which', ['bw'])
+    if (bw.exitCode !== 0 || !bw.stdout.trim().startsWith('/')) return { ok: false, message: 'native Bitwarden binary is missing; install it before retrying setup' }
+    await fs.copyFile(bw.stdout.trim(), path.posix.join(bin, 'bw'))
+    try { await stageBrowser(homeDir) }
+    catch { return { ok: false, message: 'could not stage private Chromium; install the matching Playwright browser and retry setup' } }
+  }
   const serviceScriptPath = deps?.serviceScriptPath ?? path.posix.join(programDir, 'dist', 'service', 'main.js')
   const outLogPath = path.posix.join(homeDir, 'daemon.out.log')
   const errLogPath = path.posix.join(homeDir, 'daemon.err.log')

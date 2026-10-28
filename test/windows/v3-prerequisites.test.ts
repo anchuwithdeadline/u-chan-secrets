@@ -20,6 +20,7 @@ it('reinstall preserves owner, phrase, mode and idle timeout and copies dependen
   await writeFile(join(home, 'settings.json'), JSON.stringify(settings))
   const result = await installWindowsService({
     programData: home, packageRoot: pkg, adminCheck: async () => true, getUserSid: async () => 'different-owner',
+    stageBrowser: async () => {},
     exec: async () => ({ stdout: '', stderr: '' }),
     serviceManager: { create: vi.fn(), start: vi.fn() } as any,
   })

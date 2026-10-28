@@ -21,6 +21,7 @@ const selectorsOf = (v: unknown): Selectors | undefined | typeof BAD => {
 const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | typeof BAD> = {
   capabilities: api => api.capabilities ? api.capabilities() : Promise.resolve({ ok: false, message: 'unknown method' }),
   diagnose: api => api.diagnose(),
+  manage: api => api.manage(),
   login: (api, p) => (str(p.domain) ? api.login(p.domain) : BAD),
   request_allow: (api, p) => {
     const sel = selectorsOf(p.selectors)

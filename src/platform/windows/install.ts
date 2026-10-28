@@ -12,6 +12,7 @@ import { PROMPT_HELPER_CSHARP } from './assets/prompt-src.js'
 import { SERVICE_HOST_CSHARP } from './assets/service-src.js'
 import { generateRandomPhrase } from '../darwin/lifecycle.js'
 import { assertCompatibleState } from '../../service/state.js'
+import { stageBrowser } from '../runtime-assets.js'
 
 export const defaultProgramData = (): string => {
   return process.env.ProgramData
@@ -38,6 +39,7 @@ export const defaultGetUserSid = async (exec: ExecFn = defaultExec): Promise<str
 }
 
 export interface WindowsInstallOptions {
+  stageBrowser?: (home: string) => Promise<void>
   packageRoot?: string
   mode?: ApprovalMode
   phrase?: string
@@ -127,6 +129,8 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   // 4b. Write service target configuration so service host runs node + service bundle on boot
   const nodeExe = path.join(binDir, 'node.exe')
   await fs.copyFile(process.execPath, nodeExe)
+  try { await (opts.stageBrowser ?? stageBrowser)(programData) }
+  catch { return { ok: false, message: 'could not stage private Chromium; run npx playwright install chromium from the trusted installation, then retry' } }
   const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
   await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 

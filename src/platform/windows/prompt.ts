@@ -1,13 +1,15 @@
 import { execFile as defaultExecFile } from 'node:child_process'
-import type { PromptRequest, ProtectedPrompt } from '../../core/types.js'
+import type { PromptRequest, ProtectedPrompt, ManagementAction } from '../../core/types.js'
 
 export interface PromptRunnerOutcome {
   ok: boolean
   password?: string
+  action?: ManagementAction
 }
 
 export type PromptRunner = (params: {
-  mode: 'confirm' | 'password'
+  mode: 'confirm' | 'password' | 'manage'
+  domains?: string[]
   title: string
   lines: string[]
   phrase: string
@@ -63,6 +65,14 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
       }
     })
   }
+  manage(req: PromptRequest): Promise<ManagementAction | null> {
+    return this.enqueue(async () => {
+      try {
+        const r = await this.runner({ mode: 'manage', title: req.title, lines: req.lines, phrase: this.phrase || req.phrase, domains: req.domains, timeoutMs: this.timeoutMs })
+        return r.ok && r.action ? r.action : null
+      } catch { return null }
+    })
+  }
 
   askPassword(req: PromptRequest): Promise<string | null> {
     return this.enqueue(async () => {
@@ -94,7 +104,8 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
   }
 
   private defaultRunner(params: {
-    mode: 'confirm' | 'password'
+    mode: 'confirm' | 'password' | 'manage'
+    domains?: string[]
     title: string
     lines: string[]
     phrase: string
@@ -116,15 +127,21 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
         '--lines',
         JSON.stringify(params.lines),
       ]
+      if (params.mode === 'manage') args.push('--domains', JSON.stringify(params.domains ?? []))
 
       try {
         this.execFile(
           this.promptExePath,
           args,
-          { timeout: params.timeoutMs, windowsHide: false },
+          { timeout: params.timeoutMs + 20000, windowsHide: true },
           (error, stdout) => {
             if (error) {
               resolve({ ok: false })
+              return
+            }
+            if (params.mode === 'manage') {
+              const match = /^(close|refresh|lock|unlock|revoke|next|previous)(?::([^\r\n]*))?$/.exec(stdout.trim())
+              resolve(match ? { ok: true, action: { action: match[1] as ManagementAction['action'], ...(match[2] ? { domain: match[2] } : {}) } } : { ok: false })
               return
             }
             resolve({

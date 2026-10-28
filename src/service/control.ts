@@ -12,6 +12,7 @@ const BLOCKED = 'too many wrong passwords — try again in 15 minutes'
 const TITLE = 'U-Chan Secrets'
 
 interface Deps {
+  manage?: () => Promise<ToolResult>
   grants?: GrantCoordinator
   diagnose?: () => Promise<import('../core/doctor.js').ServiceDiagnostic>
   vault: BitwardenVault
@@ -34,6 +35,9 @@ export class ControlService implements ControlApi {
   async diagnose(): Promise<ToolResult> {
     try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }
     catch { return { ok: false, message: 'service diagnostics unavailable' } }
+  }
+  async manage(): Promise<ToolResult> {
+    return this.d.manage ? this.d.manage() : { ok: false, message: 'native management is unavailable' }
   }
 
   private async guarded(action: AuditEvent['action'], fn: () => Promise<ToolResult>): Promise<ToolResult> {
