@@ -1,5 +1,15 @@
 # Security Policy
 
+## V3 verification and operational limits
+
+V3 adds service-enforced one-attempt and timed grants, protected pre-migration backup, capability negotiation, read-only diagnostics, and native management. Existing browser sessions remain usable after a grant expires or is revoked. Grant revocation waits behind an earlier login in the single service queue.
+
+Authentication is confirmed only when a user-approved success condition passes in the isolated browser and session transfer succeeds. Legacy form-completion heuristics produce an explicitly unconfirmed result. A success condition is evidence chosen by the user, not a universal proof supplied by arbitrary websites.
+
+Windows protected prompts now require SYSTEM identity, a separate input desktop, and a SYSTEM-only cross-session reply pipe. macOS password prompts enable and disable secure input around their modal interaction. Compilation and mocked OS tests alone do not prove runtime security. Do not interpret the V2 architectural descriptions below as a completed V3 platform attack audit.
+
+Before release, verify process identity, keyboard hooks, synthetic input, clipboard/screen exposure, caller authentication, executable ownership (including native dependencies), and update behavior on each supported OS. macOS runtime verification and actual installed-service adversarial checks require their respective hosts. No production biometric approval is included.
+
 U-Chan Secrets handles real-world credentials, vault access, and automated authentication. Security reports are taken seriously and prioritized.
 
 ---

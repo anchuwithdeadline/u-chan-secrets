@@ -1,4 +1,23 @@
-# U-Chan Secrets V2 — Manual Attack Verification Checklist
+# U-Chan Secrets — Manual Attack Verification Checklist
+
+V3 release status: source tests and native compilation are separate from these installed-service attacks. The expected outcomes below are test criteria, not recorded passes.
+
+## Additional V3 checks
+
+Record OS/version, installed service version, caller identity, date, and PASS / FAIL / UNAVAILABLE for each check. Use disposable credentials and a test site. Never record real passwords, seeds, codes, cookies, session keys, or the anti-phishing phrase.
+
+1. **Protected identity and input:** inspect the actual Windows prompt process token: SYSTEM must own it in the intended interactive session. Verify it uses a separate desktop; try standard-user keyboard hooks, synthetic input, and screen capture. The main user desktop must return after cancellation, timeout, and failure. On macOS verify secure-input activation and cleanup, including failure paths. Synthetic management clicks must never bypass the hardcore password flow.
+2. **Native transport:** standard-user attempts to open or spoof the Windows per-prompt reply pipe must fail. Confirm real cross-session prompts return only through the SYSTEM-owned pipe; denied or failed helpers must never fall back to unprotected approval.
+3. **Private execution:** attempt writes to service Node, dependencies, Bitwarden, Chromium, helpers, and every executable/native dependency they load. Check actual ownership, ACLs, junctions/symlinks, and dynamic library search paths. Any user-writable executed dependency fails this check.
+4. **Once grants:** issue simultaneous login requests over separate IPC connections. Exactly one attempt may reserve the grant. Crash/restart after reservation; it must remain consumed. Locked-vault and unavailable-Chrome preflight must not consume an attempt.
+5. **Timed grants:** test exact expiration, expiration while approval is open, and expiration during credential retrieval and before transfer. Move the clock backward during a running service; affected grants must remain invalid after restart. Renew only through real protected approval. Do not claim detection of clock changes made while stopped.
+6. **Permission tampering:** change duration, item, hosts, selectors, and success conditions through raw IPC. Every valid change requires protected approval; malformed or unsupported policy is refused. A V3 client talking to V2 must never silently request permanent approval.
+7. **Outcome evidence:** use blank pages, error pages that hide their form, CAPTCHA, an unmet approved condition, and a rejected session injection. No unconfirmed authentication may be reported as confirmed success.
+8. **Read-only diagnostics:** exercise unavailable/unauthenticated/locked states and partial failures. Confirm no credential retrieval or repairs occur, all probes terminate, and diagnostic JSON/errors contain only fixed safe messages.
+9. **Management:** inspect long domains, multiple pages, expired/exhausted entries, and last-action failure. Test closing, timeout, malformed helper output, stale targets, refresh, lock/unlock, and revoke. No management response may create or extend a grant.
+10. **Backup/update:** verify the pre-V3 snapshot is protected before any content is copied. Incomplete backup and invalid marker must block state mutation. Confirm installed dependencies survive a package-only update; dependency/native-helper changes require trusted reinstall. Supported downgrade must refuse V2 state interpretation.
+
+Current local evidence and remaining platform work are recorded in [V3 validation](superpowers/research/2026-10-29-v3-validation.md).
 
 This checklist defines 9 manual verification attack scenarios corresponding to Spec §7. These tests verify that U-Chan Secrets V2 defends passwords, TOTP seeds, and Bitwarden sessions against a compromised AI assistant operating with full user shell permissions and browser automation.
 

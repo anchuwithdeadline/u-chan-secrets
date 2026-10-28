@@ -1,4 +1,59 @@
-# U-Chan Secrets V2
+# U-Chan Secrets V3
+
+V3 adds guided diagnostics, temporary login approvals, explicit authentication outcomes, and a native management window. This source checkout is a local release candidate. Unit/integration tests and C# compilation do not establish installed-service isolation or macOS runtime verification; run the platform attack checklist before relying on the security boundary.
+
+## V3 daily use
+
+```sh
+u-chan doctor
+u-chan doctor --json
+u-chan manage
+```
+
+Doctor checks service registration, authenticated IPC, private assets, permissions, vault state, Chrome, and observable Playwright browser sharing. It never retrieves credentials, unlocks the vault, or repairs configuration. Results are `pass`, `fail`, or `unknown`; a locked vault is a valid state with an unlock instruction. Exit codes: 0 for required checks passing, 1 for a required failure, 2 for unresolved required checks. Playwright configuration is advisory when no AI process tree can be observed.
+
+Manage shows vault state, grant pages, recent sanitized activity, and service diagnostic status. It supports lock, unlock, refresh, and revocation. Unlock opens the existing protected password prompt after the management window closes. The window cannot create or extend grants.
+
+### Approval duration and success conditions
+
+The existing `request_allow` MCP tool accepts two optional fields:
+
+```json
+{
+  "domain": "example.com",
+  "login_url": "https://example.com/login",
+  "item": "the Bitwarden item ID supplied by the user",
+  "grant": { "kind": "timed", "minutes": 30 },
+  "success": { "url": "https://example.com/dashboard" }
+}
+```
+
+- `grant: { "kind": "once" }` permits one login attempt after vault/Chrome preflight. A failed reserved attempt still counts.
+- `grant: { "kind": "timed", "minutes": 30 }` permits future logins until the exact UTC time shown in the protected prompt. Integer range: 1–1,440 minutes.
+- `grant: { "kind": "permanent" }` permits permanent future logins. Existing callers omitting the field retain this behavior; the prompt states it explicitly.
+- `success` may specify one exact HTTPS URL on an approved host, or `{ "selector": "#signed-in-account" }`. Choose evidence specific to an authenticated page. A generic selector such as `body` cannot establish authentication meaningfully.
+
+The AI proposes these fields; a real protected approval authorizes the complete entry. V3 clients refuse these options against services that do not advertise the relevant capability.
+
+Without an approved success condition, generic login completion may transfer filtered session state, but returns `authentication_unconfirmed` with `ok: false`. Inspect the site before continuing. A configured condition that does not match prevents transfer. This avoids treating a blank page or hidden login form as proof of authentication.
+
+**Grant expiry and revocation stop future U-Chan logins. They do not log out website sessions already transferred to Chrome.** Revocation waits for any earlier queued login to finish. A detected backward clock change invalidates affected timed grants; renewed protected approval is required. Changes while the service is stopped cannot be reconstructed from an untrusted wall clock.
+
+### V2 upgrade and rollback
+
+Use a trusted administrator reinstall for the first V3 installation so the native helpers, private runtime, and Chromium bundle are staged together. Install the matching Playwright Chromium before setup if the installer reports it missing. Reinstall preserves existing owner/settings and grants.
+
+Before the first grant-state mutation, the service creates an administrator-owned `#0 backup/v2-before-v3` snapshot and a `schema.json` marker. Incomplete backups block mutation rather than being overwritten. Never copy this backup into a user-readable workspace: it can contain encrypted vault data and privileged configuration.
+
+Supported V3 tooling refuses V2 downgrade after migration. Deliberately running historical V2 administrator tools is outside this guard. A deliberate rollback requires stopping the service, inspecting and restoring the protected pre-V3 state, and acknowledging that the original permanent grants return.
+
+Updates retain private dependencies. Dependency or native-helper changes require a trusted administrator reinstall; they are not silently applied to an incompatible service installation.
+
+Windows prompts require SYSTEM identity and an isolated desktop. Cross-session replies use a SYSTEM-only named pipe. macOS remains hardcore only and enables secure input for password entry. These are implementation requirements; verify their actual OS behavior using [the attack checklist](docs/attack-checklist.md).
+
+Biometrics remains research only; see [native approval investigation](docs/superpowers/research/2026-10-29-native-approval.md).
+
+---
 
 A hardened Model Context Protocol (MCP) server that enables Claude Code to authenticate into allowlisted websites using Bitwarden credentials—without exposing passwords, TOTP seeds, or vault session keys to the AI model or the user-level desktop environment.
 
