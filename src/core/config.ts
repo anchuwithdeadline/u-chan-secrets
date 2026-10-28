@@ -2,6 +2,11 @@ import { join, posix, win32 } from 'node:path'
 import { homedir } from 'node:os'
 import { defaultEndpoint } from '../ipc/endpoint.js'
 
+export interface AppConfig {
+  chromeProfile: string
+  cdpEndpoint: string
+}
+
 /** Paths owned by the privileged service. Never read by the MCP client. */
 export function serviceConfig(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
   const path = platform === 'win32' ? win32 : posix
@@ -21,8 +26,15 @@ export function serviceConfig(env: NodeJS.ProcessEnv, platform: NodeJS.Platform)
 }
 
 /** User-side values only (the user's Chrome). */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
-  const base = env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): AppConfig {
+  const base =
+    env.APPDATA ??
+    (platform === 'darwin'
+      ? join(homedir(), 'Library', 'Application Support')
+      : join(homedir(), 'AppData', 'Roaming'))
   const home = env.U_CHAN_HOME ?? join(base, 'u-chan-secrets')
   return {
     chromeProfile: join(home, 'chrome-profile'),
