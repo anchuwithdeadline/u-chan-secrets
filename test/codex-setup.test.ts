@@ -95,3 +95,14 @@ it('preserves compatible enabled custom environment and timeout settings without
   expect(g.calls.every(c => c[1] === 'get')).toBe(true)
   expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
 })
+it('preserves but does not mark ready custom environment that changes browser or service targets', async () => {
+  const f = await fixture()
+  for (const env of [{ U_CHAN_CDP: 'http://127.0.0.1:9223' }, { U_CHAN_IPC: 'SECRET_SENTINEL' }]) {
+    const current = entry(f.options.nodePath, [f.options.entryPath])
+    const g = await fixture({ u_chan_secrets: { ...current, transport: { ...current.transport, env } } })
+    const r = await configureCodex({ ...g.options, apply: true, replaceExisting: true }, g.deps)
+    expect(r).toMatchObject({ state: 'manual', changed: false })
+    expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
+    expect(g.calls.every(c => c[1] === 'get')).toBe(true)
+  }
+})

@@ -4,10 +4,12 @@ import { chmod, copyFile, lstat, mkdir, realpath } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { safeCdpOrigin } from '../core/doctor.js'
+import { defaultEndpoint } from '../ipc/endpoint.js'
 
 export type CodexSetupState = 'ready' | 'missing' | 'needs_update' | 'manual' | 'unavailable'
 export interface CodexSetupOptions {
   apply: boolean; replaceExisting: boolean; endpoint: string; nodePath: string; entryPath: string; configDir: string
+  ipcEndpoint?: string
 }
 export interface CodexSetupResult { state: CodexSetupState; changed: boolean; backupPath?: string; message: string }
 interface ExecResult { code: number; stdout: string; stderr: string }
@@ -80,6 +82,16 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
         pending.push({ entry, replace: false }); continue
       }
       const current = JSON.parse(r.stdout)
+      const env = current?.transport?.env
+      const inherited = current?.transport?.env_vars
+      const ipc = o.ipcEndpoint ?? defaultEndpoint(process.env, process.platform)
+      if ((env && Object.keys(env).some(key => {
+        const name = key.toUpperCase()
+        return name === 'U_CHAN_CDP' ? safeCdpOrigin(env[key]) !== safeCdpOrigin(o.endpoint)
+          : name === 'U_CHAN_IPC' && env[key] !== ipc
+      })) || (Array.isArray(inherited) && inherited.some(key => typeof key === 'string' && ['U_CHAN_CDP','U_CHAN_IPC'].includes(key.toUpperCase())))) {
+        return result('manual', 'Custom target environment preserved; align browser and service targets manually.')
+      }
       if (current?.enabled === true && current.transport?.type === 'stdio'
         && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)) continue
       if (!simple(current, entry.name)) return result('manual', 'Custom Codex settings preserved; configure this registration manually.')

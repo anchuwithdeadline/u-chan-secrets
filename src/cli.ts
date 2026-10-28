@@ -95,7 +95,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     const endpoint = loadConfig(d.env, d.platform).cdpEndpoint
     const r = d.setup ? await d.setup(options) : await runSetup(options, {
       platform: d.platform, endpoint, elevated: isElevated, doctor,
-      configure: opts => configureCodex({ ...opts, endpoint, nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
+      configure: opts => configureCodex({ ...opts, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
       startBrowser: () => new Promise(resolve => {
         execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', fileURLToPath(new URL('../scripts/start-chrome.ps1', import.meta.url)), '-Background'],
           { timeout: 5000, windowsHide: true, env: d.env, maxBuffer: 65536 }, async err => {
