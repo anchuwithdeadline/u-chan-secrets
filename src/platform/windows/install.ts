@@ -37,6 +37,7 @@ export const defaultGetUserSid = async (exec: ExecFn = defaultExec): Promise<str
 }
 
 export interface WindowsInstallOptions {
+  packageRoot?: string
   mode?: ApprovalMode
   phrase?: string
   adminCheck?: () => Promise<boolean>
@@ -78,20 +79,24 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   await fs.mkdir(dataDir, { recursive: true })
   await fs.mkdir(programDir, { recursive: true })
   try {
-    const pkgRoot = fileURLToPath(new URL('../../../', import.meta.url))
+    const pkgRoot = opts.packageRoot ?? fileURLToPath(new URL('../../../', import.meta.url))
     await fs.cp( path.join(pkgRoot, 'dist'), path.join(programDir, 'dist'), { recursive: true })
     await fs.cp( path.join(pkgRoot, 'package.json'), path.join(programDir, 'package.json'))
     const srcNm = path.join(pkgRoot, 'node_modules')
     const destNm = path.join(programDir, 'node_modules')
-    try {
-      await fs.symlink(srcNm, destNm, 'junction')
-    } catch {
+    {
+      // Never let a privileged service execute a user-writable dependency junction.
+      const existing = await fs.lstat(destNm).catch(() => undefined)
+      if (existing?.isSymbolicLink()) await fs.unlink(destNm)
       await fs.cp(srcNm, destNm, {
         recursive: true,
+        dereference: true,
         filter: (src) => !/[\\/]\.(vite|vitest-cache|vite-temp)/.test(src),
-      }).catch(() => {})
+      })
     }
-  } catch {}
+  } catch {
+    return { ok: false, message: 'could not stage a private service program copy; service not started' }
+  }
 
   // 3. Set strict Administrator/SYSTEM ACLs
   await setAdminOnlyAcl(programData, exec)
@@ -116,7 +121,8 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   })
 
   // 4b. Write service target configuration so service host runs node + service bundle on boot
-  const nodeExe = process.execPath
+  const nodeExe = path.join(binDir, 'node.exe')
+  await fs.copyFile(process.execPath, nodeExe)
   const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
   await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 
@@ -138,7 +144,11 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     idleLockMs: 43200000,
     authorizedSid,
   }
-  await fs.writeFile(path.join(programData, 'settings.json'), JSON.stringify(settings, null, 2), 'utf8')
+  try {
+    await fs.writeFile(path.join(programData, 'settings.json'), JSON.stringify(settings, null, 2), { encoding: 'utf8', flag: 'wx' })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+  }
 
   // 6. Migrate user Bitwarden CLI
   const migration = await migrateBitwarden({ exec })

@@ -7,6 +7,9 @@ export function buildJxaPromptScript(req: PromptRequest): string {
 
   return `ObjC.import('Cocoa');
 ObjC.import('stdlib');
+ObjC.import('Carbon');
+ObjC.bindFunction('EnableSecureEventInput', ['int', []]);
+ObjC.bindFunction('DisableSecureEventInput', ['int', []]);
 
 var alert = $.NSAlert.alloc.init;
 alert.messageText = ${JSON.stringify(req.title)};
@@ -18,7 +21,13 @@ var input = $.NSSecureTextField.alloc.initWithFrame($.NSMakeRect(0, 0, 320, 24))
 alert.accessoryView = input;
 alert.window.initialFirstResponder = input;
 
-var response = alert.runModal;
+if ($.EnableSecureEventInput() !== 0) $.exit(1);
+var response;
+try {
+  response = alert.runModal;
+} finally {
+  $.DisableSecureEventInput();
+}
 if (response === $.NSAlertFirstButtonReturn) {
   var pass = input.stringValue.js;
   $.NSFileHandle.fileHandleWithStandardOutput.writeData(

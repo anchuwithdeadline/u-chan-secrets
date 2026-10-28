@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using System.Security.Principal;
 
 namespace UChan.Platform.Windows.Assets
 {
@@ -17,6 +18,27 @@ namespace UChan.Platform.Windows.Assets
 
         [DllImport("wtsapi32.dll", SetLastError = true)]
         private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SetTokenInformation(IntPtr token, int kind, ref uint value, int size);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateDesktop(string name, IntPtr device, IntPtr mode, uint flags, uint access, ref SECURITY_ATTRIBUTES attributes);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetThreadDesktop(IntPtr desktop);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SwitchDesktop(IntPtr desktop);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseDesktop(IntPtr desktop);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string sddl, uint revision, out IntPtr descriptor, out uint size);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr LocalFree(IntPtr memory);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateProcess(IntPtr process, uint code);
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern bool DuplicateTokenEx(
@@ -121,11 +143,39 @@ namespace UChan.Platform.Windows.Assets
         [STAThread]
         public static int Main(string[] args)
         {
+            // Never collect secrets or accept approval in the desktop user's identity.
+            if (!WindowsIdentity.GetCurrent().IsSystem) return 1;
             if (Process.GetCurrentProcess().SessionId == 0)
             {
                 return RelayToActiveSession(args);
             }
-            return RunDialog(args);
+            return RunProtectedDialog(args);
+        }
+
+        private static int RunProtectedDialog(string[] args)
+        {
+            IntPtr original = OpenInputDesktop(0, false, 0x0100);
+            if (original == IntPtr.Zero) return 1;
+            IntPtr descriptor = IntPtr.Zero;
+            IntPtr desktop = IntPtr.Zero;
+            uint size;
+            try
+            {
+                if (!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;GA;;;SY)", 1, out descriptor, out size)) return 1;
+                SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
+                sa.nLength = Marshal.SizeOf(sa);
+                sa.lpSecurityDescriptor = descriptor;
+                desktop = CreateDesktop("UChan-" + Guid.NewGuid().ToString("N"), IntPtr.Zero, IntPtr.Zero, 0, 0x01FF, ref sa);
+                if (desktop == IntPtr.Zero || !SetThreadDesktop(desktop) || !SwitchDesktop(desktop)) return 1;
+                return RunDialog(args);
+            }
+            finally
+            {
+                SwitchDesktop(original);
+                if (desktop != IntPtr.Zero) CloseDesktop(desktop);
+                CloseDesktop(original);
+                if (descriptor != IntPtr.Zero) LocalFree(descriptor);
+            }
         }
 
         private static int RelayToActiveSession(string[] args)
@@ -138,10 +188,10 @@ namespace UChan.Platform.Windows.Assets
             }
 
             IntPtr hUserToken;
-            if (!WTSQueryUserToken(sessionId, out hUserToken))
+            if (!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x000B, out hUserToken))
             {
                 Console.Error.WriteLine("WTSQueryUserToken failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
+                return 1;
             }
 
             IntPtr hPrimaryToken;
@@ -149,9 +199,14 @@ namespace UChan.Platform.Windows.Assets
             {
                 CloseHandle(hUserToken);
                 Console.Error.WriteLine("DuplicateTokenEx failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
+                return 1;
             }
             CloseHandle(hUserToken);
+            if (!SetTokenInformation(hPrimaryToken, 12, ref sessionId, 4))
+            {
+                CloseHandle(hPrimaryToken);
+                return 1;
+            }
 
             SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
             sa.nLength = Marshal.SizeOf(sa);
@@ -161,7 +216,7 @@ namespace UChan.Platform.Windows.Assets
             if (!CreatePipe(out hReadPipe, out hWritePipe, ref sa, 0))
             {
                 CloseHandle(hPrimaryToken);
-                return FallbackWtsMessage(args, sessionId);
+                return 1;
             }
 
             SetHandleInformation(hReadPipe, 1, 0);
@@ -210,10 +265,18 @@ namespace UChan.Platform.Windows.Assets
             {
                 CloseHandle(hReadPipe);
                 Console.Error.WriteLine("CreateProcessAsUser failed: " + Marshal.GetLastWin32Error());
-                return FallbackWtsMessage(args, sessionId);
+                return 1;
             }
 
             CloseHandle(pi.hThread);
+
+            if (WaitForSingleObject(pi.hProcess, 125000) != 0)
+            {
+                TerminateProcess(pi.hProcess, 1);
+                CloseHandle(pi.hProcess);
+                CloseHandle(hReadPipe);
+                return 1;
+            }
 
             StringBuilder output = new StringBuilder();
             byte[] buf = new byte[1024];
@@ -239,7 +302,7 @@ namespace UChan.Platform.Windows.Assets
             }
 
             // If child process failed or could not start, and this is a confirm prompt, fall back to WTSSendMessage
-            return FallbackWtsMessage(args, sessionId);
+            return 1;
         }
 
         private static int FallbackWtsMessage(string[] args, uint sessionId)
@@ -363,6 +426,7 @@ namespace UChan.Platform.Windows.Assets
                 txtPassword.Location = new Point(16, yOffset);
                 txtPassword.Size = new Size(428, 24);
                 txtPassword.UseSystemPasswordChar = true;
+                txtPassword.MaxLength = 512;
                 contentPanel.Controls.Add(txtPassword);
             }
 

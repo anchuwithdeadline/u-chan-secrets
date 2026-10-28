@@ -124,7 +124,9 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
   }
 
   const ownerPath = path.posix.join(homeDir, 'owner.json')
-  await fsOps.writeFile(ownerPath, JSON.stringify({ installUid, installUser }, null, 2), { mode: 0o600 })
+  if (!(await fsOps.exists(ownerPath))) {
+    await fsOps.writeFile(ownerPath, JSON.stringify({ installUid, installUser }, null, 2), { mode: 0o600 })
+  }
 
   const settingsPath = path.posix.join(homeDir, 'settings.json')
   if (!(await fsOps.exists(settingsPath))) {
