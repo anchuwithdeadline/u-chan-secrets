@@ -29,6 +29,8 @@ echo.
 echo [*] Step 3: Checking service status...
 sc.exe query u-chan-secrets
 echo.
+copy /y C:\ProgramData\u-chan-secrets\service.log "%ROOT%\service-copy.log" >nul 2>&1
+copy /y C:\ProgramData\u-chan-secrets\settings.json "%ROOT%\settings-copy.json" >nul 2>&1
 echo ========================================================
 echo [+] Service successfully installed and started!
 echo.
