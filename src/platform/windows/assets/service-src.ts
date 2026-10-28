@@ -12,6 +12,7 @@ namespace UChan.Platform.Windows.Assets
         private volatile bool _stopping;
         private string _targetExe;
         private string _targetArgs;
+        private string _fallbackNodePath = "";
 
         public UChanService(string[] args)
         {
@@ -50,6 +51,10 @@ namespace UChan.Platform.Windows.Assets
                         {
                             targetArgs = lines[1].Trim();
                         }
+                        if (lines.Length > 2)
+                        {
+                            _fallbackNodePath = lines[2].Trim();
+                        }
                     }
                 }
             }
@@ -73,11 +78,43 @@ namespace UChan.Platform.Windows.Assets
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
 
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string progNm = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, "..", "program", "node_modules"));
+            string nodePath = "";
+            if (System.IO.Directory.Exists(progNm))
+            {
+                nodePath = progNm;
+            }
+            if (!string.IsNullOrEmpty(_fallbackNodePath))
+            {
+                nodePath = string.IsNullOrEmpty(nodePath) ? _fallbackNodePath : (nodePath + ";" + _fallbackNodePath);
+            }
+            if (!string.IsNullOrEmpty(nodePath))
+            {
+                psi.EnvironmentVariables["NODE_PATH"] = nodePath;
+            }
+
+            string logFile = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, "..", "service.log"));
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+
             Process proc = new Process();
             proc.StartInfo = psi;
             proc.EnableRaisingEvents = true;
+            proc.OutputDataReceived += (s, e) => {
+                if (!string.IsNullOrEmpty(e.Data)) {
+                    try { System.IO.File.AppendAllText(logFile, string.Format("[{0:s}] {1}", DateTime.Now, e.Data) + Environment.NewLine); } catch {}
+                }
+            };
+            proc.ErrorDataReceived += (s, e) => {
+                if (!string.IsNullOrEmpty(e.Data)) {
+                    try { System.IO.File.AppendAllText(logFile, string.Format("[{0:s}] [ERR] {1}", DateTime.Now, e.Data) + Environment.NewLine); } catch {}
+                }
+            };
             proc.Exited += OnChildExited;
             proc.Start();
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
             _process = proc;
         }
 
