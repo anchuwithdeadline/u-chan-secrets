@@ -26,7 +26,7 @@ interface Deps {
 export class ControlService implements ControlApi {
   constructor(private readonly d: Deps) {}
   async capabilities(): Promise<ToolResult> {
-    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor'] }) }
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions'] }) }
   }
   async diagnose(): Promise<ToolResult> {
     try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }

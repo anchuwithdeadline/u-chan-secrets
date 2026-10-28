@@ -3,7 +3,7 @@ import { isHostAllowed } from './allowlist.js'
 import { freshTotpCode } from './totp.js'
 import { UserFacingError, type AllowEntry, type Credentials } from './types.js'
 
-export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed'; reason?: string }
+export type FillOutcome = { status: 'logged_in' | 'already_logged_in' | 'failed' | 'unconfirmed'; reason?: string; code?: import('./types.js').ResultCode }
 
 export const NEEDS_YOU = 'needs you — sign in by hand this time'
 const CHALLENGE_CSS =

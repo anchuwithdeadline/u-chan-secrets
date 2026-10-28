@@ -49,7 +49,7 @@ export class CdpBrowserProvider implements BrowserProvider {
 
   private async connect(autoLaunch: boolean): Promise<Browser> {
     try {
-      return await chromium.connectOverCDP(this.endpoint)
+      return await chromium.connectOverCDP(this.endpoint, { timeout: 5000 })
     } catch {
       if (!autoLaunch || !this.opts.launch) throw new UserFacingError('Chrome is not running — run scripts/start-chrome.ps1')
     }
@@ -73,6 +73,7 @@ export class CdpBrowserProvider implements BrowserProvider {
     const context = browser.contexts()[0]
     if (!context) throw new UserFacingError('Chrome has no default window — open Chrome with scripts/start-chrome.ps1')
     const page = await context.newPage()
+    page.setDefaultTimeout(5000)
     try {
       return await fn(page)
     } finally {
@@ -111,6 +112,7 @@ export class CdpSessionTarget implements SessionTarget {
       for (const o of state.origins) {
         if (!o.localStorage.length) continue
         const page = await context.newPage()
+        page.setDefaultTimeout(5000)
         try {
           await page.goto(o.origin, { waitUntil: 'commit' })
           await page.evaluate(

@@ -42,7 +42,9 @@ export type GrantPolicy = { kind: 'once' } | { kind: 'timed'; minutes: number } 
 export type SuccessCondition = { url: string } | { selector: string }
 export interface AllowOptions { grant?: GrantPolicy; success?: SuccessCondition }
 /** Message is safe to return to the AI. */
-export class UserFacingError extends Error {}
+export class UserFacingError extends Error {
+  constructor(message: string, public readonly code?: ResultCode) { super(message) }
+}
 export interface CoreApi {
   login(domain: string): Promise<ToolResult>
   requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult>
@@ -75,7 +77,8 @@ export interface SessionTarget {
   inject(state: SessionState): Promise<void>
 }
 export interface LoginRunner {
-  run(entry: AllowEntry, getCreds: () => Promise<Credentials>): Promise<FillOutcome>
+  preflight?(): Promise<void>
+  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> }): Promise<FillOutcome>
 }
 
 export interface RegistryDist {

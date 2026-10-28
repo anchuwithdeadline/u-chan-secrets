@@ -88,7 +88,7 @@ export async function runService(
       capabilities: () => control.capabilities(),
       diagnose: () => control.diagnose(),
       login: (domain) => core.login(domain),
-      requestAllow: (domain, loginUrl, item, selectors) => core.requestAllow(domain, loginUrl, item, selectors),
+      requestAllow: (domain, loginUrl, item, selectors, options) => core.requestAllow(domain, loginUrl, item, selectors, options),
       revoke: (domain) => core.revoke(domain),
       listAllowed: () => core.listAllowed(),
       status: () => core.status(),

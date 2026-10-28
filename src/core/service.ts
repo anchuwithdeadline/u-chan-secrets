@@ -1,6 +1,9 @@
 import { buildEntry, clean, cleanSelectors, normalizeDomain, selectorsLine } from './allowlist.js'
 import type { AllowlistStore } from './allowlist.js'
 import { redact } from './redact.js'
+import { validOptions } from './policy.js'
+import { isHostAllowed } from './allowlist.js'
+import type { AllowOptions } from './types.js'
 import {
   UserFacingError,
   type Approver,
@@ -50,7 +53,7 @@ export class CoreService implements CoreApi {
         const e = err as { stack?: unknown } | null
         console.error(redact(String(e?.stack ?? err), secrets))
       }
-      result = { ok: false, message }
+      result = { ok: false, message, ...(err instanceof UserFacingError && err.code ? { code: err.code } : {}) }
       audit = `failed: ${message}`
     }
     if (action) {
@@ -77,17 +80,21 @@ export class CoreService implements CoreApi {
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }
       const message = out.reason ?? 'login failed'
-      return { result: { ok: false, message }, audit: `failed: ${message}` }
+      return { result: { ok: false, message, ...(out.code ? { code: out.code } : {}) }, audit: `failed: ${message}` }
     })
   }
 
-  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors): Promise<ToolResult> {
+  requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult> {
     return this.guarded('request_allow', domain, [], async () => {
+      if (options !== undefined && !validOptions(options)) throw new UserFacingError('invalid approval policy or success condition', 'invalid_policy')
+      if (options?.grant) throw new UserFacingError('temporary approval is not available yet', 'unsupported_service')
       const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
       let entry = buildEntry(d, clean(loginUrl), clean(item), existing)
       const sel = cleanSelectors(selectors)
       if (sel) entry = { ...entry, selectors: sel }
+      if (options?.success) entry = { ...entry, success: options.success }
+      if (entry.success && 'url' in entry.success && !isHostAllowed(entry, entry.success.url)) throw new UserFacingError('success URL must use an approved HTTPS host', 'invalid_policy')
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
         'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,
@@ -95,6 +102,7 @@ export class CoreService implements CoreApi {
         `Bitwarden item: ${entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
         ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
+        ...(entry.success ? [`Success condition: ${JSON.stringify(entry.success)}`] : []),
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
       await this.deps.allowlist.upsert(entry)
