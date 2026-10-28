@@ -11,10 +11,10 @@ describe('platformAdapters', () => {
   })
 
   it('platformAdapters throws UserFacingError for unsupported platforms', () => {
-    expect(() => platformAdapters('darwin')).toThrow(UserFacingError)
-    expect(() => platformAdapters('darwin')).toThrow(/not supported on darwin yet/)
-
     expect(() => platformAdapters('linux')).toThrow(UserFacingError)
     expect(() => platformAdapters('linux')).toThrow(/not supported on linux yet/)
+
+    expect(() => platformAdapters('aix')).toThrow(UserFacingError)
+    expect(() => platformAdapters('aix')).toThrow(/not supported on aix yet/)
   })
 })
