@@ -62,3 +62,30 @@ export interface SessionTarget {
 export interface LoginRunner {
   run(entry: AllowEntry, getCreds: () => Promise<Credentials>): Promise<FillOutcome>
 }
+
+export interface RegistryDist {
+  tarball: string
+  shasum: string
+  integrity?: string
+  signatures?: Array<{ keyid: string; sig: string }>
+  attestations?: { url: string }
+}
+export interface PackageVersionInfo {
+  version: string
+  dist: RegistryDist
+}
+export interface PackageMetadata {
+  'dist-tags': { latest: string }
+  versions: Record<string, PackageVersionInfo>
+}
+export interface VerificationOutcome {
+  ok: boolean
+  targetVersion?: string
+  tarball?: Buffer
+  error?: string
+}
+export interface PackageVerifier {
+  checkLatest(currentVersion: string): Promise<{ isNewer: boolean; latestVersion: string }>
+  verify(targetVersion: string): Promise<VerificationOutcome>
+}
+
