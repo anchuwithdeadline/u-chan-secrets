@@ -58,6 +58,8 @@ export async function checkPlaywrightNow(selfPid = process.pid): Promise<Playwri
 }
 
 export type DiagnosticState = 'pass' | 'fail' | 'unknown'
+// Leave room for the service's full native ACL scan and IPC overhead.
+export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 25000
 export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
 export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[] }
 export interface ServiceDiagnostic {
@@ -81,7 +83,7 @@ export async function bounded<T>(probe: () => Promise<T>, fallback: T, timeoutMs
 export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
   const [registration, service, chrome, playwright] = await Promise.all([
     bounded(d.registration, 'unknown' as DiagnosticState),
-    bounded(d.service, null),
+    bounded(d.service, null, SERVICE_DIAGNOSTIC_TIMEOUT_MS),
     bounded(d.chrome, 'unknown' as DiagnosticState),
     bounded(d.playwright, 'unknown' as DiagnosticState),
   ])
@@ -110,9 +112,9 @@ export function doctorExitCode(report: DiagnosticReport): 0 | 1 | 2 {
   const required = report.checks.filter(c => c.required)
   return required.some(c => c.state === 'fail') ? 1 : required.some(c => c.state === 'unknown') ? 2 : 0
 }
-export async function commandState(file: string, args: string[], passes: (stdout: string) => boolean): Promise<DiagnosticState> {
+export async function commandState(file: string, args: string[], passes: (stdout: string) => boolean, timeoutMs = 5000): Promise<DiagnosticState> {
   return new Promise(resolve => {
-    execFile(file, args, { timeout: 5000, windowsHide: true, maxBuffer: 65536 }, (err, stdout) => {
+    execFile(file, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 65536 }, (err, stdout) => {
       resolve(err ? 'unknown' : passes(stdout) ? 'pass' : 'fail')
     })
   })

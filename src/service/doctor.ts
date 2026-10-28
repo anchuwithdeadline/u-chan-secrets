@@ -15,7 +15,7 @@ export async function diagnoseService(home: string, vault: VaultClient, platform
       for (const p of paths) { const s = await lstat(p); if (s.isSymbolicLink()) return 'fail' }
       return 'pass'
     }, 'unknown' as DiagnosticState),
-    bounded(() => platform === 'win32' ? checkWindowsPermissions(home) : checkDarwinPermissions(home), 'unknown' as DiagnosticState),
+    bounded(() => platform === 'win32' ? checkWindowsPermissions(home) : checkDarwinPermissions(home), 'unknown' as DiagnosticState, 20000),
     bounded(() => vault.status(), 'unavailable' as const),
   ])
   return { assets, permissions, vault: status === 'unlocked' ? 'pass' : status === 'unavailable' ? 'unknown' : status }

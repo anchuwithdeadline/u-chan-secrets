@@ -1,6 +1,6 @@
 {
   "name": "u-chan-secrets",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "U-Chan Secrets: local MCP server for Bitwarden-backed logins",
   "license": "MIT",
   "type": "module",

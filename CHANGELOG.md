@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.1
+
+- Allow a full native permission scan to finish before `doctor` times out. A reachable installed service previously appeared unavailable when the five-second client deadline raced the service reply.
+- Keep permission checks bounded: 15 seconds for the Windows probe, 20 seconds for service aggregation, and 25 seconds for diagnostic IPC.
+- No grant, authentication, or credential-boundary behavior changed.
+
 ## 3.0.0 source changes
 
 This entry describes source integration. It does not announce npm publication, deployment, or completion of native security verification.

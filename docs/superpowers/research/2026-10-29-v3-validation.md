@@ -70,3 +70,11 @@ After push and PR creation were authorized, [PR #4](https://github.com/anchuwith
 The asset test now compares canonical physical paths. Windows ACL queries use the existing .NET access-control API without loading the PowerShell Security module. A deliberately incompatible module fixture reproduced the ACL-query failure locally before the fix and passed afterward. Current CI results are available on the PR; these checks still do not establish privileged native isolation.
 
 Implementation commit `92e644cbee97f2af3959ed9a582d03b8c55e92f7` passed both [Windows/macOS CI](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40749181337) and [CodeQL analysis](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40749175961). These results include builds and source/integration tests on hosted runners, not privileged installation or interactive native security verification. Documentation updates and the merge commit receive separate checks; their live status is recorded on PR #4 and the main-branch Actions page.
+
+## Installed Windows follow-up
+
+After source release, inspection found that the global CLI was linked to V3 while the protected service still contained V2.0.0. An administrator reinstall staged V3, replaced the legacy dependency junction with a private copy, installed a private Node runtime, and retained owner/settings and stored state. Before mutation, a snapshot under the protected `#0 backup` directory was verified against all three existing state files. A complete ACL/ownership scan passed across 6,374 entries. The installed service answered protocol 3 capability requests and reported a locked vault.
+
+This rehearsal exposed a diagnostic deadline race: `diagnose` returned after about five seconds, while the client also expired at five seconds. Version 3.0.1 increases bounded native scan and diagnostic budgets; regressions cover permission scans and service replies lasting six seconds.
+
+Dedicated user Chrome was started. The current Playwright MCP session used a different browser; its configuration was backed up and updated for the shared CDP endpoint, and U-Chan MCP was registered. A new AI session is required before claiming active shared-browser use. Protected prompt interaction, an actual vault unlock/login, adversarial native input/transport checks, and macOS runtime checks remain unverified.
