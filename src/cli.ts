@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
+import type { ApprovalMode, ControlApi, CoreApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
@@ -14,6 +14,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { configureCodex, isElevated } from './client/codex-setup.js'
 import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
+import { parseAllowArgs } from './client/allow.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
@@ -22,7 +23,7 @@ export interface CliDeps {
   clientVersion?: string
   setup?: (options: SetupOptions) => Promise<SetupReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
-  connect: (opts: { timeoutMs?: number }) => ControlApi
+  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'>
   env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
   readFile: (path: string) => Promise<string>
@@ -68,6 +69,16 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     },
   }))
   const printDoctor = (r: DiagnosticReport) => d.out(r.checks.map(c => `${c.state.toUpperCase()} ${c.id}: ${c.message}${c.nextAction ? ' ' + c.nextAction : ''}`).join('\n'))
+  if (cmd === 'allow') {
+    const proposal = parseAllowArgs(argv.slice(1))
+    if (!proposal) { d.err('usage: u-chan allow <domain> --login-url <https-url> --item <label> [--once|--minutes <1..1440>|--permanent] [--success-url <https-url>|--success-selector <selector>]'); return 1 }
+    const r = await d.connect({ timeoutMs: 180000 }).requestAllow(proposal.domain, proposal.loginUrl, proposal.item, undefined, proposal.options)
+    if (r.ok) {
+      d.out(r.message)
+      if (!proposal.options.success) d.out('No success condition supplied. Login may return authentication_unconfirmed; independently verify the signed-in page.')
+    } else d.err(r.message)
+    return r.ok ? 0 : 1
+  }
   if (cmd === 'setup') {
     const args = argv.slice(1), seen = new Set<string>()
     let valid = true
