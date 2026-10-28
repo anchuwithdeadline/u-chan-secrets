@@ -58,6 +58,7 @@ export async function startFixture(): Promise<Fixture> {
       case '/dash': return send('<h1>Dashboard</h1>')
       case '/': return fxState.bounceRoot ? redirect(`http://localhost:${port}/dash`) : send('<p>root</p>')
       case '/redirect-evil': return redirect(`http://localhost:${port}/single`)
+      case '/nav-no-fields': return send(`<script>setTimeout(()=>{location.href='http://localhost:${port}/dash'},100)</script>`)
       case '/late':
         return send(`<div id="m"></div><template id="tpl">${singleForm}</template><script>setTimeout(()=>{const t=document.getElementById('tpl');document.getElementById('m').appendChild(t.content.cloneNode(true))},500)</script>`)
       case '/disabled-pass':

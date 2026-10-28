@@ -105,12 +105,11 @@ describe('Windows Service Installer', () => {
     })
 
     // ACL invoked on programDataDir
-    const icaclsCall = executedCommands.find((c) => c.file === 'icacls.exe')
-    expect(icaclsCall).toBeDefined()
-    expect(icaclsCall?.args).toContain(programDataDir)
+    const aclCalls = executedCommands.filter((c) => c.file === 'powershell.exe' && c.args.includes('-EncodedCommand'))
+    expect(aclCalls.length).toBeGreaterThan(0)
 
     // PowerShell compilation invoked for assets
-    const compileCalls = executedCommands.filter((c) => c.file === 'powershell.exe')
+    const compileCalls = executedCommands.filter((c) => c.file === 'powershell.exe' && c.args.includes('-Command'))
     expect(compileCalls.length).toBe(3)
 
     // Service created and started

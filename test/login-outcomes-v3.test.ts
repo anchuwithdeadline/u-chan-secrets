@@ -45,3 +45,23 @@ it('cancels the isolated context and never injects when the service aborts', asy
   expect(inject).not.toHaveBeenCalled()
   expect(browser.contexts()).toHaveLength(0)
 })
+it('does not confirm a selector after navigation to an unapproved host during form detection', async () => {
+  const { runner, inject, entry } = setup('/nav-no-fields')
+  expect((await runner.run({ ...entry, success: { selector: 'h1' } }, creds)).status).toBe('failed')
+  expect(inject).not.toHaveBeenCalled()
+})
+it('aborts pending context creation and closes the owned browser before returning', async () => {
+  const controller = new AbortController()
+  let closed = false
+  const runner = new IsolatedLogin({
+    launch: async () => ({
+      isConnected: () => true,
+      newContext: async () => { controller.abort(); return new Promise(() => {}) },
+      close: async () => { closed = true },
+    }) as any,
+    target: { userAgent: async () => 'test', inject: async () => {} },
+  })
+  const result = await Promise.race([runner.run({ domain: 'a.com', hosts: ['a.com'], loginUrl: 'https://a.com/login', item: 'A' }, creds, { signal: controller.signal }), new Promise(resolve => setTimeout(() => resolve('pending'), 200))])
+  expect(result).toMatchObject({ status: 'failed', code: 'login_timeout' })
+  expect(closed).toBe(true)
+})

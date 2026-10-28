@@ -103,7 +103,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
     'Complete Bitwarden service login during trusted setup.')
   if (v === 'locked') checks[checks.length - 1].nextAction = 'Run u-chan unlock.'
   add('chrome', chrome, 'Dedicated Chrome CDP endpoint checked.', 'Start dedicated Chrome with the provided platform launcher.')
-  add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint and restart the AI session.', false)
+  add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint and restart the AI session.', playwright !== 'unknown')
   return { version: 1, checks }
 }
 export function doctorExitCode(report: DiagnosticReport): 0 | 1 | 2 {

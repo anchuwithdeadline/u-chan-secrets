@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { UserFacingError, type Credentials, type MasterPasswordChecker, type VaultClient, type VaultStatus } from './types.js'
 import { redact } from './redact.js'
 
-export type Exec = (args: string[], env: NodeJS.ProcessEnv) => Promise<{ code: number; stdout: string; stderr: string }>
+export type Exec = (args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>
 
 /**
  * Default exec: runs bw directly, never through a shell (item names come from the AI).
@@ -10,12 +10,12 @@ export type Exec = (args: string[], env: NodeJS.ProcessEnv) => Promise<{ code: n
  * not the npm `.cmd` shim, which cannot be spawned without a shell.
  * Non-zero exit resolves with the code; only spawn failures (ENOENT) reject.
  */
-const defaultExec: Exec = (args, env) =>
+const defaultExec: Exec = (args, env, signal) =>
   new Promise((resolve, reject) => {
     execFile(
       process.env.U_CHAN_BW ?? 'bw',
       args,
-      { env, shell: false, windowsHide: true, maxBuffer: 10 * 1024 * 1024, timeout: 30000, killSignal: 'SIGKILL' },
+      { env, shell: false, windowsHide: true, maxBuffer: 10 * 1024 * 1024, timeout: 30000, killSignal: 'SIGKILL', signal },
       (err, stdout, stderr) => {
         if (!err) return resolve({ code: 0, stdout, stderr })
         const code = (err as NodeJS.ErrnoException & { code?: unknown }).code
@@ -54,11 +54,11 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     return this.sessionKey
   }
 
-  private run(args: string[], session: string, extra: NodeJS.ProcessEnv = {}): Promise<ExecResult> {
+  private run(args: string[], session: string, extra: NodeJS.ProcessEnv = {}, signal?: AbortSignal): Promise<ExecResult> {
     const env: NodeJS.ProcessEnv = { ...process.env, BW_NOINTERACTION: 'true', BITWARDENCLI_APPDATA_DIR: this.dataDir, ...extra }
     delete env.BW_SESSION
     if (session) env.BW_SESSION = session
-    return this.exec(args, env)
+    return signal ? this.exec(args, env, signal) : this.exec(args, env)
   }
 
   /** Runs `bw unlock`; returns the new session key or null. The password travels only in env. */
@@ -101,10 +101,10 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     }
   }
 
-  async status(): Promise<VaultStatus> {
+  async status(signal?: AbortSignal): Promise<VaultStatus> {
     const session = this.session()
     try {
-      const r = await this.run(['status'], session)
+      const r = await this.run(['status'], session, {}, signal)
       const s = (JSON.parse(r.stdout) as { status?: string }).status as VaultStatus
       if (!STATUSES.includes(s)) return 'unavailable'
       if (s === 'locked' && session && this.sessionKey === session) this.sessionKey = ''
@@ -115,12 +115,12 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     }
   }
 
-  async getLogin(item: string): Promise<Credentials> {
+  async getLogin(item: string, signal?: AbortSignal): Promise<Credentials> {
     const session = this.session()
-    if (!session) throw new UserFacingError((await this.status()) === 'unauthenticated' ? LOGIN_MSG : UNLOCK_MSG)
+    if (!session) throw new UserFacingError((await this.status(signal)) === 'unauthenticated' ? LOGIN_MSG : UNLOCK_MSG)
     let r: ExecResult
     try {
-      r = await this.run(['get', 'item', item], session)
+      r = await this.run(['get', 'item', item], session, {}, signal)
     } catch (e) {
       // Fixed messages only: error text may contain argv.
       const err = e as { code?: unknown; signal?: unknown; killed?: unknown }

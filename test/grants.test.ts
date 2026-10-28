@@ -87,3 +87,13 @@ it('revocation waits for an earlier login and queue recovers from failed operati
   expect((await svc.login('a.com')).code).toBe('grant_missing')
   expect((await svc.listAllowed()).ok).toBe(true)
 })
+it('bounds preflight with the same deadline and releases the grant queue', async () => {
+  await store.upsert({ ...entry, remainingUses: 1 })
+  const svc = service({
+    loginTimeoutMs: 20,
+    login: { preflight: async (signal?: AbortSignal) => new Promise((_r, reject) => signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })) },
+  })
+  const result = await Promise.race([svc.login('a.com'), new Promise(resolve => setTimeout(() => resolve('pending'), 200))])
+  expect(result).toMatchObject({ code: 'login_timeout' })
+  expect((await svc.revoke('a.com')).ok).toBe(true)
+})

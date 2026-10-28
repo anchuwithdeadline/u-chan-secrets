@@ -36,3 +36,9 @@ it('distinguishes locked vault from broken installation and computes all exit co
   expect(doctorExitCode(report)).toBe(0)
   expect(doctorExitCode({ version: 1, checks: [{ id: 'test', required: true, state: 'unknown', message: '', nextAction: '' }] })).toBe(2)
 })
+it('fails a known browser-sharing mismatch while keeping unobservable sharing advisory', async () => {
+  const deps = { platform: 'win32' as const, registration: async () => 'pass' as const, chrome: async () => 'pass' as const,
+    service: async () => ({ assets: 'pass' as const, permissions: 'pass' as const, vault: 'locked' as const }) }
+  expect(doctorExitCode(await runDoctor({ ...deps, playwright: async () => 'fail' }))).toBe(1)
+  expect(doctorExitCode(await runDoctor({ ...deps, playwright: async () => 'unknown' }))).toBe(0)
+})

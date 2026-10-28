@@ -10,7 +10,7 @@ u-chan doctor --json
 u-chan manage
 ```
 
-Doctor checks service registration, authenticated IPC, private assets, permissions, vault state, Chrome, and observable Playwright browser sharing. It never retrieves credentials, unlocks the vault, or repairs configuration. Results are `pass`, `fail`, or `unknown`; a locked vault is a valid state with an unlock instruction. Exit codes: 0 for required checks passing, 1 for a required failure, 2 for unresolved required checks. Playwright configuration is advisory when no AI process tree can be observed.
+Doctor checks service registration, authenticated IPC, private assets, permissions, vault state, Chrome, and observable Playwright browser sharing. It never retrieves credentials, unlocks the vault, or repairs configuration. Results are `pass`, `fail`, or `unknown`; a locked vault is a valid state with an unlock instruction. Exit codes: 0 for required checks passing, 1 for a required failure, 2 for unresolved required checks. Unknown Playwright sharing is advisory when no AI process tree can be observed; a known mismatch fails the check.
 
 Manage shows vault state, grant pages, recent sanitized activity, and service diagnostic status. It supports lock, unlock, refresh, and revocation. Unlock opens the existing protected password prompt after the management window closes. The window cannot create or extend grants.
 

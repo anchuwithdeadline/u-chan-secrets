@@ -6,6 +6,7 @@ import { isHostAllowed } from './allowlist.js'
 import type { AllowOptions } from './types.js'
 import { GrantCoordinator } from '../service/grants.js'
 import { randomUUID } from 'node:crypto'
+import { abortable } from './abort.js'
 import {
   UserFacingError,
   type Approver,
@@ -20,6 +21,7 @@ import {
 } from './types.js'
 
 export interface CoreDeps {
+  loginTimeoutMs?: number
   grants?: GrantCoordinator
   vault: VaultClient
   allowlist: AllowlistStore
@@ -82,17 +84,23 @@ export class CoreService implements CoreApi {
       const entry = await this.deps.allowlist.get(domainOf(domain))
       if (!entry) throw new UserFacingError('domain is not allowlisted — use request_allow', 'grant_missing')
       this.grants.check(entry)
-      const status = await this.deps.vault.status()
+      const signal = AbortSignal.timeout(this.deps.loginTimeoutMs ?? 60000)
+      const within = async <T>(work: Promise<T>): Promise<T> => {
+        try { return await abortable(work, signal, async () => { await this.deps.login.cancel?.() }) }
+        catch (e) { if (signal.aborted) throw new UserFacingError('login timed out; retry if needed', 'login_timeout'); throw e }
+      }
+      const status = await within(this.deps.vault.status(signal))
       if (status !== 'unlocked') throw new UserFacingError(status === 'locked' ? 'vault locked — run u-chan unlock' : status === 'unauthenticated' ? 'complete Bitwarden service login during setup' : 'Bitwarden is unavailable', status === 'locked' ? 'vault_locked' : status === 'unauthenticated' ? 'vault_unauthenticated' : 'vault_unavailable')
-      await this.deps.login.preflight?.()
+      if (this.deps.login.preflight) await within(this.deps.login.preflight(signal))
+      signal.throwIfAborted()
       await this.grants.reserve(entry.domain)
       const getCreds = async () => {
         this.grants.check(entry, true)
-        const c = await this.deps.vault.getLogin(entry.item)
+        const c = await within(this.deps.vault.getLogin(entry.item, signal))
         secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
         return c
       }
-      const out = await this.deps.login.run(entry, getCreds, { beforeTransfer: async () => { this.grants.check(entry, true) } })
+      const out = await this.deps.login.run(entry, getCreds, { signal, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } })
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }
       const message = out.reason ?? 'login failed'

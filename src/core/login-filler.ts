@@ -66,6 +66,8 @@ export async function fillLogin(
     // No field appeared in the window: handled below as already logged in.
   })
   const [hasUser, hasPass] = await Promise.all([userBox.isVisible(), passBox.isVisible()])
+  const afterWaitHost = badHost()
+  if (afterWaitHost) return afterWaitHost
   if (!hasUser && !hasPass) return { status: 'already_logged_in' }
   if (!hasUser) return { status: 'failed', reason: 'username field not found' }
 

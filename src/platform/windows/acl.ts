@@ -16,15 +16,26 @@ export const defaultExec: ExecFn = async (file: string, args: string[], options?
   })
 }
 
-export async function setAdminOnlyAcl(dirPath: string, exec: ExecFn = defaultExec): Promise<void> {
+export async function setAdminOnlyAcl(dirPath: string, exec: ExecFn = defaultExec, recursive = true): Promise<void> {
   try {
-    const { stdout, stderr } = await exec('icacls.exe', [
-      dirPath,
-      '/inheritance:r',
-      '/grant:r',
-      'SYSTEM:(OI)(CI)F',
-      'Administrators:(OI)(CI)F',
-    ])
+    const path = Buffer.from(dirPath, 'utf8').toString('base64')
+    const script = `$ErrorActionPreference='Stop'; $p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${path}'));
+$root=Get-Item -LiteralPath $p -Force;
+if($root.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'reparse point refused'};
+$items=@($root)${recursive ? '+@(Get-ChildItem -LiteralPath $p -Force -Recurse)' : ''};
+foreach($i in $items){if($i.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'reparse point refused'}};
+$admins=New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544');
+foreach($i in $items){
+ if($i.PSIsContainer){$acl=New-Object Security.AccessControl.DirectorySecurity; $inherit=[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}
+ else{$acl=New-Object Security.AccessControl.FileSecurity; $inherit=[Security.AccessControl.InheritanceFlags]::None};
+ $acl.SetAccessRuleProtection($true,$false); $acl.SetOwner($admins);
+ foreach($sid in @('S-1-5-18','S-1-5-32-544')){
+  $id=New-Object Security.Principal.SecurityIdentifier($sid);
+  $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($id,'FullControl',$inherit,'None','Allow')));
+ };
+ if($i.PSIsContainer){[IO.Directory]::SetAccessControl($i.FullName,$acl)}else{[IO.File]::SetAccessControl($i.FullName,$acl)}
+}`
+    const { stdout, stderr } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')])
     if (/Failed processing [1-9]/i.test(stdout) || /Failed processing [1-9]/i.test(stderr)) {
       throw new Error(`icacls failed: ${stdout || stderr}`)
     }

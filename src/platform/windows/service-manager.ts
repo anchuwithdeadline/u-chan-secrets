@@ -34,7 +34,7 @@ export class ServiceManager {
       await this.exec('sc.exe', ['stop', name])
     } catch (err: any) {
       const output = `${err?.stdout ?? ''} ${err?.stderr ?? ''} ${err?.message ?? ''}`
-      if (/1062|1060|not been started|not running|does not exist/i.test(output)) {
+      if (/1062|1060|1061|not been started|not running|does not exist/i.test(output)) {
         return
       }
       throw err
@@ -53,7 +53,7 @@ export class ServiceManager {
     }
   }
 
-  async status(name: string): Promise<'running' | 'stopped' | 'not_installed'> {
+  async status(name: string): Promise<'running' | 'stopped' | 'pending' | 'not_installed'> {
     try {
       const { stdout } = await this.exec('sc.exe', ['query', name])
       if (/STATE\s*:\s*[0-9]+\s+RUNNING/i.test(stdout)) {
@@ -62,7 +62,7 @@ export class ServiceManager {
       if (/STATE\s*:\s*[0-9]+\s+STOPPED/i.test(stdout)) {
         return 'stopped'
       }
-      return 'stopped'
+      return 'pending'
     } catch (err: any) {
       const output = `${err?.stdout ?? ''} ${err?.stderr ?? ''} ${err?.message ?? ''}`
       if (/1060|does not exist/i.test(output)) {

@@ -16,8 +16,8 @@ export interface AllowEntry {
 export interface Credentials { username: string; password: string; totp?: string }
 export type VaultStatus = 'unlocked' | 'locked' | 'unauthenticated' | 'unavailable'
 export interface VaultClient {
-  status(): Promise<VaultStatus>
-  getLogin(item: string): Promise<Credentials>
+  status(signal?: AbortSignal): Promise<VaultStatus>
+  getLogin(item: string, signal?: AbortSignal): Promise<Credentials>
   unlock(password: string): Promise<boolean>
   lock(): Promise<void>
 }
@@ -77,11 +77,13 @@ export interface ProtectedPrompt {
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
 export interface SessionTarget {
-  userAgent(): Promise<string>
-  inject(state: SessionState): Promise<void>
+  userAgent(signal?: AbortSignal): Promise<string>
+  inject(state: SessionState, signal?: AbortSignal): Promise<void>
+  cancel?(): Promise<void>
 }
 export interface LoginRunner {
-  preflight?(): Promise<void>
+  cancel?(): Promise<void>
+  preflight?(signal?: AbortSignal): Promise<void>
   run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> }): Promise<FillOutcome>
 }
 

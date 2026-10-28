@@ -29,3 +29,28 @@ it('reinstall preserves owner, phrase, mode and idle timeout and copies dependen
   expect((await lstat(join(home, 'program', 'node_modules'))).isSymbolicLink()).toBe(false)
   expect(await readFile(join(home, 'program', 'node_modules', 'fixture'), 'utf8')).toBe('dependency')
 })
+it('stops an existing service before staging and reuses its registration', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ucs-v3-reinstall-')); dirs.push(root)
+  const home = join(root, 'home'), pkg = join(root, 'package')
+  await mkdir(join(pkg, 'dist'), { recursive: true })
+  await mkdir(join(pkg, 'node_modules'), { recursive: true })
+  await mkdir(join(home, 'program', 'dist'), { recursive: true })
+  await writeFile(join(home, 'program', 'dist', 'index.js'), 'old')
+  await writeFile(join(pkg, 'package.json'), '{"version":"3.0.0"}')
+  await writeFile(join(pkg, 'dist', 'index.js'), 'new')
+  let stopped = false, created = false, started = false
+  const result = await installWindowsService({
+    programData: home, packageRoot: pkg, adminCheck: async () => true, stageBrowser: async () => {},
+    getUserSid: async () => 'owner', exec: async () => ({ stdout: '', stderr: '' }),
+    serviceManager: {
+      status: async () => stopped ? 'stopped' : 'running',
+      stop: async () => { expect(await readFile(join(home, 'program', 'dist', 'index.js'), 'utf8')).toBe('old'); stopped = true },
+      create: async () => { created = true },
+      start: async () => { started = true },
+    } as any,
+  })
+  expect(result.ok).toBe(true)
+  expect(stopped).toBe(true)
+  expect(created).toBe(false)
+  expect(started).toBe(true)
+})

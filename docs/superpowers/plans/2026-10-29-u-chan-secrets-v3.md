@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-29-u-chan-secrets-v3-design.md` (approved).
 
+**Execution status:** Tasks 1–7 implemented locally on `feat/v3-usability`, with independent review findings fixed through regression tests. Actual privileged-service and macOS runtime checks remain pending; no installation, publication, push, or merge was performed. See [validation](../research/2026-10-29-v3-validation.md).
+
 ## Global Constraints
 
 - Windows and macOS only; macOS remains hardcore only.
