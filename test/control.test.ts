@@ -19,7 +19,7 @@ let allowlist: AllowlistStore
 const make = (platform: NodeJS.Platform = 'win32') =>
   new ControlService({
     vault: vault as never, approver: approver as never, limiter, settings, allowlist,
-    audit: { record: async (e) => void events.push(e) }, platform,
+    audit: { record: async (e) => void events.push(e), readTail: async () => [] }, platform,
   })
 
 beforeEach(async () => {
@@ -150,5 +150,45 @@ describe('control: importV1 sanitizing', () => {
     const lines = approver.ask.mock.calls[0][1] as string[]
     expect(lines.join('|')).not.toMatch(/[‮\n]/)
     expect(lines).toContain('Hosts: a.com, evil.com')
+  })
+})
+
+describe('control: audit', () => {
+  it('formats records', async () => {
+    const records = [
+      { ts: '2026-10-28T01:00:00.000Z', action: 'login' as const, domain: 'github.com', result: 'ok' },
+      { ts: '2026-10-28T01:05:00.000Z', action: 'unlock' as const, domain: '', result: 'ok' },
+    ]
+    const ctl = new ControlService({
+      vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+      audit: { record: async (e) => void events.push(e), readTail: async () => records } as never,
+      platform: 'win32',
+    })
+    const res = await ctl.audit()
+    expect(res).toEqual({
+      ok: true,
+      message: '2026-10-28T01:00:00.000Z  login          github.com  ok\n2026-10-28T01:05:00.000Z  unlock         ok',
+    })
+  })
+
+  it('returns clean message when audit log is empty', async () => {
+    const ctl = new ControlService({
+      vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+      audit: { record: async (e) => void events.push(e), readTail: async () => [] } as never,
+      platform: 'win32',
+    })
+    expect(await ctl.audit()).toEqual({ ok: true, message: 'no audit log entries' })
+  })
+
+  it('does not append an audit event', async () => {
+    const recordSpy = vi.fn(async () => {})
+    const ctl = new ControlService({
+      vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+      audit: { record: recordSpy, readTail: async () => [] } as never,
+      platform: 'win32',
+    })
+    await ctl.audit()
+    expect(recordSpy).not.toHaveBeenCalled()
+    expect(events).toHaveLength(0)
   })
 })

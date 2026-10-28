@@ -67,6 +67,7 @@ export async function runService(
       lock: () => control.lock(),
       setMode: (mode) => control.setMode(mode),
       importV1: (entries) => control.importV1(entries),
+      audit: (limit) => control.audit(limit),
     }
     const server = await startIpcServer(cfg.endpoint, api, { authorize: adapters.authorize })
     console.error(`U-Chan service listening on ${cfg.endpoint}`)

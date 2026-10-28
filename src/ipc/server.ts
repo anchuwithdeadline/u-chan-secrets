@@ -30,6 +30,10 @@ const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | ty
   lock: api => api.lock(),
   set_mode: (api, p) => (p.mode === 'easy' || p.mode === 'hardcore' ? api.setMode(p.mode as ApprovalMode) : BAD),
   import_v1: (api, p) => (Array.isArray(p.entries) ? api.importV1(p.entries) : BAD),
+  audit: (api, p) => {
+    if (p.limit !== undefined && (!Number.isInteger(p.limit) || (p.limit as number) <= 0)) return BAD
+    return api.audit(p.limit as number | undefined)
+  },
 }
 
 async function dispatch(api: Api, msg: unknown): Promise<Response> {

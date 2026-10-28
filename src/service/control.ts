@@ -114,4 +114,17 @@ export class ControlService implements ControlApi {
       return { ok: true, message: `imported ${imported} of ${valid.length}` }
     })
   }
+
+  async audit(limit?: number): Promise<ToolResult> {
+    try {
+      const records = await this.d.audit.readTail(limit)
+      if (records.length === 0) return { ok: true, message: 'no audit log entries' }
+      const message = records
+        .map((r) => `${r.ts}  ${r.action.padEnd(13)}  ${r.domain ? r.domain + '  ' : ''}${r.result}`)
+        .join('\n')
+      return { ok: true, message }
+    } catch {
+      return { ok: false, message: 'could not read audit log' }
+    }
+  }
 }

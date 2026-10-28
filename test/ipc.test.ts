@@ -14,7 +14,7 @@ const sockPath = () =>
     ? String.raw`\\.\pipe\ucs-test-` + randomBytes(6).toString('hex')
     : join(mkdtempSync(join(tmpdir(), 'ucs-')), 's.sock')
 
-const names = ['login', 'requestAllow', 'revoke', 'listAllowed', 'status', 'unlock', 'lock', 'setMode', 'importV1'] as const
+const names = ['login', 'requestAllow', 'revoke', 'listAllowed', 'status', 'unlock', 'lock', 'setMode', 'importV1', 'audit'] as const
 const fakeApi = () => Object.fromEntries(names.map(n => [n, vi.fn(async () => ({ ok: true, message: n }))])) as any
 
 const servers: net.Server[] = []
@@ -51,11 +51,30 @@ describe('ipc', () => {
     expect(await c.setMode('hardcore')).toEqual({ ok: true, message: 'setMode' })
     const entries = [{ a: 1 }, 'x']
     expect(await c.importV1(entries)).toEqual({ ok: true, message: 'importV1' })
+    expect(await c.audit(50)).toEqual({ ok: true, message: 'audit' })
     expect(api.login).toHaveBeenCalledWith('a.com')
     expect(api.requestAllow).toHaveBeenCalledWith('a.com', 'https://a.com/l', 'item', sel)
     expect(api.revoke).toHaveBeenCalledWith('a.com')
     expect(api.setMode).toHaveBeenCalledWith('hardcore')
     expect(api.importV1).toHaveBeenCalledWith(entries)
+    expect(api.audit).toHaveBeenCalledWith(50)
+  })
+
+  it('round-trips audit method', async () => {
+    const api = fakeApi()
+    const c = new IpcClient(await start(api))
+    expect(await c.audit(50)).toEqual({ ok: true, message: 'audit' })
+    expect(api.audit).toHaveBeenCalledWith(50)
+  })
+
+  it('rejects invalid audit limit', async () => {
+    const api = fakeApi()
+    const p = await start(api)
+    expect(JSON.parse((await raw(p, '{"id":1,"method":"audit","params":{"limit":-1}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
+    expect(JSON.parse((await raw(p, '{"id":2,"method":"audit","params":{"limit":"lots"}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
+    expect(JSON.parse((await raw(p, '{"id":3,"method":"audit","params":{"limit":0}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
+    expect(JSON.parse((await raw(p, '{"id":4,"method":"audit","params":{"limit":1.5}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
+    expect(api.audit).not.toHaveBeenCalled()
   })
 
   it('rejects malformed and oversized frames', async () => {
