@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { checkPlaywrightNow } from './core/doctor.js'
+import { loadConfig } from './core/config.js'
 import { createMcpServer, withPlaywrightStatus } from './mcp/server.js'
 
 // Thin MCP client: every privileged action goes to the U-Chan service over IPC.
@@ -14,4 +15,4 @@ try {
 } catch {}
 
 const client = new IpcClient(defaultEndpoint(process.env, process.platform))
-await createMcpServer(withPlaywrightStatus(client, checkPlaywrightNow), version).connect(new StdioServerTransport())
+await createMcpServer(withPlaywrightStatus(client, () => checkPlaywrightNow(process.pid, loadConfig(process.env, process.platform).cdpEndpoint)), version).connect(new StdioServerTransport())

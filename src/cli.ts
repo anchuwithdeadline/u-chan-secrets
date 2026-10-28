@@ -8,13 +8,14 @@ import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
-import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
+import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
 import { loadConfig } from './core/config.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
 export interface CliDeps {
   doctor?: () => Promise<DiagnosticReport>
+  clientVersion?: string
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
   connect: (opts: { timeoutMs?: number }) => ControlApi
   env: NodeJS.ProcessEnv
@@ -43,6 +44,9 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   let call: (() => Promise<ToolResult>) | undefined
   const doctor = d.doctor ?? (() => runDoctor({
     platform: d.platform,
+    clientVersion: d.clientVersion ?? 'unknown',
+    clientEndpoint: loadConfig(d.env, d.platform).cdpEndpoint,
+    elevation: d.platform === 'win32' ? async () => (await import('./platform/windows/doctor.js')).checkWindowsUac() : undefined,
     registration: async () => d.platform === 'win32' ? (await import('./platform/windows/doctor.js')).checkWindowsRegistration() : d.platform === 'darwin' ? (await import('./platform/darwin/doctor.js')).checkDarwinRegistration() : 'fail',
     service: async () => {
       const r = await d.connect({ timeoutMs: SERVICE_DIAGNOSTIC_TIMEOUT_MS }).diagnose()
@@ -54,7 +58,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     chrome: () => chromeState(loadConfig(d.env, d.platform).cdpEndpoint),
     playwright: async () => {
       if (d.platform !== 'win32') return 'unknown'
-      const state = await checkPlaywrightNow()
+      const state = await checkPlaywrightNow(process.pid, loadConfig(d.env, d.platform).cdpEndpoint)
       return state === 'ok' ? 'pass' : state === 'missing' ? 'fail' : 'unknown'
     },
   }))
@@ -182,7 +186,10 @@ const isEntry = (() => {
 })()
 
 if (isEntry) {
+  let clientVersion = 'unknown'
+  try { clientVersion = safeVersion(JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version) ?? 'unknown' } catch {}
   const code = await main(process.argv.slice(2), {
+    clientVersion,
     connect: (opts) => new IpcClient(defaultEndpoint(process.env, process.platform), opts),
     env: process.env,
     platform: process.platform,

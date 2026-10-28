@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import { clean, normalizeDomain, type AllowlistStore } from '../core/allowlist.js'
-import { bounded, type ServiceDiagnostic } from '../core/doctor.js'
+import { bounded, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type ServiceDiagnostic } from '../core/doctor.js'
 import type { AuditLog, ManagementAction, PromptRequest, ToolResult, VaultClient } from '../core/types.js'
 import type { GrantCoordinator } from './grants.js'
 interface Deps {
@@ -29,12 +29,17 @@ export class ManagementService {
         const snapshot = await this.d.grants.run(async (): Promise<PromptRequest> => {
           const [entries, status, events, checks] = await Promise.all([
             this.d.store.list(), bounded(() => this.d.vault.status(), 'unavailable' as const),
-            bounded(() => this.d.audit.readTail(10), []), bounded(this.d.diagnose, null),
+            bounded(() => this.d.audit.readTail(10), []), bounded(this.d.diagnose, null, SERVICE_DIAGNOSTIC_TIMEOUT_MS),
           ])
           const all = entries.filter(e => e.domain === normalizeDomain(e.domain))
           page = Math.min(page, Math.max(0, Math.ceil(all.length / 20) - 1))
           const grants = all.slice(page * 20, page * 20 + 20)
           const lines = ['Vault: ' + status, lastAction, 'Grant page ' + (page + 1) + ': ' + grants.length + ' of ' + entries.length + ' shown. Use Previous/Next for more.']
+          lines.push('Service version: ' + (safeVersion(checks?.serviceVersion) ?? 'unknown'),
+            'Service browser: ' + (['pass', 'fail'].includes(checks?.browser ?? '') ? checks?.browser : 'unknown'))
+          if (status === 'locked') lines.push('Next step: use Unlock to approve a protected vault unlock.')
+          if (checks?.assets !== 'pass' || checks?.permissions !== 'pass') lines.push('Next step: run u-chan doctor; repair from a trusted administrator terminal.')
+          if (checks?.browser !== 'pass') lines.push('Next step: start dedicated Chrome and run u-chan setup.')
           for (const e of grants) {
             let label = e.expiresAt ? 'until ' + e.expiresAt : e.remainingUses !== undefined ? e.remainingUses + ' attempts remaining' : 'permanent'
             try { this.d.grants.check(e) } catch { label = e.remainingUses === 0 ? 'exhausted' : 'expired' }

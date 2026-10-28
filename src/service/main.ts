@@ -25,6 +25,7 @@ import { GrantCoordinator } from './grants.js'
 import { ensureV3State } from './state.js'
 import { ManagementService } from './manage.js'
 import { privateBrowserPath } from '../platform/runtime-assets.js'
+import { safeVersion } from '../core/doctor.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -70,9 +71,9 @@ export async function runService(
     })
     const core = new CoreService({ vault, allowlist, grants, approver, audit, login, mode: () => approver.effectiveMode() })
 
-    let currentVersion = '3.0.0'
+    let currentVersion = 'unknown'
     try {
-      currentVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
+      currentVersion = safeVersion(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version) ?? 'unknown'
     } catch {}
 
     const verifier = new NpmPackageVerifier()
@@ -89,8 +90,8 @@ export async function runService(
       currentVersion,
     })
 
-    const diagnose = () => diagnoseService(cfg.home, vault, platform)
-    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, manage: () => manager.open() })
+    const diagnose = async () => ({ ...await diagnoseService(cfg.home, vault, platform, loadConfig(env, platform).cdpEndpoint), serviceVersion: safeVersion(currentVersion) })
+    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, serviceVersion: safeVersion(currentVersion), manage: () => manager.open() })
     const manager = new ManagementService({
       store: allowlist, grants, vault, audit, diagnose, phrase: async () => (await settings.get()).phrase,
       show: req => adapters.prompt.manage ? adapters.prompt.manage(req) : Promise.reject(new Error('unsupported')),

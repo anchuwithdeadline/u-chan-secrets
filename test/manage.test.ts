@@ -16,7 +16,7 @@ async function setup(actions: unknown[]) {
     store, grants: new GrantCoordinator(store), phrase: async () => 'trusted phrase',
     vault: { status: async () => 'locked' },
     audit: { readTail: async () => [{ ts: new Date(0).toISOString(), action: 'login', domain: 'a.com', result: 'SECRET raw result' }] },
-    diagnose: async () => ({ assets: 'pass', permissions: 'pass', vault: 'locked' }),
+    diagnose: async () => ({ assets: 'pass', permissions: 'pass', vault: 'locked', serviceVersion: '4.0.0', browser: 'pass' }),
     show: async req => { snapshots.push(req); return actions.shift() as any },
     lock: async () => { calls.push('lock'); return { ok: true, message: 'locked' } },
     unlock: async () => { calls.push('unlock'); return { ok: true, message: 'unlocked' } },
@@ -30,6 +30,9 @@ it('routes only lock, unlock and existing-domain revocation and keeps sensitive 
   expect(calls).toEqual(['lock', 'unlock', 'revoke a.com'])
   expect(await store.get('a.com')).toBeUndefined()
   expect(JSON.stringify(snapshots)).not.toContain('SECRET')
+  expect(JSON.stringify(snapshots)).toContain('Service version: 4.0.0')
+  expect(JSON.stringify(snapshots)).toContain('Service browser: pass')
+  expect(JSON.stringify(snapshots)).toContain('Next step: use Unlock')
 })
 it('rejects unknown actions and targets without granting or revoking anything', async () => {
   for (const action of [{ action: 'approve' }, { action: 'revoke', domain: 'other.com' }]) {

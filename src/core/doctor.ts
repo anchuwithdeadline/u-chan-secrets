@@ -16,7 +16,7 @@ const IS_PLAYWRIGHT = /@playwright[\\/]mcp/i
  * Finds the AI client that launched us (first non-shell ancestor), then checks whether that
  * client's Playwright MCP was started with --cdp-endpoint (i.e. shares our Chrome).
  */
-export function checkPlaywrightCdp(procs: Proc[], selfPid: number): Exclude<PlaywrightCheck, 'unknown'> {
+export function checkPlaywrightCdp(procs: Proc[], selfPid: number, expectedEndpoint?: string): Exclude<PlaywrightCheck, 'unknown'> {
   const byPid = new Map(procs.map((p) => [p.pid, p]))
   const ancestors = (pid: number): Proc[] => {
     const out: Proc[] = []
@@ -31,6 +31,13 @@ export function checkPlaywrightCdp(procs: Proc[], selfPid: number): Exclude<Play
   if (!client) return 'not_found'
   const ours = procs.filter((p) => IS_PLAYWRIGHT.test(p.cmd) && ancestors(p.pid).some((a) => a.pid === client.pid))
   if (ours.length === 0) return 'not_found'
+  if (expectedEndpoint !== undefined) {
+    const expected = safeCdpOrigin(expectedEndpoint)
+    return expected && ours.every(p => {
+      const match = /(?:^|\s)--cdp-endpoint(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s]+))/.exec(p.cmd)
+      return match && safeCdpOrigin(match[1] ?? match[2] ?? match[3]) === expected
+    }) ? 'ok' : 'missing'
+  }
   return ours.some((p) => p.cmd.includes('--cdp-endpoint')) ? 'ok' : 'missing'
 }
 
@@ -38,7 +45,7 @@ const PS_LIST =
   'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress'
 
 /** Lists processes via PowerShell/CIM; returns 'unknown' on any failure. */
-export async function checkPlaywrightNow(selfPid = process.pid): Promise<PlaywrightCheck> {
+export async function checkPlaywrightNow(selfPid = process.pid, expectedEndpoint?: string): Promise<PlaywrightCheck> {
   if (process.platform !== 'win32') return 'unknown'
   try {
     const stdout = await new Promise<string>((resolve, reject) =>
@@ -51,7 +58,7 @@ export async function checkPlaywrightNow(selfPid = process.pid): Promise<Playwri
     )
     const raw = JSON.parse(stdout) as { ProcessId: number; ParentProcessId: number; Name: string; CommandLine: string | null }[]
     const procs = raw.map((r) => ({ pid: r.ProcessId, ppid: r.ParentProcessId, name: r.Name ?? '', cmd: r.CommandLine ?? '' }))
-    return checkPlaywrightCdp(procs, selfPid)
+    return checkPlaywrightCdp(procs, selfPid, expectedEndpoint)
   } catch {
     return 'unknown'
   }
@@ -63,16 +70,33 @@ export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 25000
 export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
 export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[] }
 export interface ServiceDiagnostic {
+  serviceVersion?: string
+  browser?: DiagnosticState
+  browserEndpoint?: string
   assets: DiagnosticState
   permissions: DiagnosticState
   vault: DiagnosticState | 'locked' | 'unauthenticated'
 }
 export interface DoctorDeps {
+  clientVersion?: string
+  clientEndpoint?: string
+  elevation?: () => Promise<DiagnosticState>
   platform: NodeJS.Platform
   registration: () => Promise<DiagnosticState>
   service: () => Promise<ServiceDiagnostic>
   chrome: () => Promise<DiagnosticState>
   playwright: () => Promise<DiagnosticState>
+}
+export function safeVersion(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length <= 64 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value) ? value : undefined
+}
+export function safeCdpOrigin(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+      && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash ? url.origin : undefined
+  } catch { return undefined }
 }
 export async function bounded<T>(probe: () => Promise<T>, fallback: T, timeoutMs = 5000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -81,11 +105,12 @@ export async function bounded<T>(probe: () => Promise<T>, fallback: T, timeoutMs
   finally { clearTimeout(timer) }
 }
 export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
-  const [registration, service, chrome, playwright] = await Promise.all([
+  const [registration, service, chrome, playwright, elevation] = await Promise.all([
     bounded(d.registration, 'unknown' as DiagnosticState),
     bounded(d.service, null, SERVICE_DIAGNOSTIC_TIMEOUT_MS),
     bounded(d.chrome, 'unknown' as DiagnosticState),
     bounded(d.playwright, 'unknown' as DiagnosticState),
+    bounded(d.elevation ?? (async () => 'unknown' as DiagnosticState), 'unknown' as DiagnosticState),
   ])
   const checks: DiagnosticCheck[] = []
   const add = (id: string, state: DiagnosticState, message: string, nextAction: string, required = true) => {
@@ -97,6 +122,18 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
   add('service', service ? 'pass' : 'fail', service ? 'Service is reachable.' : 'Service is unreachable.', 'Check service status; run u-chan install if absent.')
   add('ipc', service ? 'pass' : 'unknown', 'Authenticated service connection checked.', 'Check the installed owner account and service.')
   const state = (value: unknown): DiagnosticState => value === 'pass' || value === 'fail' ? value : 'unknown'
+  if (d.clientVersion !== undefined) {
+    const client = safeVersion(d.clientVersion), installed = safeVersion(service?.serviceVersion)
+    add('version', !client || !installed ? 'unknown' : client === installed ? 'pass' : 'fail',
+      'CLI and installed service versions checked.', 'Install the matching trusted service package.')
+  }
+  if (d.clientEndpoint !== undefined) {
+    const client = safeCdpOrigin(d.clientEndpoint), installed = safeCdpOrigin(service?.browserEndpoint)
+    add('service_browser', state(service?.browser), 'Service browser endpoint checked.', 'Start dedicated Chrome and check the service browser target.')
+    add('browser_target', !client || !installed ? 'unknown' : client === installed ? 'pass' : 'fail',
+      'Desktop and service browser targets checked.', 'Align the desktop and service loopback browser targets.')
+  }
+  if (d.platform === 'win32' && d.elevation) add('uac', elevation, 'Windows administrator prompt policy checked.', 'Set UAC to Always notify in Windows settings.')
   add('assets', state(service?.assets), 'Private service assets checked.', 'Repair the installation from a trusted administrator terminal.')
   add('permissions', state(service?.permissions), 'Protected service permissions checked.', 'Repair protected permissions from a trusted administrator terminal.')
   const v = service?.vault
@@ -121,7 +158,9 @@ export async function commandState(file: string, args: string[], passes: (stdout
 }
 export async function chromeState(endpoint: string): Promise<DiagnosticState> {
   try {
-    const url = new URL('/json/version', endpoint)
+    const origin = safeCdpOrigin(endpoint)
+    if (!origin) return 'fail'
+    const url = new URL('/json/version', origin)
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.protocol !== 'http:') return 'fail'
     const r = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: 'error' })
     const json = await r.json() as { webSocketDebuggerUrl?: unknown }

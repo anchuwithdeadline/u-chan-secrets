@@ -23,8 +23,8 @@ const INSTRUCTIONS = [
 ].join('\n')
 
 const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
-  ok: 'shared chrome',
-  missing: 'missing --cdp-endpoint (using its own Chrome; restart the AI session)',
+  ok: 'shared chrome process configuration observed; active AI session ownership unverified',
+  missing: 'missing or mismatched --cdp-endpoint (restart the AI session)',
   not_found: 'not found',
   unknown: 'unknown',
 }
