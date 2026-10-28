@@ -25,6 +25,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b %errorlevel%
 )
+icacls C:\ProgramData\u-chan-secrets\bin /grant "Users:(OI)(CI)RX" >nul 2>&1
 echo.
 echo [*] Step 3: Checking service status...
 sc.exe query u-chan-secrets

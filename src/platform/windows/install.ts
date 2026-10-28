@@ -95,6 +95,7 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
 
   // 3. Set strict Administrator/SYSTEM ACLs
   await setAdminOnlyAcl(programData, exec)
+  await exec('icacls.exe', [binDir, '/grant', 'Users:(OI)(CI)RX']).catch(() => {})
 
   // 4. Compile C# assets
   const authExe = path.join(binDir, 'auth-helper.exe')

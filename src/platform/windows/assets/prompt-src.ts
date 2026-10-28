@@ -99,6 +99,25 @@ namespace UChan.Platform.Windows.Assets
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
 
+        [DllImport("userenv.dll", SetLastError = true)]
+        private static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
+
+        [DllImport("userenv.dll", SetLastError = true)]
+        private static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        private static extern bool WTSSendMessage(
+            IntPtr hServer,
+            int SessionId,
+            string pTitle,
+            int TitleLength,
+            string pMessage,
+            int MessageLength,
+            int Style,
+            int Timeout,
+            out int pResponse,
+            bool bWait);
+
         [STAThread]
         public static int Main(string[] args)
         {
@@ -122,7 +141,7 @@ namespace UChan.Platform.Windows.Assets
             if (!WTSQueryUserToken(sessionId, out hUserToken))
             {
                 Console.Error.WriteLine("WTSQueryUserToken failed: " + Marshal.GetLastWin32Error());
-                return 1;
+                return FallbackWtsMessage(args, sessionId);
             }
 
             IntPtr hPrimaryToken;
@@ -130,7 +149,7 @@ namespace UChan.Platform.Windows.Assets
             {
                 CloseHandle(hUserToken);
                 Console.Error.WriteLine("DuplicateTokenEx failed: " + Marshal.GetLastWin32Error());
-                return 1;
+                return FallbackWtsMessage(args, sessionId);
             }
             CloseHandle(hUserToken);
 
@@ -142,7 +161,7 @@ namespace UChan.Platform.Windows.Assets
             if (!CreatePipe(out hReadPipe, out hWritePipe, ref sa, 0))
             {
                 CloseHandle(hPrimaryToken);
-                return 1;
+                return FallbackWtsMessage(args, sessionId);
             }
 
             SetHandleInformation(hReadPipe, 1, 0);
@@ -153,6 +172,9 @@ namespace UChan.Platform.Windows.Assets
             si.dwFlags = 0x00000100;
             si.hStdOutput = hWritePipe;
             si.hStdError = hWritePipe;
+
+            IntPtr lpEnv = IntPtr.Zero;
+            CreateEnvironmentBlock(out lpEnv, hPrimaryToken, false);
 
             string exePath = Process.GetCurrentProcess().MainModule.FileName;
             StringBuilder sb = new StringBuilder();
@@ -170,8 +192,8 @@ namespace UChan.Platform.Windows.Assets
                 ref sa,
                 ref sa,
                 true,
-                0,
-                IntPtr.Zero,
+                0x00000400, // CREATE_UNICODE_ENVIRONMENT
+                lpEnv,
                 null,
                 ref si,
                 out pi
@@ -179,12 +201,16 @@ namespace UChan.Platform.Windows.Assets
 
             CloseHandle(hWritePipe);
             CloseHandle(hPrimaryToken);
+            if (lpEnv != IntPtr.Zero)
+            {
+                DestroyEnvironmentBlock(lpEnv);
+            }
 
             if (!created)
             {
                 CloseHandle(hReadPipe);
                 Console.Error.WriteLine("CreateProcessAsUser failed: " + Marshal.GetLastWin32Error());
-                return 1;
+                return FallbackWtsMessage(args, sessionId);
             }
 
             CloseHandle(pi.hThread);
@@ -203,12 +229,61 @@ namespace UChan.Platform.Windows.Assets
             GetExitCodeProcess(pi.hProcess, out exitCode);
             CloseHandle(pi.hProcess);
 
-            if (output.Length > 0)
+            if (exitCode == 0)
             {
-                Console.Write(output.ToString());
+                if (output.Length > 0)
+                {
+                    Console.Write(output.ToString());
+                }
+                return 0;
             }
 
-            return (int)exitCode;
+            // If child process failed or could not start, and this is a confirm prompt, fall back to WTSSendMessage
+            return FallbackWtsMessage(args, sessionId);
+        }
+
+        private static int FallbackWtsMessage(string[] args, uint sessionId)
+        {
+            string mode = "confirm";
+            string title = "U-Chan Secrets";
+            string phrase = "u-chan-phrase";
+            string rawLines = "";
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--mode" && i + 1 < args.Length) mode = args[++i];
+                else if (args[i] == "--title" && i + 1 < args.Length) title = args[++i];
+                else if (args[i] == "--phrase" && i + 1 < args.Length) phrase = args[++i];
+                else if (args[i] == "--lines" && i + 1 < args.Length) rawLines = args[++i];
+            }
+
+            if (mode != "confirm")
+            {
+                return 1;
+            }
+
+            List<string> lines = ParseLines(rawLines);
+            string msg = "Phrase: " + phrase + "\\n\\n" + string.Join("\\n", lines.ToArray()) + "\\n\\nApprove this action?";
+            int response;
+            bool sent = WTSSendMessage(
+                IntPtr.Zero,
+                (int)sessionId,
+                title,
+                title.Length * 2,
+                msg,
+                msg.Length * 2,
+                0x00000004 | 0x00000040 | 0x00040000, // MB_YESNO | MB_ICONQUESTION | MB_TOPMOST
+                120,
+                out response,
+                true
+            );
+
+            // response == 6 is IDYES
+            if (sent && response == 6)
+            {
+                return 0;
+            }
+            return 1;
         }
 
         private static int RunDialog(string[] args)
