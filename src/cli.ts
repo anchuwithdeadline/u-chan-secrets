@@ -8,7 +8,7 @@ import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
-import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, type DiagnosticReport } from './core/doctor.js'
+import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
 import { loadConfig } from './core/config.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
@@ -45,7 +45,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     platform: d.platform,
     registration: async () => d.platform === 'win32' ? (await import('./platform/windows/doctor.js')).checkWindowsRegistration() : d.platform === 'darwin' ? (await import('./platform/darwin/doctor.js')).checkDarwinRegistration() : 'fail',
     service: async () => {
-      const r = await d.connect({ timeoutMs: 5000 }).diagnose()
+      const r = await d.connect({ timeoutMs: SERVICE_DIAGNOSTIC_TIMEOUT_MS }).diagnose()
       if (!r.ok) throw new Error('unavailable')
       const s = JSON.parse(r.message)
       if (!s || typeof s !== 'object') throw new Error('invalid diagnostics')
