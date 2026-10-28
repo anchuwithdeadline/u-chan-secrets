@@ -8,10 +8,13 @@ import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
+import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, type DiagnosticReport } from './core/doctor.js'
+import { loadConfig } from './core/config.js'
 
-const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update'
+const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json]'
 
 export interface CliDeps {
+  doctor?: () => Promise<DiagnosticReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
   connect: (opts: { timeoutMs?: number }) => ControlApi
   env: NodeJS.ProcessEnv
@@ -38,6 +41,30 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
 export async function main(argv: string[], d: CliDeps): Promise<number> {
   const [cmd, arg, ...rest] = argv
   let call: (() => Promise<ToolResult>) | undefined
+  const doctor = d.doctor ?? (() => runDoctor({
+    platform: d.platform,
+    registration: async () => d.platform === 'win32' ? (await import('./platform/windows/doctor.js')).checkWindowsRegistration() : d.platform === 'darwin' ? (await import('./platform/darwin/doctor.js')).checkDarwinRegistration() : 'fail',
+    service: async () => {
+      const r = await d.connect({ timeoutMs: 5000 }).diagnose()
+      if (!r.ok) throw new Error('unavailable')
+      const s = JSON.parse(r.message)
+      if (!s || typeof s !== 'object') throw new Error('invalid diagnostics')
+      return s
+    },
+    chrome: () => chromeState(loadConfig(d.env, d.platform).cdpEndpoint),
+    playwright: async () => {
+      if (d.platform !== 'win32') return 'unknown'
+      const state = await checkPlaywrightNow()
+      return state === 'ok' ? 'pass' : state === 'missing' ? 'fail' : 'unknown'
+    },
+  }))
+  const printDoctor = (r: DiagnosticReport) => d.out(r.checks.map(c => `${c.state.toUpperCase()} ${c.id}: ${c.message}${c.nextAction ? ' ' + c.nextAction : ''}`).join('\n'))
+  if (cmd === 'doctor' && (arg === undefined || arg === '--json') && rest.length === 0) {
+    const r = await doctor()
+    if (arg === '--json') d.out(JSON.stringify(r))
+    else printDoctor(r)
+    return doctorExitCode(r)
+  }
 
   if (cmd === 'install') {
     let mode: ApprovalMode | undefined
@@ -140,6 +167,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   const r = await call()
   if (r.ok) d.out(r.message)
   else d.err(r.message)
+  if (r.ok && cmd === 'install' && !d.install) printDoctor(await doctor())
   return r.ok ? 0 : 1
 }
 

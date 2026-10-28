@@ -59,6 +59,7 @@ export class IpcClient implements CoreApi, ControlApi {
     return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
   }
   capabilities() { return this.call('capabilities') }
+  diagnose() { return this.call('diagnose') }
   revoke(domain: string) { return this.call('revoke', { domain }) }
   listAllowed() { return this.call('list_allowed') }
   status() { return this.call('status') }

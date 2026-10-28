@@ -39,6 +39,7 @@ const PS_LIST =
 
 /** Lists processes via PowerShell/CIM; returns 'unknown' on any failure. */
 export async function checkPlaywrightNow(selfPid = process.pid): Promise<PlaywrightCheck> {
+  if (process.platform !== 'win32') return 'unknown'
   try {
     const stdout = await new Promise<string>((resolve, reject) =>
       execFile(
@@ -54,4 +55,74 @@ export async function checkPlaywrightNow(selfPid = process.pid): Promise<Playwri
   } catch {
     return 'unknown'
   }
+}
+
+export type DiagnosticState = 'pass' | 'fail' | 'unknown'
+export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
+export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[] }
+export interface ServiceDiagnostic {
+  assets: DiagnosticState
+  permissions: DiagnosticState
+  vault: DiagnosticState | 'locked' | 'unauthenticated'
+}
+export interface DoctorDeps {
+  platform: NodeJS.Platform
+  registration: () => Promise<DiagnosticState>
+  service: () => Promise<ServiceDiagnostic>
+  chrome: () => Promise<DiagnosticState>
+  playwright: () => Promise<DiagnosticState>
+}
+export async function bounded<T>(probe: () => Promise<T>, fallback: T, timeoutMs = 5000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try { return await Promise.race([Promise.resolve().then(probe), new Promise<T>(resolve => { timer = setTimeout(() => resolve(fallback), timeoutMs) })]) }
+  catch { return fallback }
+  finally { clearTimeout(timer) }
+}
+export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
+  const [registration, service, chrome, playwright] = await Promise.all([
+    bounded(d.registration, 'unknown' as DiagnosticState),
+    bounded(d.service, null),
+    bounded(d.chrome, 'unknown' as DiagnosticState),
+    bounded(d.playwright, 'unknown' as DiagnosticState),
+  ])
+  const checks: DiagnosticCheck[] = []
+  const add = (id: string, state: DiagnosticState, message: string, nextAction: string, required = true) => {
+    checks.push({ id, state, message, nextAction: state === 'pass' ? '' : nextAction, required })
+  }
+  const supported = d.platform === 'win32' || d.platform === 'darwin'
+  add('platform', supported ? 'pass' : 'fail', supported ? 'Platform is supported.' : 'Platform is unsupported.', 'Use Windows or macOS.')
+  add('registration', registration, 'Service registration checked.', 'Run u-chan install from a trusted administrator terminal.')
+  add('service', service ? 'pass' : 'fail', service ? 'Service is reachable.' : 'Service is unreachable.', 'Check service status; run u-chan install if absent.')
+  add('ipc', service ? 'pass' : 'unknown', 'Authenticated service connection checked.', 'Check the installed owner account and service.')
+  const state = (value: unknown): DiagnosticState => value === 'pass' || value === 'fail' ? value : 'unknown'
+  add('assets', state(service?.assets), 'Private service assets checked.', 'Repair the installation from a trusted administrator terminal.')
+  add('permissions', state(service?.permissions), 'Protected service permissions checked.', 'Repair protected permissions from a trusted administrator terminal.')
+  const v = service?.vault
+  add('vault', v === 'locked' ? 'pass' : v === 'unauthenticated' ? 'fail' : state(v),
+    v === 'locked' ? 'Vault is locked.' : v === 'unauthenticated' ? 'Vault is not authenticated.' : 'Vault availability checked.',
+    'Complete Bitwarden service login during trusted setup.')
+  if (v === 'locked') checks[checks.length - 1].nextAction = 'Run u-chan unlock.'
+  add('chrome', chrome, 'Dedicated Chrome CDP endpoint checked.', 'Start dedicated Chrome with the provided platform launcher.')
+  add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint and restart the AI session.', false)
+  return { version: 1, checks }
+}
+export function doctorExitCode(report: DiagnosticReport): 0 | 1 | 2 {
+  const required = report.checks.filter(c => c.required)
+  return required.some(c => c.state === 'fail') ? 1 : required.some(c => c.state === 'unknown') ? 2 : 0
+}
+export async function commandState(file: string, args: string[], passes: (stdout: string) => boolean): Promise<DiagnosticState> {
+  return new Promise(resolve => {
+    execFile(file, args, { timeout: 5000, windowsHide: true, maxBuffer: 65536 }, (err, stdout) => {
+      resolve(err ? 'unknown' : passes(stdout) ? 'pass' : 'fail')
+    })
+  })
+}
+export async function chromeState(endpoint: string): Promise<DiagnosticState> {
+  try {
+    const url = new URL('/json/version', endpoint)
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.protocol !== 'http:') return 'fail'
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: 'error' })
+    const json = await r.json() as { webSocketDebuggerUrl?: unknown }
+    return r.ok && typeof json.webSocketDebuggerUrl === 'string' ? 'pass' : 'fail'
+  } catch { return 'fail' }
 }

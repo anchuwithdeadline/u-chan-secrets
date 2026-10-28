@@ -20,6 +20,7 @@ import { PolicyApprover } from './policy-approver.js'
 import { SettingsStore } from './settings.js'
 import { NpmPackageVerifier } from './update/verifier.js'
 import { ServiceUpdater } from './update/updater.js'
+import { diagnoseService } from './doctor.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -82,9 +83,10 @@ export async function runService(
       currentVersion,
     })
 
-    const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform, updater })
+    const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform, updater, diagnose: () => diagnoseService(cfg.home, vault, platform) })
     const api: CoreApi & ControlApi = {
       capabilities: () => control.capabilities(),
+      diagnose: () => control.diagnose(),
       login: (domain) => core.login(domain),
       requestAllow: (domain, loginUrl, item, selectors) => core.requestAllow(domain, loginUrl, item, selectors),
       revoke: (domain) => core.revoke(domain),

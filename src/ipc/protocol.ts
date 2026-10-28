@@ -1,6 +1,6 @@
 export const MAX_FRAME = 65536
 export type Method =
-  | 'capabilities'
+  | 'capabilities' | 'diagnose'
   | 'login' | 'request_allow' | 'revoke' | 'list_allowed' | 'status'
   | 'unlock' | 'lock' | 'set_mode' | 'import_v1' | 'audit' | 'update'
 export interface Request { id: number; method: Method; params: Record<string, unknown> }

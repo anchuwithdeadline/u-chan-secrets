@@ -51,6 +51,7 @@ export interface CoreApi {
   status(): Promise<ToolResult>
 }
 export interface ControlApi {
+  diagnose(): Promise<ToolResult>
   capabilities(): Promise<ToolResult>
   unlock(): Promise<ToolResult>
   lock(): Promise<ToolResult>
