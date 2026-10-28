@@ -63,7 +63,7 @@ describe('createWindowsAuthorizer', () => {
     expect(allowed).toBe(true)
     expect(fakeExec).toHaveBeenCalledWith('C:\\ProgramData\\u-chan-secrets\\bin\\auth-helper.exe', [
       '4321',
-      'dummy',
+      targetSid,
     ])
   })
 })
@@ -72,7 +72,7 @@ describe('queryPipeClientSid', () => {
   const dummySocket = {} as net.Socket
   const expectedSid = 'S-1-5-21-123456789-54321-1000'
 
-  it('executes auth binary with server PID and dummy arg, parsing stdout for SID', async () => {
+  it('executes auth binary with server PID and dummy arg when authorizedSid is omitted', async () => {
     const fakeExec: ExecFn = vi.fn(async (file, args) => {
       expect(file).toBe('C:\\bin\\auth-helper.exe')
       expect(args).toEqual(['5678', 'dummy'])
@@ -82,6 +82,24 @@ describe('queryPipeClientSid', () => {
     const sid = await queryPipeClientSid(dummySocket, {
       authExePath: 'C:\\bin\\auth-helper.exe',
       serverPid: 5678,
+      execFile: fakeExec,
+    })
+
+    expect(sid).toBe(expectedSid)
+    expect(fakeExec).toHaveBeenCalledTimes(1)
+  })
+
+  it('executes auth binary with authorizedSid when provided', async () => {
+    const fakeExec: ExecFn = vi.fn(async (file, args) => {
+      expect(file).toBe('C:\\bin\\auth-helper.exe')
+      expect(args).toEqual(['5678', expectedSid])
+      return { stdout: `AUTHORIZED:${expectedSid}\r\n`, stderr: '' }
+    })
+
+    const sid = await queryPipeClientSid(dummySocket, {
+      authExePath: 'C:\\bin\\auth-helper.exe',
+      serverPid: 5678,
+      authorizedSid: expectedSid,
       execFile: fakeExec,
     })
 

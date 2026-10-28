@@ -93,7 +93,7 @@ namespace UChan.Platform.Windows.Assets
             }
 
             string targetSid = args.Length > 1 ? args[1] : null;
-            uint clientPid = 0;
+            bool hasTargetSid = !string.IsNullOrEmpty(targetSid) && !string.Equals(targetSid, "dummy", StringComparison.OrdinalIgnoreCase);
 
             long pipeHandle = 0;
             if (args.Length > 2)
@@ -101,12 +101,16 @@ namespace UChan.Platform.Windows.Assets
                 long.TryParse(args[2], out pipeHandle);
             }
 
+            string matchedSid = null;
+            string fallbackNonSystemSid = null;
+            string anySid = null;
+
             IntPtr hServer = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION, false, serverPid);
             if (hServer != IntPtr.Zero)
             {
                 try
                 {
-                    // Exact handle of this connection when the server passes it; otherwise scan (legacy).
+                    // Exact handle of this connection when the server passes it; otherwise scan.
                     int start = pipeHandle > 0 ? (int)pipeHandle : 4;
                     int end = pipeHandle > 0 ? (int)pipeHandle + 4 : 0x10000;
                     for (int h = start; h < end; h += 4)
@@ -119,8 +123,25 @@ namespace UChan.Platform.Windows.Assets
                                 uint candidatePid;
                                 if (GetNamedPipeClientProcessId(hLocal, out candidatePid) && candidatePid != 0 && candidatePid != serverPid)
                                 {
-                                    clientPid = candidatePid;
-                                    break;
+                                    string sid = GetProcessUserSid(candidatePid);
+                                    if (!string.IsNullOrEmpty(sid))
+                                    {
+                                        if (hasTargetSid && string.Equals(sid, targetSid, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            matchedSid = sid;
+                                            break;
+                                        }
+
+                                        if (!string.Equals(sid, "S-1-5-18", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            fallbackNonSystemSid = sid;
+                                        }
+
+                                        if (anySid == null)
+                                        {
+                                            anySid = sid;
+                                        }
+                                    }
                                 }
                             }
                             finally
@@ -136,17 +157,12 @@ namespace UChan.Platform.Windows.Assets
                 }
             }
 
-            // Fail closed: if clientPid could not be identified on the pipe handle, reject
-            if (clientPid == 0)
-            {
-                Console.Error.WriteLine("Could not identify client process on pipe");
-                return 1;
-            }
+            string clientSid = matchedSid ?? fallbackNonSystemSid ?? anySid;
 
-            string clientSid = GetProcessUserSid(clientPid);
+            // Fail closed: if clientSid could not be identified on any pipe handle, reject
             if (string.IsNullOrEmpty(clientSid))
             {
-                Console.Error.WriteLine("Failed to resolve client SID");
+                Console.Error.WriteLine("Could not identify client process on pipe");
                 return 1;
             }
 
@@ -161,17 +177,13 @@ namespace UChan.Platform.Windows.Assets
                 return 1;
             }
 
-            Console.WriteLine("AUTHORIZED:" + clientSid);
-
-            if (!string.IsNullOrEmpty(targetSid) && !string.Equals(targetSid, "dummy", StringComparison.OrdinalIgnoreCase))
+            if (hasTargetSid && !string.Equals(clientSid, targetSid, StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.Equals(clientSid, targetSid, StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.Error.WriteLine("SID mismatch: expected " + targetSid + " but got " + clientSid);
-                    return 1;
-                }
+                Console.Error.WriteLine("SID mismatch: expected " + targetSid + " but got " + clientSid);
+                return 1;
             }
 
+            Console.WriteLine("AUTHORIZED:" + clientSid);
             return 0;
         }
     }
