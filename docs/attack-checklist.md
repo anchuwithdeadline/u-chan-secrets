@@ -19,6 +19,8 @@ Record OS/version, installed service version, caller identity, date, and PASS / 
 
 Current local evidence and remaining platform work are recorded in [V3 validation](superpowers/research/2026-10-29-v3-validation.md).
 
+For a no-password Windows desktop regression check, run `node scripts/verify-windows-prompt-desktop.mjs` from a trusted administrator terminal after building and installing the service. It compiles a disposable confirm-only helper from the current source, runs it through a temporary SYSTEM scheduled task, verifies protected desktop entry/restoration, and removes that task. It retains evidence under protected `#0 backup`. This dry run does not replace actual dialog interaction or the adversarial checks above.
+
 ## Baseline credential-boundary checks
 
 The nine baseline scenarios below complement the V3 checks above. They test the intended password, TOTP, and Bitwarden-session boundary against an AI with user-shell and browser-automation access. Record actual outcomes; expected results are not evidence that an installed platform passed.
