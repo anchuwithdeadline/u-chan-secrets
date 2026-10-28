@@ -22,6 +22,8 @@ export function serviceConfig(env: NodeJS.ProcessEnv, platform: NodeJS.Platform)
     settingsPath: path.join(home, 'settings.json'),
     bwDataDir: path.join(home, 'bw-data'),
     endpoint: defaultEndpoint(env, platform),
+    programDir: path.join(home, 'program'),
+    stagingDir: path.join(home, 'staging'),
   }
 }
 

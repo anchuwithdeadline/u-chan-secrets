@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, unlinkSync } from 'node:fs'
+import { mkdirSync, readFileSync, unlinkSync } from 'node:fs'
 import type net from 'node:net'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,7 +9,7 @@ import { FileAuditLog } from '../core/audit.js'
 import { CdpBrowserProvider, CdpSessionTarget } from '../core/browser.js'
 import { loadConfig, serviceConfig } from '../core/config.js'
 import { CoreService } from '../core/service.js'
-import { UserFacingError, type ControlApi, type CoreApi } from '../core/types.js'
+import { UserFacingError, type ControlApi, type CoreApi, type ServiceRestarter } from '../core/types.js'
 import { BitwardenVault } from '../core/vault.js'
 import { startIpcServer } from '../ipc/server.js'
 import { platformAdapters, type PlatformAdapters } from '../platform/index.js'
@@ -18,6 +18,8 @@ import { ControlService } from './control.js'
 import { IsolatedLogin } from './isolated-login.js'
 import { PolicyApprover } from './policy-approver.js'
 import { SettingsStore } from './settings.js'
+import { NpmPackageVerifier } from './update/verifier.js'
+import { ServiceUpdater } from './update/updater.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -56,7 +58,27 @@ export async function runService(
       target: new CdpSessionTarget(new CdpBrowserProvider(loadConfig(env, platform).cdpEndpoint)),
     })
     const core = new CoreService({ vault, allowlist, approver, audit, login, mode: () => approver.effectiveMode() })
-    const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform })
+
+    let currentVersion = '2.0.0-dev.0'
+    try {
+      currentVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
+    } catch {}
+
+    const verifier = new NpmPackageVerifier()
+    const restarter: ServiceRestarter = {
+      restart: async () => {
+        process.exit(0)
+      },
+    }
+    const updater = new ServiceUpdater({
+      verifier,
+      restarter,
+      programDir: cfg.programDir,
+      stagingDir: cfg.stagingDir,
+      currentVersion,
+    })
+
+    const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform, updater })
     const api: CoreApi & ControlApi = {
       login: (domain) => core.login(domain),
       requestAllow: (domain, loginUrl, item, selectors) => core.requestAllow(domain, loginUrl, item, selectors),
@@ -68,6 +90,7 @@ export async function runService(
       setMode: (mode) => control.setMode(mode),
       importV1: (entries) => control.importV1(entries),
       audit: (limit) => control.audit(limit),
+      update: () => control.update(),
     }
     const server = await startIpcServer(cfg.endpoint, api, { authorize: adapters.authorize })
     console.error(`U-Chan service listening on ${cfg.endpoint}`)

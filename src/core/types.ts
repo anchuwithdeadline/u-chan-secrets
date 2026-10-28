@@ -18,7 +18,7 @@ export interface VaultClient {
   lock(): Promise<void>
 }
 export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
-export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import'; domain: string; result: string }
+export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import' | 'update'; domain: string; result: string }
 export interface AuditRecord {
   ts: string
   action: AuditEvent['action']
@@ -47,6 +47,10 @@ export interface ControlApi {
   setMode(mode: ApprovalMode): Promise<ToolResult>
   importV1(entries: unknown[]): Promise<ToolResult>
   audit(limit?: number): Promise<ToolResult>
+  update(): Promise<ToolResult>
+}
+export interface ServiceRestarter {
+  restart(): Promise<void>
 }
 export interface PromptRequest { title: string; lines: string[]; phrase: string }
 /** Platform window owned by the service. Close, timeout or error → false / null. */

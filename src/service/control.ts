@@ -18,6 +18,7 @@ interface Deps {
   allowlist: AllowlistStore
   audit: AuditLog
   platform: NodeJS.Platform
+  updater?: { update(): Promise<ToolResult> }
 }
 
 /** Commands from the `u-chan` CLI. Audit entries never contain passwords or sessions. */
@@ -126,5 +127,11 @@ export class ControlService implements ControlApi {
     } catch {
       return { ok: false, message: 'could not read audit log' }
     }
+  }
+
+  update(): Promise<ToolResult> {
+    return this.guarded('update', () =>
+      this.d.updater ? this.d.updater.update() : Promise.resolve({ ok: false, message: 'updater not available' }),
+    )
   }
 }

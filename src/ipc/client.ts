@@ -55,4 +55,5 @@ export class IpcClient implements CoreApi, ControlApi {
   setMode(mode: ApprovalMode) { return this.call('set_mode', { mode }) }
   importV1(entries: unknown[]) { return this.call('import_v1', { entries }) }
   audit(limit?: number) { return this.call('audit', limit !== undefined ? { limit } : {}) }
+  update() { return this.call('update') }
 }

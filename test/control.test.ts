@@ -192,3 +192,30 @@ describe('control: audit', () => {
     expect(events).toHaveLength(0)
   })
 })
+
+describe('control: update', () => {
+  it('records audit event on success', async () => {
+    const updater = { update: vi.fn(async () => ({ ok: true, message: 'updated to 2.1.0' })) }
+    const ctl = new ControlService({
+      vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+      audit: { record: async (e) => void events.push(e), readTail: async () => [] }, platform: 'win32',
+      updater,
+    })
+    const res = await ctl.update()
+    expect(res).toEqual({ ok: true, message: 'updated to 2.1.0' })
+    expect(events).toEqual([{ action: 'update', domain: '', result: 'updated to 2.1.0' }])
+  })
+
+  it('records audit event on failure', async () => {
+    const updater = { update: vi.fn(async () => ({ ok: false, message: 'integrity check failed' })) }
+    const ctl = new ControlService({
+      vault: vault as never, approver: approver as never, limiter, settings, allowlist,
+      audit: { record: async (e) => void events.push(e), readTail: async () => [] }, platform: 'win32',
+      updater,
+    })
+    const res = await ctl.update()
+    expect(res).toEqual({ ok: false, message: 'integrity check failed' })
+    expect(events).toEqual([{ action: 'update', domain: '', result: 'failed: integrity check failed' }])
+  })
+})
+

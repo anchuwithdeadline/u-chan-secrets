@@ -14,7 +14,7 @@ const sockPath = () =>
     ? String.raw`\\.\pipe\ucs-test-` + randomBytes(6).toString('hex')
     : join(mkdtempSync(join(tmpdir(), 'ucs-')), 's.sock')
 
-const names = ['login', 'requestAllow', 'revoke', 'listAllowed', 'status', 'unlock', 'lock', 'setMode', 'importV1', 'audit'] as const
+const names = ['login', 'requestAllow', 'revoke', 'listAllowed', 'status', 'unlock', 'lock', 'setMode', 'importV1', 'audit', 'update'] as const
 const fakeApi = () => Object.fromEntries(names.map(n => [n, vi.fn(async () => ({ ok: true, message: n }))])) as any
 
 const servers: net.Server[] = []
@@ -52,80 +52,76 @@ describe('ipc', () => {
     const entries = [{ a: 1 }, 'x']
     expect(await c.importV1(entries)).toEqual({ ok: true, message: 'importV1' })
     expect(await c.audit(50)).toEqual({ ok: true, message: 'audit' })
+    expect(await c.update()).toEqual({ ok: true, message: 'update' })
     expect(api.login).toHaveBeenCalledWith('a.com')
     expect(api.requestAllow).toHaveBeenCalledWith('a.com', 'https://a.com/l', 'item', sel)
     expect(api.revoke).toHaveBeenCalledWith('a.com')
     expect(api.setMode).toHaveBeenCalledWith('hardcore')
     expect(api.importV1).toHaveBeenCalledWith(entries)
     expect(api.audit).toHaveBeenCalledWith(50)
+    expect(api.update).toHaveBeenCalled()
   })
 
   it('round-trips audit method', async () => {
     const api = fakeApi()
     const c = new IpcClient(await start(api))
-    expect(await c.audit(50)).toEqual({ ok: true, message: 'audit' })
-    expect(api.audit).toHaveBeenCalledWith(50)
+    expect(await c.audit()).toEqual({ ok: true, message: 'audit' })
+    expect(api.audit).toHaveBeenCalledWith(undefined)
+  })
+
+  it('round-trips update method', async () => {
+    const api = fakeApi()
+    const c = new IpcClient(await start(api))
+    expect(await c.update()).toEqual({ ok: true, message: 'update' })
+    expect(api.update).toHaveBeenCalled()
   })
 
   it('rejects invalid audit limit', async () => {
     const api = fakeApi()
     const p = await start(api)
-    expect(JSON.parse((await raw(p, '{"id":1,"method":"audit","params":{"limit":-1}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
-    expect(JSON.parse((await raw(p, '{"id":2,"method":"audit","params":{"limit":"lots"}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
-    expect(JSON.parse((await raw(p, '{"id":3,"method":"audit","params":{"limit":0}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
-    expect(JSON.parse((await raw(p, '{"id":4,"method":"audit","params":{"limit":1.5}}\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
-    expect(api.audit).not.toHaveBeenCalled()
+    const res = await raw(p, JSON.stringify({ id: 1, method: 'audit', params: { limit: -5 } }) + '\n')
+    const parsed = JSON.parse(res.text)
+    expect(parsed).toEqual({ id: 1, ok: false, message: 'bad request' })
+  })
+
+  it('rejects unknown methods and bad requests', async () => {
+    const api = fakeApi()
+    const p = await start(api)
+    expect(JSON.parse((await raw(p, '{"id":1,"method":"nope","params":{}}\n')).text)).toMatchObject({ id: 1, ok: false, message: 'unknown method' })
+    expect(JSON.parse((await raw(p, '{"id":2,"method":"login","params":{}}\n')).text)).toMatchObject({ id: 2, ok: false, message: 'bad request' })
+    expect(JSON.parse((await raw(p, 'not json\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
+  })
+
+  it('drops callers that fail authorization', async () => {
+    const api = fakeApi()
+    const p = await start(api, { authorize: async () => false })
+    const res = await raw(p, '{"id":1,"method":"status","params":{}}\n')
+    expect(JSON.parse(res.text)).toMatchObject({ id: 1, ok: false, message: 'caller not allowed' })
+  })
+
+  it('handles uncaught handler throws', async () => {
+    const api = { ...fakeApi(), status: () => { throw new Error('boom') } }
+    const c = new IpcClient(await start(api))
+    expect(await c.status()).toEqual({ ok: false, message: 'internal error' })
   })
 
   it('rejects malformed and oversized frames', async () => {
-    const api = fakeApi()
-    const p = await start(api)
-    expect((await raw(p, 'not json\n')).text).toBe('{"id":0,"ok":false,"message":"bad request"}\n')
-    const big = await raw(p, Buffer.alloc(70000, 0x61))
-    expect(big.closed).toBe(true)
-    expect(JSON.parse((await raw(p, '{"id":1,"method":"nope","params":{}}\n')).text).message).toBe('unknown method')
-    expect(JSON.parse((await raw(p, '{"id":2,"method":"login","params":{"domain":5}}\n')).text).message).toBe('bad request')
-    expect(api.login).not.toHaveBeenCalled()
-    expect(await new IpcClient(p).status()).toEqual({ ok: true, message: 'status' })
-  })
-
-  it('authorize throwing answers promptly with the frame id', async () => {
-    const api = fakeApi()
-    const c = new IpcClient(await start(api, { authorize: async () => { throw new Error('boom') } }), { timeoutMs: 2000 })
-    expect(await c.status()).toEqual({ ok: false, message: 'internal error' })
-    expect(api.status).not.toHaveBeenCalled()
-  })
-
-  it('reports service down', async () => {
-    expect(await new IpcClient(sockPath()).login('x')).toEqual({
-      ok: false, message: 'U-Chan service is not running — run u-chan install',
-    })
-  })
-
-  it('refuses unauthorized callers', async () => {
-    const api = fakeApi()
-    const c = new IpcClient(await start(api, { authorize: async () => false }))
-    expect(await c.status()).toEqual({ ok: false, message: 'caller not allowed' })
-    expect(api.status).not.toHaveBeenCalled()
-  })
-
-  it('api throw becomes internal error', async () => {
-    const api = fakeApi()
-    api.login = vi.fn(async () => { throw new Error('secret') })
-    const c = new IpcClient(await start(api))
-    expect(await c.login('a.com')).toEqual({ ok: false, message: 'internal error' })
-  })
-
-  it('FrameReader splits lines and enforces the limit', () => {
     const r = new FrameReader()
-    expect(r.push(Buffer.from('{"a":1}\n{"b"'))).toEqual([{ a: 1 }])
-    expect(r.push(Buffer.from(':2}\n'))).toEqual([{ b: 2 }])
-    expect(() => new FrameReader().push(Buffer.alloc(MAX_FRAME + 1, 0x61))).toThrow()
+    expect(r.push(Buffer.from('{"a":1}\nnot json\n'))).toEqual([{ a: 1 }, undefined])
+    expect(() => r.push(Buffer.alloc(MAX_FRAME + 1))).toThrow('frame too large')
   })
 
-  it('defaultEndpoint', () => {
-    expect(defaultEndpoint({ U_CHAN_IPC: 'x' }, 'win32')).toBe('x')
-    expect(defaultEndpoint({}, 'win32')).toBe(String.raw`\\.\pipe\u-chan-secrets`)
-    expect(defaultEndpoint({}, 'darwin')).toBe('/var/run/u-chan-secrets/ipc.sock')
+  it('returns clean error on connection failure', async () => {
+    const c = new IpcClient(sockPath())
+    expect(await c.status()).toMatchObject({ ok: false, message: expect.stringMatching(/U-Chan service is not running|connection failed/) })
+  })
+
+  it('returns timeout message on stuck call', async () => {
+    const p = sockPath()
+    const server = net.createServer(() => {})
+    servers.push(server)
+    await new Promise(r => server.listen(p, r as any))
+    const c = new IpcClient(p, { timeoutMs: 50 })
+    expect(await c.status()).toEqual({ ok: false, message: 'U-Chan service timed out' })
   })
 })

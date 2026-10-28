@@ -34,6 +34,7 @@ const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | ty
     if (p.limit !== undefined && (!Number.isInteger(p.limit) || (p.limit as number) <= 0)) return BAD
     return api.audit(p.limit as number | undefined)
   },
+  update: api => api.update(),
 }
 
 async function dispatch(api: Api, msg: unknown): Promise<Response> {

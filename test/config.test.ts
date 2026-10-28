@@ -10,6 +10,8 @@ describe('serviceConfig', () => {
       settingsPath: 'C:\\ProgramData\\u-chan-secrets\\settings.json',
       bwDataDir: 'C:\\ProgramData\\u-chan-secrets\\bw-data',
       endpoint: String.raw`\\.\pipe\u-chan-secrets`,
+      programDir: 'C:\\ProgramData\\u-chan-secrets\\program',
+      stagingDir: 'C:\\ProgramData\\u-chan-secrets\\staging',
     })
   })
   it('uses /Library/Application Support on macOS', () => {
@@ -17,6 +19,8 @@ describe('serviceConfig', () => {
     expect(c.home).toBe('/Library/Application Support/u-chan-secrets')
     expect(c.settingsPath).toBe('/Library/Application Support/u-chan-secrets/settings.json')
     expect(c.endpoint).toBe('/var/run/u-chan-secrets/ipc.sock')
+    expect(c.programDir).toBe('/Library/Application Support/u-chan-secrets/program')
+    expect(c.stagingDir).toBe('/Library/Application Support/u-chan-secrets/staging')
   })
   it('honours U_CHAN_HOME and U_CHAN_IPC', () => {
     const c = serviceConfig({ U_CHAN_HOME: '/tmp/uc', U_CHAN_IPC: '/tmp/uc.sock' }, 'darwin')
