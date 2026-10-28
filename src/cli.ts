@@ -64,6 +64,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
         const { installWindowsService } = await import('./platform/windows/install.js')
         return installWindowsService({ mode, phrase, out: d.out, err: d.err })
       }
+      if (d.platform === 'darwin') {
+        const { macosInstall } = await import('./platform/darwin/lifecycle.js')
+        return macosInstall({ mode, phrase, out: d.out, err: d.err })
+      }
       return { ok: false, message: `install is not supported on ${d.platform} yet` }
     }
   } else if (cmd === 'uninstall' && arg === undefined) {
@@ -72,6 +76,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
       if (d.platform === 'win32') {
         const { uninstallWindowsService } = await import('./platform/windows/install.js')
         return uninstallWindowsService({ out: d.out, err: d.err })
+      }
+      if (d.platform === 'darwin') {
+        const { macosUninstall } = await import('./platform/darwin/lifecycle.js')
+        return macosUninstall({ out: d.out, err: d.err })
       }
       return { ok: false, message: `uninstall is not supported on ${d.platform} yet` }
     }
