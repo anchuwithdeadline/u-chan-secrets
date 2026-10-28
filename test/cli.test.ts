@@ -8,6 +8,7 @@ const fakeClient = (ok = true) => ({
   lock: vi.fn(async () => ({ ok, message: 'locked' })),
   setMode: vi.fn(async (m: string) => ({ ok, message: m })),
   importV1: vi.fn(async (_e: unknown[]) => ({ ok, message: 'imported 1 of 1' })),
+  audit: vi.fn(async (_limit?: number) => ({ ok, message: ok ? '2026-10-27T... login ok' : 'wrong password' })),
 })
 
 const DEFAULT_V1 = 'C:\\Users\\me\\AppData\\Roaming\\u-chan-secrets\\allowlist.json'
@@ -133,6 +134,51 @@ describe('cli', () => {
     expect(r.code).toBe(1)
     expect(r.err.join('\n')).toMatch(/usage: u-chan/)
     expect(install).not.toHaveBeenCalled()
+  })
+  it('audit prints formatted log and exits 0', async () => {
+    const c = fakeClient()
+    const r = await run(['audit'], c)
+    expect(r.code).toBe(0)
+    expect(r.out).toEqual(['2026-10-27T... login ok'])
+    expect(c.audit).toHaveBeenCalledWith(undefined)
+  })
+  it('audit passes parsed limit', async () => {
+    const c = fakeClient()
+    const r = await run(['audit', '25'], c)
+    expect(r.code).toBe(0)
+    expect(c.audit).toHaveBeenCalledWith(25)
+  })
+  it('audit rejects non-positive or non-integer audit limit', async () => {
+    const c = fakeClient()
+    const r1 = await run(['audit', 'abc'], c)
+    expect(r1.code).toBe(1)
+    expect(r1.err).toEqual(['limit must be a positive integer'])
+
+    const r2 = await run(['audit', '-5'], c)
+    expect(r2.code).toBe(1)
+    expect(r2.err).toEqual(['limit must be a positive integer'])
+
+    const r3 = await run(['audit', '0'], c)
+    expect(r3.code).toBe(1)
+    expect(r3.err).toEqual(['limit must be a positive integer'])
+
+    const r4 = await run(['audit', '1.5'], c)
+    expect(r4.code).toBe(1)
+    expect(r4.err).toEqual(['limit must be a positive integer'])
+
+    expect(c.audit).not.toHaveBeenCalled()
+  })
+  it('audit reports service errors', async () => {
+    const c = fakeClient(false)
+    c.audit.mockResolvedValue({ ok: false, message: 'U-Chan service is not running — run u-chan install' })
+    const r = await run(['audit'], c)
+    expect(r.code).toBe(1)
+    expect(r.err).toEqual(['U-Chan service is not running — run u-chan install'])
+  })
+  it('usage message includes audit', async () => {
+    const r = await run([])
+    expect(r.code).toBe(1)
+    expect(r.err.join('\n')).toContain('audit [limit]')
   })
   it('unknown command prints usage and exits 1', async () => {
     const r = await run([])

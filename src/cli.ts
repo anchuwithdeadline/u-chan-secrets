@@ -9,7 +9,7 @@ import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
 
-const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path]'
+const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit]'
 
 export interface CliDeps {
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
@@ -118,6 +118,17 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     }
     const list = entries
     call = () => d.connect({ timeoutMs: importTimeoutMs(list.length) }).importV1(list)
+  } else if (cmd === 'audit' && rest.length === 0) {
+    let limit: number | undefined
+    if (arg !== undefined) {
+      const parsed = Number(arg)
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        d.err('limit must be a positive integer')
+        return 1
+      }
+      limit = parsed
+    }
+    call = () => d.connect({}).audit(limit)
   }
 
   if (!call) {
