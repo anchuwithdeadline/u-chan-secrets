@@ -1,6 +1,6 @@
 # V3 local validation and release boundary
 
-Date: 2026-10-29. Branch: feat/v3-usability. No package publication, live installation, deployment, or push was performed.
+Date: 2026-10-29. Branch: feat/v3-usability. This report records initial local validation and subsequent PR verification. No package publication, live installation, deployment, or merge was performed.
 
 ## Verified locally
 
@@ -12,7 +12,7 @@ Date: 2026-10-29. Branch: feat/v3-usability. No package publication, live instal
 - Read-only doctor was executed against this machine. It reported a registered but unreachable service and unavailable dedicated Chrome. These failures were reported, not repaired.
 - No actual vault credentials were needed for these checks.
 
-Final local verification: **352 tests passed across 46 test files; TypeScript build passed; git diff --check passed.** Packaging dry run contained 64 expected files and no unexpected paths. No CI run or publication is claimed.
+Initial local verification: **352 tests passed across 46 test files; TypeScript build passed; git diff --check passed.** Packaging dry run contained 64 expected files and no unexpected paths. This initial result did not claim CI or publication.
 
 ## Pending platform checks
 
@@ -62,3 +62,9 @@ An additional diagnostic regression now makes a known Playwright browser-sharing
 - The managed worktree and local scratch evidence are preserved. Cost: additional disk use; no bulk deletion was performed.
 
 No Minor findings were deferred. The original checkout remains on main; implementation is committed separately on feat/v3-usability.
+
+## PR portability follow-up
+
+After push and PR creation were authorized, [PR #4](https://github.com/anchuwithdeadline/u-chan-secrets/pull/4) triggered Windows/macOS CI and CodeQL. CodeQL passed. The first platform runs exposed two portability issues: canonical temp paths differed from their lexical aliases, and Windows PowerShell inherited an incompatible Security module search path.
+
+The asset test now compares canonical physical paths. Windows ACL queries use the existing .NET access-control API without loading the PowerShell Security module. A deliberately incompatible module fixture reproduced the ACL-query failure locally before the fix and passed afterward. Current CI results are available on the PR; these checks still do not establish privileged native isolation.
