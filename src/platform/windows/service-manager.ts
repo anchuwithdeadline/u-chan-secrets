@@ -34,7 +34,7 @@ export class ServiceManager {
       await this.exec('sc.exe', ['stop', name])
     } catch (err: any) {
       const output = `${err?.stdout ?? ''} ${err?.stderr ?? ''} ${err?.message ?? ''}`
-      if (/1062|not been started|not running/i.test(output)) {
+      if (/1062|1060|not been started|not running|does not exist/i.test(output)) {
         return
       }
       throw err

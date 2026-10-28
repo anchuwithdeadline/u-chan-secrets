@@ -86,6 +86,8 @@ export function startIpcServer(
   })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(path, () => { server.off('error', reject); resolve(server) })
+    // Windows: the SYSTEM-owned pipe's default DACL blocks the user (EPERM). Open it; `authorize` enforces the caller SID.
+    const target = process.platform === 'win32' && path.startsWith('\\\\.\\pipe\\') ? { path, readableAll: true, writableAll: true } : { path }
+    server.listen(target, () => { server.off('error', reject); resolve(server) })
   })
 }
