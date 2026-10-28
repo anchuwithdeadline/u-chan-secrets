@@ -165,13 +165,28 @@ namespace UChan.Platform.Windows.Assets
                         {
                             writer.AutoFlush = true;
                             Console.SetOut(writer);
-                            return RunProtectedDialog(args);
+                            return RunDialogOnCleanThread(args);
                         }
                     }
                     catch { return 1; }
                 }
             }
             return 1;
+        }
+
+        private static int RunDialogOnCleanThread(string[] args)
+        {
+            int result = 1;
+            // The relay thread can own CLR/COM windows. Desktop assignment requires a clean thread.
+            System.Threading.Thread thread = new System.Threading.Thread(delegate()
+            {
+                try { result = RunProtectedDialog(args); }
+                catch { result = 1; }
+            });
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+            return result;
         }
 
         private static int RunProtectedDialog(string[] args)

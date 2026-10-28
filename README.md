@@ -2,7 +2,7 @@
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.1`; merging this repository does not publish an npm package or update an installed service.
+V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.2`; merging this repository does not publish an npm package or update an installed service.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 

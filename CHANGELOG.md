@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.2
+
+- Run Windows protected dialogs on a clean STA thread. The relay thread could already own CLR/COM windows, causing desktop assignment to fail with Windows error 170 before any prompt appeared.
+- Add an administrator-run, no-password native regression probe for actual SYSTEM relay, protected desktop entry, desktop restoration, and reply transport. Evidence remains under protected `#0 backup`; its temporary scheduled task is removed.
+- This native-helper change requires a trusted administrator reinstall. Existing owner, settings, and grants remain intact.
+
 ## 3.0.1
 
 - Allow a full native permission scan to finish before `doctor` times out. A reachable installed service previously appeared unavailable when the five-second client deadline raced the service reply.
