@@ -95,12 +95,21 @@ namespace UChan.Platform.Windows.Assets
             string targetSid = args.Length > 1 ? args[1] : null;
             uint clientPid = 0;
 
+            long pipeHandle = 0;
+            if (args.Length > 2)
+            {
+                long.TryParse(args[2], out pipeHandle);
+            }
+
             IntPtr hServer = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION, false, serverPid);
             if (hServer != IntPtr.Zero)
             {
                 try
                 {
-                    for (int h = 4; h < 0x10000; h += 4)
+                    // Exact handle of this connection when the server passes it; otherwise scan (legacy).
+                    int start = pipeHandle > 0 ? (int)pipeHandle : 4;
+                    int end = pipeHandle > 0 ? (int)pipeHandle + 4 : 0x10000;
+                    for (int h = start; h < end; h += 4)
                     {
                         IntPtr hLocal;
                         if (DuplicateHandle(hServer, (IntPtr)h, GetCurrentProcess(), out hLocal, 0, false, DUPLICATE_SAME_ACCESS))

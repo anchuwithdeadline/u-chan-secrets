@@ -25,7 +25,9 @@ export function createWindowsAuthorizer(
     try {
       const clientSid = await getClientSid(socket)
       if (!clientSid) return false
-      return clientSid.toLowerCase() === opts.authorizedSid.toLowerCase()
+      const ok = clientSid.toLowerCase() === opts.authorizedSid.toLowerCase()
+      if (!ok) console.error(`caller SID ${clientSid} != authorized ${opts.authorizedSid || '(empty)'}`)
+      return ok
     } catch {
       return false
     }
@@ -33,18 +35,24 @@ export function createWindowsAuthorizer(
 }
 
 export async function queryPipeClientSid(
-  _socket: net.Socket,
+  socket: net.Socket,
   opts: { authExePath: string; serverPid: number; execFile?: ExecFn }
 ): Promise<string | null> {
   const exec = opts.execFile ?? defaultExec
+  // libuv exposes the pipe HANDLE value as fd on Windows; it identifies exactly this connection.
+  const fd = (socket as unknown as { _handle?: { fd?: number } })._handle?.fd
+  const args = [String(opts.serverPid), 'dummy']
+  if (typeof fd === 'number' && fd > 0) args.push(String(fd))
   try {
-    const { stdout } = await exec(opts.authExePath, [String(opts.serverPid), 'dummy'])
+    const { stdout } = await exec(opts.authExePath, args)
     const match = stdout.match(/AUTHORIZED:(S-[0-9-]+)/i)
     if (match && match[1]) {
       return match[1]
     }
+    console.error(`auth-helper gave no SID: ${stdout.trim()}`)
     return null
-  } catch {
+  } catch (err: any) {
+    console.error(`auth-helper failed: ${String(err?.stderr ?? err?.message ?? err).trim()}`)
     return null
   }
 }
