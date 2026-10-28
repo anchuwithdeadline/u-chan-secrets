@@ -1,6 +1,9 @@
 export const PROMPT_HELPER_CSHARP = `using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -9,8 +12,206 @@ namespace UChan.Platform.Windows.Assets
 {
     public static class PromptHelper
     {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WTSGetActiveConsoleSessionId();
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool DuplicateTokenEx(
+            IntPtr hExistingToken,
+            uint dwDesiredAccess,
+            IntPtr lpTokenAttributes,
+            int ImpersonationLevel,
+            int TokenType,
+            out IntPtr phNewToken);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public int cb;
+            public string lpReserved;
+            public string lpDesktop;
+            public string lpTitle;
+            public int dwX;
+            public int dwY;
+            public int dwXSize;
+            public int dwYSize;
+            public int dwXCountChars;
+            public int dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SECURITY_ATTRIBUTES
+        {
+            public int nLength;
+            public IntPtr lpSecurityDescriptor;
+            public bool bInheritHandle;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CreateProcessAsUser(
+            IntPtr hToken,
+            string lpApplicationName,
+            string lpCommandLine,
+            ref SECURITY_ATTRIBUTES lpProcessAttributes,
+            ref SECURITY_ATTRIBUTES lpThreadAttributes,
+            bool bInheritHandles,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CreatePipe(out IntPtr hReadPipe, out IntPtr hWritePipe, ref SECURITY_ATTRIBUTES lpPipeAttributes, uint nSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadFile(IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
         [STAThread]
         public static int Main(string[] args)
+        {
+            if (Process.GetCurrentProcess().SessionId == 0)
+            {
+                return RelayToActiveSession(args);
+            }
+            return RunDialog(args);
+        }
+
+        private static int RelayToActiveSession(string[] args)
+        {
+            uint sessionId = WTSGetActiveConsoleSessionId();
+            if (sessionId == 0xFFFFFFFF)
+            {
+                Console.Error.WriteLine("No active user session");
+                return 1;
+            }
+
+            IntPtr hUserToken;
+            if (!WTSQueryUserToken(sessionId, out hUserToken))
+            {
+                Console.Error.WriteLine("WTSQueryUserToken failed: " + Marshal.GetLastWin32Error());
+                return 1;
+            }
+
+            IntPtr hPrimaryToken;
+            if (!DuplicateTokenEx(hUserToken, 0x10000000, IntPtr.Zero, 2, 1, out hPrimaryToken))
+            {
+                CloseHandle(hUserToken);
+                Console.Error.WriteLine("DuplicateTokenEx failed: " + Marshal.GetLastWin32Error());
+                return 1;
+            }
+            CloseHandle(hUserToken);
+
+            SECURITY_ATTRIBUTES sa = new SECURITY_ATTRIBUTES();
+            sa.nLength = Marshal.SizeOf(sa);
+            sa.bInheritHandle = true;
+
+            IntPtr hReadPipe, hWritePipe;
+            if (!CreatePipe(out hReadPipe, out hWritePipe, ref sa, 0))
+            {
+                CloseHandle(hPrimaryToken);
+                return 1;
+            }
+
+            SetHandleInformation(hReadPipe, 1, 0);
+
+            STARTUPINFO si = new STARTUPINFO();
+            si.cb = Marshal.SizeOf(si);
+            si.lpDesktop = @"winsta0\\default";
+            si.dwFlags = 0x00000100;
+            si.hStdOutput = hWritePipe;
+            si.hStdError = hWritePipe;
+
+            string exePath = Process.GetCurrentProcess().MainModule.FileName;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("\\"").Append(exePath).Append("\\"");
+            foreach (string a in args)
+            {
+                sb.Append(" \\"").Append(a.Replace("\\"", "\\\\\\\"")).Append("\\"");
+            }
+
+            PROCESS_INFORMATION pi;
+            bool created = CreateProcessAsUser(
+                hPrimaryToken,
+                null,
+                sb.ToString(),
+                ref sa,
+                ref sa,
+                true,
+                0,
+                IntPtr.Zero,
+                null,
+                ref si,
+                out pi
+            );
+
+            CloseHandle(hWritePipe);
+            CloseHandle(hPrimaryToken);
+
+            if (!created)
+            {
+                CloseHandle(hReadPipe);
+                Console.Error.WriteLine("CreateProcessAsUser failed: " + Marshal.GetLastWin32Error());
+                return 1;
+            }
+
+            CloseHandle(pi.hThread);
+
+            StringBuilder output = new StringBuilder();
+            byte[] buf = new byte[1024];
+            uint bytesRead;
+            while (ReadFile(hReadPipe, buf, (uint)buf.Length, out bytesRead, IntPtr.Zero) && bytesRead > 0)
+            {
+                output.Append(Encoding.UTF8.GetString(buf, 0, (int)bytesRead));
+            }
+            CloseHandle(hReadPipe);
+
+            WaitForSingleObject(pi.hProcess, 130000);
+            uint exitCode;
+            GetExitCodeProcess(pi.hProcess, out exitCode);
+            CloseHandle(pi.hProcess);
+
+            if (output.Length > 0)
+            {
+                Console.Write(output.ToString());
+            }
+
+            return (int)exitCode;
+        }
+
+        private static int RunDialog(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
