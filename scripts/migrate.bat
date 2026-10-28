@@ -1,41 +1,40 @@
 @echo off
 setlocal
-cd /d "%~dp0\.."
-
-echo ========================================================
-echo       U-Chan Secrets V2 Local Migration Helper
-echo ========================================================
-echo.
+set ROOT=%~dp0..
 
 fltmc.exe >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] Administrator privileges required to install Windows Service.
-    echo [*] Requesting UAC elevation...
-    powershell -Command "Start-Process cmd -ArgumentList '/k cd /d %~dp0\.. && scripts\migrate.bat' -Verb RunAs"
+    echo [*] Requesting Administrator elevation...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 
-echo [+] Running with Administrator privileges.
+cd /d "%ROOT%"
+echo ========================================================
+echo       U-Chan Secrets V2 Installation & Setup
+echo ========================================================
 echo.
-echo Step 1: Installing U-Chan Secrets V2 Windows Service...
-node dist/cli.js install
-
+echo [*] Step 1: Stopping previous service (if any)...
+call node dist\cli.js uninstall
+echo.
+echo [*] Step 2: Installing U-Chan Windows Service...
+call node dist\cli.js install
 if %errorlevel% neq 0 (
-    echo [X] Service installation failed. Check error above.
+    echo.
+    echo [X] Installation failed with exit code %errorlevel%.
     pause
-    exit /b 1
+    exit /b %errorlevel%
 )
-
 echo.
-echo [+] Windows Service successfully installed and started!
+echo [*] Step 3: Checking service status...
+sc.exe query u-chan-secrets
 echo.
 echo ========================================================
-echo Step 2: In your user terminal, run:
-echo    u-chan import-v1
-echo       (Click approve on popup dialogs to import V1 allowlist)
+echo [+] Service successfully installed and started!
 echo.
+echo Next: Close this window, open your normal terminal, and run:
+echo    u-chan import-v1
 echo    u-chan unlock
-echo       (Enter Bitwarden master password in secure dialog)
 echo ========================================================
 echo.
 pause

@@ -81,11 +81,16 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     const pkgRoot = fileURLToPath(new URL('../../../', import.meta.url))
     await fs.cp( path.join(pkgRoot, 'dist'), path.join(programDir, 'dist'), { recursive: true })
     await fs.cp( path.join(pkgRoot, 'package.json'), path.join(programDir, 'package.json'))
-    // ESM ignores NODE_PATH: the service resolves deps from programDir/node_modules.
-    await fs.cp(path.join(pkgRoot, 'node_modules'), path.join(programDir, 'node_modules'), {
-      recursive: true,
-      filter: (src) => !/[\\/]\.(vite|vitest-cache|vite-temp)/.test(src),
-    })
+    const srcNm = path.join(pkgRoot, 'node_modules')
+    const destNm = path.join(programDir, 'node_modules')
+    try {
+      await fs.symlink(srcNm, destNm, 'junction')
+    } catch {
+      await fs.cp(srcNm, destNm, {
+        recursive: true,
+        filter: (src) => !/[\\/]\.(vite|vitest-cache|vite-temp)/.test(src),
+      }).catch(() => {})
+    }
   } catch {}
 
   // 3. Set strict Administrator/SYSTEM ACLs

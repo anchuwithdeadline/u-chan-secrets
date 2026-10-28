@@ -1,29 +1,40 @@
 @echo off
 setlocal
 set ROOT=%~dp0..
-set LOG=%ROOT%\install-debug.log
 
 fltmc.exe >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Requesting elevation...
+    echo [*] Requesting Administrator elevation...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 
 cd /d "%ROOT%"
-echo === %DATE% %TIME% === > "%LOG%"
-echo [uninstall] >> "%LOG%"
-call node dist\cli.js uninstall >> "%LOG%" 2>&1
-echo [install] >> "%LOG%"
-call node dist\cli.js install >> "%LOG%" 2>&1
-echo [install exit code %errorlevel%] >> "%LOG%"
-echo [sc query] >> "%LOG%"
-sc.exe query u-chan-secrets >> "%LOG%" 2>&1
-echo [bin dir] >> "%LOG%"
-dir C:\ProgramData\u-chan-secrets /s /b >> "%LOG%" 2>&1
-echo [service.log] >> "%LOG%"
-type C:\ProgramData\u-chan-secrets\service.log >> "%LOG%" 2>&1
-type "%LOG%"
+echo ========================================================
+echo       U-Chan Secrets V2 Installation & Setup
+echo ========================================================
 echo.
-echo Log saved to %LOG%
+echo [*] Step 1: Stopping previous service (if any)...
+call node dist\cli.js uninstall
+echo.
+echo [*] Step 2: Installing U-Chan Windows Service...
+call node dist\cli.js install
+if %errorlevel% neq 0 (
+    echo.
+    echo [X] Installation failed with exit code %errorlevel%.
+    pause
+    exit /b %errorlevel%
+)
+echo.
+echo [*] Step 3: Checking service status...
+sc.exe query u-chan-secrets
+echo.
+echo ========================================================
+echo [+] Service successfully installed and started!
+echo.
+echo Next: Close this window, open your normal terminal, and run:
+echo    u-chan import-v1
+echo    u-chan unlock
+echo ========================================================
+echo.
 pause
