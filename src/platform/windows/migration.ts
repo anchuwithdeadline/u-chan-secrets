@@ -30,7 +30,10 @@ export async function migrateBitwarden(opts: {
   const exec = opts.exec ?? defaultExec
   const unlink = opts.unlink ?? defaultUnlink
   const fileExists = opts.fileExists ?? defaultFileExists
-  const sessionPath = opts.sessionPath ?? path.join(process.env.APPDATA ?? '', 'u-chan-secrets', 'bw-session')
+  const defaultBase =
+    process.env.APPDATA ??
+    (process.env.HOME ? path.join(process.env.HOME, 'AppData', 'Roaming') : 'C:\\Users\\default\\AppData\\Roaming')
+  const sessionPath = opts.sessionPath ?? path.join(defaultBase, 'u-chan-secrets', 'bw-session')
 
   let bwLoggedOut = false
   let warning: string | undefined
@@ -43,8 +46,10 @@ export async function migrateBitwarden(opts: {
   }
 
   let sessionFileRemoved = false
+
   try {
-    if (await fileExists(sessionPath)) {
+    const exists = await fileExists(sessionPath)
+    if (exists) {
       await unlink(sessionPath)
       sessionFileRemoved = true
     }
@@ -53,12 +58,9 @@ export async function migrateBitwarden(opts: {
     warning = warning ? `${warning}; ${unlinkWarn}` : unlinkWarn
   }
 
-  const result: MigrationResult = {
+  return {
     bwLoggedOut,
     sessionFileRemoved,
+    warning,
   }
-  if (warning !== undefined) {
-    result.warning = warning
-  }
-  return result
 }

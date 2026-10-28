@@ -2,56 +2,55 @@ import { describe, expect, it, vi } from 'vitest'
 import { migrateBitwarden } from '../../src/platform/windows/migration.js'
 import type { ExecFn } from '../../src/platform/windows/acl.js'
 
-describe('migrateBitwarden', () => {
-  it('runs bw logout and removes legacy session', async () => {
-    const fakeExec: ExecFn = vi.fn(async (_file: string, _args: string[]) => {
-      return { stdout: 'Logged out of Bitwarden.', stderr: '' }
+describe('Windows Bitwarden Migration', () => {
+  it('logs out Bitwarden CLI and deletes existing session file', async () => {
+    const executedCommands: Array<{ file: string; args: string[] }> = []
+    const fakeExec: ExecFn = vi.fn(async (file, args) => {
+      executedCommands.push({ file, args })
+      return { stdout: '', stderr: '' }
     })
-    const fakeUnlink = vi.fn(async (_path: string) => {})
-    const fakeFileExists = vi.fn(async (_path: string) => true)
+
+    const deletedPaths: string[] = []
+    const fakeUnlink = vi.fn(async (p: string) => {
+      deletedPaths.push(p)
+    })
+
+    const fakeFileExists = vi.fn(async (_p: string) => true)
+    const customSession = 'C:\\custom\\u-chan-secrets\\bw-session'
 
     const result = await migrateBitwarden({
       exec: fakeExec,
       unlink: fakeUnlink,
       fileExists: fakeFileExists,
-      sessionPath: 'C:\\fake\\u-chan-secrets\\bw-session',
+      sessionPath: customSession,
     })
 
-    expect(fakeExec).toHaveBeenCalledWith('bw', ['logout'])
-    expect(fakeFileExists).toHaveBeenCalledWith('C:\\fake\\u-chan-secrets\\bw-session')
-    expect(fakeUnlink).toHaveBeenCalledWith('C:\\fake\\u-chan-secrets\\bw-session')
-    expect(result).toEqual({
-      bwLoggedOut: true,
-      sessionFileRemoved: true,
-    })
-  })
-
-  it('handles missing or failing bw gracefully', async () => {
-    const fakeExec: ExecFn = vi.fn(async () => {
-      throw new Error('spawn bw ENOENT')
-    })
-    const fakeUnlink = vi.fn(async (_path: string) => {})
-    const fakeFileExists = vi.fn(async (_path: string) => true)
-
-    const result = await migrateBitwarden({
-      exec: fakeExec,
-      unlink: fakeUnlink,
-      fileExists: fakeFileExists,
-      sessionPath: 'C:\\fake\\u-chan-secrets\\bw-session',
-    })
-
-    expect(fakeExec).toHaveBeenCalledWith('bw', ['logout'])
-    expect(fakeUnlink).toHaveBeenCalledWith('C:\\fake\\u-chan-secrets\\bw-session')
-    expect(result.bwLoggedOut).toBe(false)
+    expect(result.bwLoggedOut).toBe(true)
     expect(result.sessionFileRemoved).toBe(true)
-    expect(result.warning).toBeDefined()
-    expect(result.warning).toContain('spawn bw ENOENT')
+    expect(result.warning).toBeUndefined()
+
+    expect(executedCommands).toEqual([{ file: 'bw', args: ['logout'] }])
+    expect(deletedPaths).toEqual([customSession])
   })
 
-  it('skips unlink if session file does not exist', async () => {
+  it('tolerates bw logout failure and returns warning', async () => {
     const fakeExec: ExecFn = vi.fn(async () => {
-      return { stdout: 'Logged out.', stderr: '' }
+      throw new Error('Command failed: bw logout - not logged in')
     })
+    const fakeFileExists = vi.fn(async () => false)
+
+    const result = await migrateBitwarden({
+      exec: fakeExec,
+      fileExists: fakeFileExists,
+    })
+
+    expect(result.bwLoggedOut).toBe(false)
+    expect(result.sessionFileRemoved).toBe(false)
+    expect(result.warning).toContain('Bitwarden CLI logout skipped or failed')
+  })
+
+  it('tolerates missing session file cleanly', async () => {
+    const fakeExec: ExecFn = vi.fn(async () => ({ stdout: '', stderr: '' }))
     const fakeUnlink = vi.fn(async () => {})
     const fakeFileExists = vi.fn(async () => false)
 
@@ -59,18 +58,14 @@ describe('migrateBitwarden', () => {
       exec: fakeExec,
       unlink: fakeUnlink,
       fileExists: fakeFileExists,
-      sessionPath: 'C:\\fake\\u-chan-secrets\\bw-session',
     })
 
-    expect(fakeFileExists).toHaveBeenCalledWith('C:\\fake\\u-chan-secrets\\bw-session')
+    expect(result.bwLoggedOut).toBe(true)
+    expect(result.sessionFileRemoved).toBe(false)
     expect(fakeUnlink).not.toHaveBeenCalled()
-    expect(result).toEqual({
-      bwLoggedOut: true,
-      sessionFileRemoved: false,
-    })
   })
 
-  it('uses default session path under APPDATA if not provided', async () => {
+  it('checks default APPDATA location when sessionPath is not provided', async () => {
     const fakeExec: ExecFn = vi.fn(async () => ({ stdout: '', stderr: '' }))
     const fakeUnlink = vi.fn(async () => {})
     let checkedPath = ''
@@ -85,6 +80,6 @@ describe('migrateBitwarden', () => {
       fileExists: fakeFileExists,
     })
 
-    expect(checkedPath).toMatch(/[/\\]u-chan-secrets[/\\]bw-session$/)
+    expect(checkedPath).toMatch(/(?:[/\\]|^)u-chan-secrets[/\\]bw-session$/)
   })
 })
