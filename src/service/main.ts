@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs'
 import type net from 'node:net'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { AllowlistStore } from '../core/allowlist.js'
@@ -36,6 +36,10 @@ export async function runService(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<net.Server> {
   const cfg = serviceConfig(env, platform)
+  const defaultBw = platform === 'win32' ? join(cfg.home, 'bin', 'bw.exe') : '/usr/local/bin/bw'
+  if (!env.U_CHAN_BW && existsSync(defaultBw)) {
+    env.U_CHAN_BW = defaultBw
+  }
   let adapters: PlatformAdapters
   try {
     adapters = platformAdapters(platform, { home: cfg.home, settingsPath: cfg.settingsPath })

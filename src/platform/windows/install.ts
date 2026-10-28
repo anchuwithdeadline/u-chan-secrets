@@ -107,6 +107,15 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
   await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 
+  // 4c. Ensure bw.exe is copied to binDir if found on the system
+  try {
+    const { stdout } = await exec('where.exe', ['bw.exe'])
+    const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length > 0) {
+      await fs.copyFile(lines[0], path.join(binDir, 'bw.exe')).catch(() => {})
+    }
+  } catch {}
+
   // 5. Write settings file
   const getUserSid = opts.getUserSid ?? (() => defaultGetUserSid(exec))
   const authorizedSid = await getUserSid()

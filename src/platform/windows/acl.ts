@@ -1,11 +1,12 @@
 import child_process from 'node:child_process'
 import { UserFacingError } from '../../core/types.js'
 
-export type ExecFn = (file: string, args: string[]) => Promise<{ stdout: string; stderr: string }>
+export type ExecOptions = { windowsVerbatimArguments?: boolean }
+export type ExecFn = (file: string, args: string[], options?: ExecOptions) => Promise<{ stdout: string; stderr: string }>
 
-export const defaultExec: ExecFn = async (file: string, args: string[]): Promise<{ stdout: string; stderr: string }> => {
+export const defaultExec: ExecFn = async (file: string, args: string[], options?: ExecOptions): Promise<{ stdout: string; stderr: string }> => {
   return new Promise((resolve, reject) => {
-    child_process.execFile(file, args, (error, stdout, stderr) => {
+    child_process.execFile(file, args, { windowsVerbatimArguments: options?.windowsVerbatimArguments ?? false }, (error, stdout, stderr) => {
       if (error) {
         reject(Object.assign(error, { stdout: stdout ?? '', stderr: stderr ?? '' }))
       } else {

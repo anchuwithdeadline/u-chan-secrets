@@ -14,7 +14,7 @@ export class ServiceManager {
     if (displayName) {
       args.push(`DisplayName= "${displayName}"`)
     }
-    await this.exec('sc.exe', args)
+    await this.exec('sc.exe', args, { windowsVerbatimArguments: true })
   }
 
   async start(name: string): Promise<void> {
