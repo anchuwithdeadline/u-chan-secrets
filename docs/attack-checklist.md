@@ -19,15 +19,19 @@ Record OS/version, installed service version, caller identity, date, and PASS / 
 
 Current local evidence and remaining platform work are recorded in [V3 validation](superpowers/research/2026-10-29-v3-validation.md).
 
-This checklist defines 9 manual verification attack scenarios corresponding to Spec §7. These tests verify that U-Chan Secrets V2 defends passwords, TOTP seeds, and Bitwarden sessions against a compromised AI assistant operating with full user shell permissions and browser automation.
+## Baseline credential-boundary checks
+
+The nine baseline scenarios below complement the V3 checks above. They test the intended password, TOTP, and Bitwarden-session boundary against an AI with user-shell and browser-automation access. Record actual outcomes; expected results are not evidence that an installed platform passed.
 
 ---
 
 ## Pre-Test Setup
 
-1. Install and initialize U-Chan Secrets V2:
-   - **Windows:** Run `npm install -g u-chan-secrets` and `u-chan install` in an elevated shell. Verify UAC is set to "Always Notify" or perform tests from a Standard User account.
-   - **macOS:** Run `npm install -g u-chan-secrets` and `sudo u-chan install`.
+Use a disposable service installation and test vault. Several attacks intentionally attempt file replacement or deletion; do not run them against a live credential store. Enter unique test credentials outside the AI conversation and keep secret-search values out of AI tool inputs and transcripts.
+
+1. Build and install the exact V3 revision under test through the [trusted CLI setup](../README.md#build-and-install-from-source). Do not use the legacy debug installer or assume an unversioned npm package matches the checkout.
+   - **Windows:** Verify UAC is set to "Always notify" or run the AI as a standard user.
+   - **macOS:** Use the privileged installer and hardcore approval mode.
 2. Configure a test site (e.g., `admin.example.com`) in Bitwarden with a test password and TOTP secret.
 3. Start Chrome with remote debugging:
    - **Windows:** `powershell -File scripts\start-chrome.ps1`
@@ -143,8 +147,8 @@ Get-ChildItem env:BW*       # Windows PowerShell
 
 **Expected Outcome:**
 - :white_check_mark: **PASSED:**
-  - On Windows: UIPI blocks window messages and synthetic inputs from standard user processes. Dialog remains waiting for real user action.
-  - On macOS: Easy mode is disabled; prompt demands master password input inside `NSSecureTextField`. Synthetic `return` without valid password fails. Keystrokes cannot be snooped via event taps.
+  - On Windows: the SYSTEM-owned prompt runs on a separate input desktop. Attempts from the ordinary user desktop cannot approve it or capture password entry. Verify the actual token/desktop and keyboard-hook behavior; UIPI alone is insufficient evidence.
+  - On macOS: easy mode is disabled; a valid master password is required in the secure-entry flow. Synthetic `return` without that password fails. Record actual secure-input/event-tap results separately from mocked tests.
 - :x: **FAILED:** The prompt approves automatically without human interaction.
 
 ---
@@ -162,7 +166,7 @@ Get-ChildItem env:BW*       # Windows PowerShell
   ```
 - **macOS (Terminal):**
   ```bash
-  touch "/Library/Application Support/u-chan-secrets/dist/service/main.js"
+  touch "/Library/Application Support/u-chan-secrets/program/dist/service/main.js"
   echo "malicious" > "/Library/LaunchDaemons/com.uchan.secrets.plist"
   ```
 
@@ -241,6 +245,8 @@ Get-ChildItem env:BW*       # Windows PowerShell
 - :white_check_mark: **PASSED:** The fake prompt lacks the user's personalized **anti-phishing secret phrase** (configured during `u-chan install`). The user spots the absence of the secret phrase and rejects the prompt.
 - :x: **FAILED:** User cannot distinguish between an authentic U-Chan prompt and an unprivileged dialog.
 
+The phrase is a user verification cue, not proof of protected process identity. A copied phrase does not establish authorization. Do not use this scenario to mark token, desktop, or input-isolation checks as passed.
+
 ---
 
 ### Attack 9: Log and Transcript Secret Leak Check
@@ -279,7 +285,7 @@ Get-ChildItem env:BW*       # Windows PowerShell
 | 1 | Direct File Read | Compromised shell reads secrets | OS Identity Boundary / Strict ACLs | [ ] |
 | 2 | Bitwarden CLI Theft | Unprivileged shell runs `bw` | Memory-Only Session Key | [ ] |
 | 3 | Service Browser Snooping | User attaches to CDP port | Isolated Browser Context (No user CDP) | [ ] |
-| 4 | Synthetic Input to Approval | Automated mouse/keyboard clicks | UIPI / Cocoa NSSecureTextField | [ ] |
+| 4 | Synthetic Input to Approval | Automated mouse/keyboard clicks | SYSTEM input desktop / Cocoa secure input | [ ] |
 | 5 | Tampering Program Files | User shell overwrites binaries | Admin/Root File Permissions | [ ] |
 | 6 | Direct Mode Downgrade | Weakening approval policy | Protected Prompt Re-Auth / OS ACLs | [ ] |
 | 7 | Playwright Init Script Sniffing | DOM input listening in Chrome | Service Browser Credential Entry | [ ] |

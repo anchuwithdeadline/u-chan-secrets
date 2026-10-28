@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-29-u-chan-secrets-v3-design.md` (approved).
 
-**Execution status:** Tasks 1–7 implemented locally on `feat/v3-usability`, with independent review findings fixed through regression tests. Actual privileged-service and macOS runtime checks remain pending; no installation, publication, push, or merge was performed. See [validation](../research/2026-10-29-v3-validation.md).
+**Execution status:** Tasks 1–7 implemented on `feat/v3-usability`, with independent review findings fixed through regression tests. Implementation commit `92e644c` passed Windows/macOS CI and CodeQL. Source integration is tracked in [PR #4](https://github.com/anchuwithdeadline/u-chan-secrets/pull/4); native release checks, installation, publication, and deployment remain separate. See [validation](../research/2026-10-29-v3-validation.md).
 
 ## Global Constraints
 

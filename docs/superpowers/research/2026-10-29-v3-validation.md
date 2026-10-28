@@ -1,6 +1,6 @@
 # V3 local validation and release boundary
 
-Date: 2026-10-29. Branch: feat/v3-usability. This report records initial local validation and subsequent PR verification. No package publication, live installation, deployment, or merge was performed.
+Date: 2026-10-29. Implementation branch: feat/v3-usability. This report records local validation, PR verification, and source integration through [PR #4](https://github.com/anchuwithdeadline/u-chan-secrets/pull/4). No package publication, live installation, or deployment is established by this report.
 
 ## Verified locally
 
@@ -61,10 +61,12 @@ An additional diagnostic regression now makes a known Playwright browser-sharing
 - Integration timeout is 15 seconds. Cost: genuinely stuck tests can take longer to fail.
 - The managed worktree and local scratch evidence are preserved. Cost: additional disk use; no bulk deletion was performed.
 
-No Minor findings were deferred. The original checkout remains on main; implementation is committed separately on feat/v3-usability.
+No Minor findings were deferred. The implementation was developed in an isolated worktree; source integration and the remaining native release gates are separate.
 
 ## PR portability follow-up
 
 After push and PR creation were authorized, [PR #4](https://github.com/anchuwithdeadline/u-chan-secrets/pull/4) triggered Windows/macOS CI and CodeQL. CodeQL passed. The first platform runs exposed two portability issues: canonical temp paths differed from their lexical aliases, and Windows PowerShell inherited an incompatible Security module search path.
 
 The asset test now compares canonical physical paths. Windows ACL queries use the existing .NET access-control API without loading the PowerShell Security module. A deliberately incompatible module fixture reproduced the ACL-query failure locally before the fix and passed afterward. Current CI results are available on the PR; these checks still do not establish privileged native isolation.
+
+Implementation commit `92e644cbee97f2af3959ed9a582d03b8c55e92f7` passed both [Windows/macOS CI](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40749181337) and [CodeQL analysis](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40749175961). These results include builds and source/integration tests on hosted runners, not privileged installation or interactive native security verification. Documentation updates and the merge commit receive separate checks; their live status is recorded on PR #4 and the main-branch Actions page.
