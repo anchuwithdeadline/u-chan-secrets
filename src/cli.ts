@@ -4,12 +4,12 @@ import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ControlApi } from './core/types.js'
+import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
 
-const USAGE = 'usage: u-chan unlock | lock | mode <easy|hardcore> | import-v1 [path]'
+const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path]'
 
 export interface CliDeps {
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
@@ -19,6 +19,8 @@ export interface CliDeps {
   readFile: (path: string) => Promise<string>
   out: (line: string) => void
   err: (line: string) => void
+  install?: (opts: { mode?: ApprovalMode; phrase?: string }) => Promise<ToolResult>
+  uninstall?: () => Promise<ToolResult>
 }
 
 /** import-v1 shows one approval window per entry, each open for up to 2 minutes, one after another. */
@@ -35,11 +37,51 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
 /** Returns the process exit code: 0 on success, 1 on failure or bad usage. */
 export async function main(argv: string[], d: CliDeps): Promise<number> {
   const [cmd, arg, ...rest] = argv
-  let call: (() => ReturnType<ControlApi['unlock']>) | undefined
-  if (cmd === 'unlock' && arg === undefined) call = () => d.connect({}).unlock()
-  else if (cmd === 'lock' && arg === undefined) call = () => d.connect({}).lock()
-  else if (cmd === 'mode' && (arg === 'easy' || arg === 'hardcore') && rest.length === 0) call = () => d.connect({}).setMode(arg)
-  else if (cmd === 'import-v1' && rest.length === 0) {
+  let call: (() => Promise<ToolResult>) | undefined
+
+  if (cmd === 'install') {
+    let mode: ApprovalMode | undefined
+    let phrase: string | undefined
+    let valid = true
+    const args = arg !== undefined ? [arg, ...rest] : []
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--mode' && (args[i + 1] === 'easy' || args[i + 1] === 'hardcore')) {
+        mode = args[++i] as ApprovalMode
+      } else if (args[i] === '--phrase' && args[i + 1] !== undefined) {
+        phrase = args[++i]
+      } else {
+        valid = false
+        break
+      }
+    }
+    if (!valid) {
+      d.err(USAGE)
+      return 1
+    }
+    call = async () => {
+      if (d.install) return d.install({ mode, phrase })
+      if (d.platform === 'win32') {
+        const { installWindowsService } = await import('./platform/windows/install.js')
+        return installWindowsService({ mode, phrase, out: d.out, err: d.err })
+      }
+      return { ok: false, message: `install is not supported on ${d.platform} yet` }
+    }
+  } else if (cmd === 'uninstall' && arg === undefined) {
+    call = async () => {
+      if (d.uninstall) return d.uninstall()
+      if (d.platform === 'win32') {
+        const { uninstallWindowsService } = await import('./platform/windows/install.js')
+        return uninstallWindowsService({ out: d.out, err: d.err })
+      }
+      return { ok: false, message: `uninstall is not supported on ${d.platform} yet` }
+    }
+  } else if (cmd === 'unlock' && arg === undefined) {
+    call = () => d.connect({}).unlock()
+  } else if (cmd === 'lock' && arg === undefined) {
+    call = () => d.connect({}).lock()
+  } else if (cmd === 'mode' && (arg === 'easy' || arg === 'hardcore') && rest.length === 0) {
+    call = () => d.connect({}).setMode(arg)
+  } else if (cmd === 'import-v1' && rest.length === 0) {
     const path = arg ?? defaultV1Path(d.env, d.platform)
     let text: string
     try {
@@ -69,6 +111,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     const list = entries
     call = () => d.connect({ timeoutMs: importTimeoutMs(list.length) }).importV1(list)
   }
+
   if (!call) {
     d.err(USAGE)
     return 1
