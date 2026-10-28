@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import net from 'node:net'
 import { createDarwinAuthorizer, readInstallUid } from '../src/platform/darwin/authorize.js'
-import { resolveDarwinPeerCred } from '../src/platform/darwin/peercred.js'
+import { parseLsofPeerUid, resolveDarwinPeerCred } from '../src/platform/darwin/peercred.js'
 import { platformAdapters } from '../src/platform/index.js'
 
 describe('macOS socket authorization', () => {
@@ -57,10 +57,19 @@ describe('macOS socket authorization', () => {
     }
   })
 
-  it('wires into platformAdapters for darwin', async () => {
+  it('parses lsof output for peer UID and rejects ambiguous multi-UID output', () => {
+    const outSingle = 'p100\nu0\np250\nu501\n'
+    expect(parseLsofPeerUid(outSingle, 100)).toEqual({ uid: 501, pid: 250 })
+
+    const outAmbiguous = 'p100\nu0\np250\nu501\np251\nu502\n'
+    expect(parseLsofPeerUid(outAmbiguous, 100)).toBeNull()
+  })
+
+  it('wires into platformAdapters for darwin and resolves owner.json from home', async () => {
     const socket = new net.Socket()
     const adapters = platformAdapters('darwin', {
-      installUid: 501,
+      home: 'test/fixtures',
+      ownerPath: 'test/fixtures/fake-owner.json',
       resolvePeerCred: async () => ({ uid: 501 }),
     })
     expect(typeof adapters.authorize).toBe('function')

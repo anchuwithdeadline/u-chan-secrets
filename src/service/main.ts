@@ -35,16 +35,16 @@ export async function runService(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<net.Server> {
+  const cfg = serviceConfig(env, platform)
   let adapters: PlatformAdapters
   try {
-    adapters = platformAdapters(platform)
+    adapters = platformAdapters(platform, { home: cfg.home, settingsPath: cfg.settingsPath })
   } catch (e) {
     console.error(e instanceof UserFacingError ? e.message : 'U-Chan service failed to start')
     process.exit(1)
   }
 
   try {
-    const cfg = serviceConfig(env, platform)
     prepareSocketEndpoint(cfg.endpoint, platform)
     const settings = new SettingsStore(cfg.settingsPath)
     const vault = new BitwardenVault({ dataDir: cfg.bwDataDir, idleLockMs: (await settings.get()).idleLockMs })

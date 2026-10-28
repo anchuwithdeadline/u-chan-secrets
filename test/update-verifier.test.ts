@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { NpmPackageVerifier } from '../src/service/update/verifier.js'
+import { NpmPackageVerifier, semverGt } from '../src/service/update/verifier.js'
 import type { PackageMetadata } from '../src/core/types.js'
 
 describe('NpmPackageVerifier', () => {
@@ -235,5 +235,69 @@ describe('NpmPackageVerifier', () => {
     const verifier = new NpmPackageVerifier({ fetcher, expectedRepo: 'https://github.com/anchuwithdeadline/u-chan-secrets' })
     const result = await verifier.verify(newVersion)
     expect(result).toEqual({ ok: false, error: 'provenance repository mismatch' })
+  })
+
+  it('rejects package when integrity field is missing', async () => {
+    const tarball = Buffer.from('package-tarball-content')
+    const metadata: PackageMetadata = {
+      'dist-tags': { latest: newVersion },
+      versions: {
+        [newVersion]: {
+          version: newVersion,
+          dist: {
+            tarball: `https://registry.npmjs.org/u-chan-secrets/-/u-chan-secrets-${newVersion}.tgz`,
+            shasum: 'abc',
+          },
+        },
+      },
+    }
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (url.toString().endsWith('.tgz')) {
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async () => tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+        } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => metadata } as unknown as Response
+    })
+    const verifier = new NpmPackageVerifier({ fetcher })
+    expect(await verifier.verify(newVersion)).toEqual({ ok: false, error: 'integrity check failed' })
+  })
+
+  it('rejects package when both signatures and provenance attestations are missing', async () => {
+    const tarball = Buffer.from('package-tarball-content')
+    const sri = 'sha512-' + crypto.createHash('sha512').update(tarball).digest('base64')
+    const metadata: PackageMetadata = {
+      'dist-tags': { latest: newVersion },
+      versions: {
+        [newVersion]: {
+          version: newVersion,
+          dist: {
+            tarball: `https://registry.npmjs.org/u-chan-secrets/-/u-chan-secrets-${newVersion}.tgz`,
+            shasum: 'abc',
+            integrity: sri,
+          },
+        },
+      },
+    }
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (url.toString().endsWith('.tgz')) {
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async () => tarball.buffer.slice(tarball.byteOffset, tarball.byteOffset + tarball.byteLength),
+        } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => metadata } as unknown as Response
+    })
+    const verifier = new NpmPackageVerifier({ fetcher })
+    expect(await verifier.verify(newVersion)).toEqual({ ok: false, error: 'registry signature verification failed' })
+  })
+
+  it('compares numeric prerelease versions accurately', () => {
+    expect(semverGt('2.0.0-dev.10', '2.0.0-dev.2')).toBe(true)
+    expect(semverGt('2.0.0-dev.2', '2.0.0-dev.10')).toBe(false)
+    expect(semverGt('2.0.0', '2.0.0-dev.10')).toBe(true)
   })
 })

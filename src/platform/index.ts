@@ -1,4 +1,5 @@
 import type net from 'node:net'
+import { posix } from 'node:path'
 import { UserFacingError, type ProtectedPrompt } from '../core/types.js'
 import { windowsPlatformAdapters } from './windows/index.js'
 import { createDarwinAuthorizer } from './darwin/authorize.js'
@@ -13,6 +14,7 @@ export interface PlatformAdapters {
 
 export interface PlatformAdapterOptions {
   home?: string
+  ownerPath?: string
   installUid?: number
   resolvePeerCred?: PeerCredResolver
   execPrompt?: (cmd: string, args: string[], timeoutMs: number) => Promise<{ stdout: string; exitCode: number }>
@@ -21,12 +23,15 @@ export interface PlatformAdapterOptions {
 }
 
 export function darwinPlatformAdapters(opts?: PlatformAdapterOptions): PlatformAdapters {
+  const ownerPath = opts?.ownerPath ?? (opts?.home ? posix.join(opts.home, 'owner.json') : undefined)
   const authorize = createDarwinAuthorizer({
+    ownerPath,
     installUid: opts?.installUid,
     resolvePeerCred: opts?.resolvePeerCred,
   })
   const executor = opts?.execPrompt ? { exec: opts.execPrompt } : undefined
   const prompt = new MacosProtectedPrompt({
+    ownerPath,
     installUid: opts?.installUid,
     executor,
   })

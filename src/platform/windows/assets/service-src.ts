@@ -1,6 +1,7 @@
 export const SERVICE_HOST_CSHARP = `using System;
 using System.Diagnostics;
 using System.ServiceProcess;
+using System.Threading;
 
 namespace UChan.Platform.Windows.Assets
 {
@@ -8,6 +9,9 @@ namespace UChan.Platform.Windows.Assets
     {
         private Process _process;
         private readonly string[] _args;
+        private volatile bool _stopping;
+        private string _targetExe;
+        private string _targetArgs;
 
         public UChanService(string[] args)
         {
@@ -17,6 +21,7 @@ namespace UChan.Platform.Windows.Assets
 
         protected override void OnStart(string[] args)
         {
+            _stopping = false;
             string[] effectiveArgs = (args != null && args.Length > 0) ? args : _args;
             string targetExe = null;
             string targetArgs = "";
@@ -54,17 +59,45 @@ namespace UChan.Platform.Windows.Assets
                 throw new InvalidOperationException("No target executable specified for UChanSecrets service.");
             }
 
+            _targetExe = targetExe;
+            _targetArgs = targetArgs;
+            StartChild();
+        }
+
+        private void StartChild()
+        {
+            if (_stopping) return;
             ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = targetExe;
-            psi.Arguments = targetArgs;
+            psi.FileName = _targetExe;
+            psi.Arguments = _targetArgs;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
 
-            _process = Process.Start(psi);
+            Process proc = new Process();
+            proc.StartInfo = psi;
+            proc.EnableRaisingEvents = true;
+            proc.Exited += OnChildExited;
+            proc.Start();
+            _process = proc;
+        }
+
+        private void OnChildExited(object sender, EventArgs e)
+        {
+            if (_stopping) return;
+            Thread.Sleep(500);
+            if (_stopping) return;
+            try
+            {
+                StartChild();
+            }
+            catch
+            {
+            }
         }
 
         protected override void OnStop()
         {
+            _stopping = true;
             if (_process != null && !_process.HasExited)
             {
                 try

@@ -6,12 +6,13 @@ import { WindowsProtectedPrompt } from './prompt.js'
 import { createWindowsAuthorizer } from './authorize.js'
 
 export interface WindowsPlatformOptions {
+  home?: string
   settingsPath?: string
   binDir?: string
 }
 
 export function windowsPlatformAdapters(cfg: WindowsPlatformOptions = {}): PlatformAdapters {
-  const programData = defaultProgramData()
+  const programData = cfg.home ?? defaultProgramData()
   const settingsPath = cfg.settingsPath ?? path.join(programData, 'settings.json')
   const binDir = cfg.binDir ?? path.join(programData, 'bin')
 

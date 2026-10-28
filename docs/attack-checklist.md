@@ -144,7 +144,7 @@ Get-ChildItem env:BW*       # Windows PowerShell
 - **macOS (Terminal):**
   ```bash
   touch "/Library/Application Support/u-chan-secrets/dist/service/main.js"
-  echo "malicious" > "/Library/LaunchDaemons/com.u-chan.secrets.plist"
+  echo "malicious" > "/Library/LaunchDaemons/com.uchan.secrets.plist"
   ```
 
 **Expected Outcome:**

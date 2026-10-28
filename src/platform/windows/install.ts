@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ApprovalMode, ToolResult } from '../../core/types.js'
 import { defaultExec, setAdminOnlyAcl, type ExecFn } from './acl.js'
 import { checkUacLevel } from './uac.js'
@@ -9,6 +10,7 @@ import { compileCsharp } from './assets/compiler.js'
 import { AUTH_HELPER_CSHARP } from './assets/auth-src.js'
 import { PROMPT_HELPER_CSHARP } from './assets/prompt-src.js'
 import { SERVICE_HOST_CSHARP } from './assets/service-src.js'
+import { generateRandomPhrase } from '../darwin/lifecycle.js'
 
 export const defaultProgramData = (): string => {
   return process.env.ProgramData
@@ -61,6 +63,7 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   const programData = opts.programData ?? defaultProgramData()
   const binDir = path.join(programData, 'bin')
   const dataDir = path.join(programData, 'bw-data')
+  const programDir = path.join(programData, 'program')
 
   // 1. Check UAC level and warn if default
   try {
@@ -70,9 +73,15 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     }
   } catch {}
 
-  // 2. Create directories
+  // 2. Create directories and stage admin-owned program copy
   await fs.mkdir(binDir, { recursive: true })
   await fs.mkdir(dataDir, { recursive: true })
+  await fs.mkdir(programDir, { recursive: true })
+  try {
+    const pkgRoot = fileURLToPath(new URL('../../../', import.meta.url))
+    await fs.cp( path.join(pkgRoot, 'dist'), path.join(programDir, 'dist'), { recursive: true })
+    await fs.cp( path.join(pkgRoot, 'package.json'), path.join(programDir, 'package.json'))
+  } catch {}
 
   // 3. Set strict Administrator/SYSTEM ACLs
   await setAdminOnlyAcl(programData, exec)
@@ -95,7 +104,7 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
 
   // 4b. Write service target configuration so service host runs node + service bundle on boot
   const nodeExe = process.execPath
-  const mainJs = path.join(programData, 'main.js')
+  const mainJs = path.join(programDir, 'dist', 'service', 'main.js')
   await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
 
   // 5. Write settings file
@@ -103,7 +112,7 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
   const authorizedSid = await getUserSid()
   const settings = {
     mode: opts.mode ?? 'easy',
-    phrase: opts.phrase ?? '',
+    phrase: opts.phrase ?? generateRandomPhrase(),
     idleLockMs: 43200000,
     authorizedSid,
   }

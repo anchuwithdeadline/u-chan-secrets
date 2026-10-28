@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
@@ -25,29 +26,13 @@ export const defaultExec = async (
 }
 
 const defaultFs = {
-  mkdir: async (p: string, opts: { recursive?: boolean; mode?: number }) => {
-    await fs.mkdir(p, opts)
-  },
-  writeFile: async (p: string, content: string, opts?: { mode?: number }) => {
-    await fs.writeFile(p, content, opts)
-  },
-  chmod: async (p: string, mode: number) => {
-    await fs.chmod(p, mode)
-  },
-  chown: async (p: string, uid: number, gid: number) => {
-    await fs.chown(p, uid, gid)
-  },
-  rm: async (p: string, opts?: { recursive?: boolean; force?: boolean }) => {
-    await fs.rm(p, opts)
-  },
-  exists: async (p: string): Promise<boolean> => {
-    try {
-      await fs.access(p)
-      return true
-    } catch {
-      return false
-    }
-  },
+  mkdir: (p: string, opts: { recursive?: boolean; mode?: number }) => fs.mkdir(p, opts).then(() => {}),
+  writeFile: (p: string, content: string, opts?: { mode?: number }) => fs.writeFile(p, content, opts),
+  chmod: (p: string, mode: number) => fs.chmod(p, mode),
+  chown: (p: string, uid: number, gid: number) => fs.chown(p, uid, gid),
+  rm: (p: string, opts?: { recursive?: boolean; force?: boolean }) => fs.rm(p, opts),
+  cp: (src: string, dest: string, opts?: { recursive?: boolean }) => fs.cp(src, dest, opts),
+  exists: (p: string): Promise<boolean> => fs.access(p).then(() => true, () => false),
 }
 
 const PHRASE_WORDS = [
@@ -61,7 +46,7 @@ const PHRASE_WORDS = [
 export function generateRandomPhrase(): string {
   const words: string[] = []
   for (let i = 0; i < 3; i++) {
-    words.push(PHRASE_WORDS[Math.floor(Math.random() * PHRASE_WORDS.length)])
+    words.push(PHRASE_WORDS[crypto.randomInt(PHRASE_WORDS.length)])
   }
   return words.join(' ')
 }
@@ -76,6 +61,7 @@ export interface LifecycleDeps {
     chmod: (path: string, mode: number) => Promise<void>
     chown: (path: string, uid: number, gid: number) => Promise<void>
     rm: (path: string, opts?: { recursive?: boolean; force?: boolean }) => Promise<void>
+    cp?: (src: string, dest: string, opts?: { recursive?: boolean }) => Promise<void>
     exists: (path: string) => Promise<boolean>
   }
   getuid: () => number
@@ -90,11 +76,11 @@ export interface LifecycleDeps {
   sessionPath?: string
 }
 
-const defaultServiceScript = (): string => {
+const defaultPackageRoot = (): string | null => {
   try {
-    return fileURLToPath(new URL('../../service/main.js', import.meta.url))
+    return fileURLToPath(new URL('../../../', import.meta.url))
   } catch {
-    return '/Library/Application Support/u-chan-secrets/dist/service/main.js'
+    return null
   }
 }
 
@@ -123,11 +109,19 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
   const installUser = env.SUDO_USER || env.USER || 'root'
 
   const homeDir = deps?.homeDir ?? '/Library/Application Support/u-chan-secrets'
+  const programDir = path.posix.join(homeDir, 'program')
   const socketDir = deps?.socketDir ?? '/var/run/u-chan-secrets'
   const plistPath = deps?.plistPath ?? PLIST_PATH
 
   await fsOps.mkdir(homeDir, { recursive: true, mode: 0o700 })
   await fsOps.mkdir(socketDir, { recursive: true, mode: 0o755 })
+
+  const pkgRoot = defaultPackageRoot()
+  if (pkgRoot && (!deps?.fs || deps.fs.cp)) {
+    try {
+      await fsOps.cp?.(pkgRoot, programDir, { recursive: true })
+    } catch {}
+  }
 
   const ownerPath = path.posix.join(homeDir, 'owner.json')
   await fsOps.writeFile(ownerPath, JSON.stringify({ installUid, installUser }, null, 2), { mode: 0o600 })
@@ -144,7 +138,7 @@ export async function macosInstall(deps?: Partial<LifecycleDeps>): Promise<{ ok:
   }
 
   const nodePath = deps?.nodePath ?? process.execPath
-  const serviceScriptPath = deps?.serviceScriptPath ?? defaultServiceScript()
+  const serviceScriptPath = deps?.serviceScriptPath ?? path.posix.join(programDir, 'dist', 'service', 'main.js')
   const outLogPath = path.posix.join(homeDir, 'daemon.out.log')
   const errLogPath = path.posix.join(homeDir, 'daemon.err.log')
 

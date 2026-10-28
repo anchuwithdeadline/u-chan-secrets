@@ -1,6 +1,11 @@
 import crypto from 'node:crypto'
 import type { PackageMetadata, PackageVerifier, VerificationOutcome } from '../../core/types.js'
 
+export const DEFAULT_NPM_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1Olb3/MAFFxXKHiIkQO5cJ3Yhl5i
+6UPp+IhuteBJbuHcA5UogKo0EWtlWwW6KSaKoTNEYL7JlCQiVnkhBktUgg==
+-----END PUBLIC KEY-----`
+
 export interface VerifierOptions {
   packageName?: string
   registryUrl?: string
@@ -10,7 +15,7 @@ export interface VerifierOptions {
 }
 
 export function parseSemver(v: string): { major: number; minor: number; patch: number; prerelease?: string } | null {
-  const m = /^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(v.trim())
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v.trim())
   if (!m) return null
   return {
     major: Number(m[1]),
@@ -18,6 +23,24 @@ export function parseSemver(v: string): { major: number; minor: number; patch: n
     patch: Number(m[3]),
     prerelease: m[4],
   }
+}
+
+function comparePrerelease(p1: string, p2: string): number {
+  const a = p1.split('.')
+  const b = p2.split('.')
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    if (a[i] === undefined) return -1
+    if (b[i] === undefined) return 1
+    if (a[i] === b[i]) continue
+    const n1 = /^\d+$/.test(a[i]) ? Number(a[i]) : NaN
+    const n2 = /^\d+$/.test(b[i]) ? Number(b[i]) : NaN
+    if (!Number.isNaN(n1) && !Number.isNaN(n2)) return n1 - n2
+    if (!Number.isNaN(n1)) return -1
+    if (!Number.isNaN(n2)) return 1
+    return a[i] < b[i] ? -1 : 1
+  }
+  return 0
 }
 
 export function semverGt(v1: string, v2: string): boolean {
@@ -29,7 +52,7 @@ export function semverGt(v1: string, v2: string): boolean {
   if (s1.patch !== s2.patch) return s1.patch > s2.patch
   if (!s1.prerelease && s2.prerelease) return true
   if (s1.prerelease && !s2.prerelease) return false
-  if (s1.prerelease && s2.prerelease) return s1.prerelease > s2.prerelease
+  if (s1.prerelease && s2.prerelease) return comparePrerelease(s1.prerelease, s2.prerelease) > 0
   return false
 }
 
@@ -63,14 +86,16 @@ function extractRepoFromBundle(bundle: unknown): string | null {
 export class NpmPackageVerifier implements PackageVerifier {
   private readonly packageName: string
   private readonly registryUrl: string
-  private readonly npmPublicKey?: string
+  private readonly npmPublicKey: string
+  private readonly requireSignature: boolean
   private readonly expectedRepo: string
   private readonly fetcher: typeof fetch
 
   constructor(opts: VerifierOptions = {}) {
     this.packageName = opts.packageName ?? 'u-chan-secrets'
     this.registryUrl = (opts.registryUrl ?? 'https://registry.npmjs.org').replace(/\/$/, '')
-    this.npmPublicKey = opts.npmPublicKey
+    this.npmPublicKey = opts.npmPublicKey ?? DEFAULT_NPM_PUBLIC_KEY
+    this.requireSignature = opts.npmPublicKey !== undefined
     this.expectedRepo = opts.expectedRepo ?? 'https://github.com/anchuwithdeadline/u-chan-secrets'
     this.fetcher = opts.fetcher ?? globalThis.fetch
   }
@@ -115,18 +140,23 @@ export class NpmPackageVerifier implements PackageVerifier {
       const arrayBuf = await tarballRes.arrayBuffer()
       const tarball = Buffer.from(arrayBuf)
 
-      // 1. SHA-512 SRI check
+      // 1. SHA-512 SRI check (mandatory)
       const hash = 'sha512-' + crypto.createHash('sha512').update(tarball).digest('base64')
-      if (dist.integrity && hash !== dist.integrity) {
+      if (!dist.integrity || hash !== dist.integrity) {
         return { ok: false, error: 'integrity check failed' }
       }
 
       // 2. ECDSA signature check
-      if (dist.signatures && this.npmPublicKey) {
+      const hasSignatures = Array.isArray(dist.signatures) && dist.signatures.length > 0
+      const hasAttestations = Boolean(dist.attestations?.url)
+      if (!hasSignatures && (this.requireSignature || !hasAttestations)) {
+        return { ok: false, error: 'registry signature verification failed' }
+      }
+      if (hasSignatures && this.npmPublicKey) {
         const signedStr = `${this.packageName}@${targetVersion}:${dist.shasum}`
         const signedData = Buffer.from(signedStr, 'utf8')
         let valid = false
-        for (const s of dist.signatures) {
+        for (const s of dist.signatures!) {
           try {
             if (crypto.verify(null, signedData, this.npmPublicKey, Buffer.from(s.sig, 'base64'))) {
               valid = true
