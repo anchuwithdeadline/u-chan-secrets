@@ -86,7 +86,7 @@ describe('PolicyApprover', () => {
     s.prompt.confirm.mockImplementationOnce(() => new Promise<boolean>((r) => (release = r)))
     const a = s.approver.ask('a', [])
     const b = s.approver.ask('b', [])
-    await new Promise((r) => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 50))
     expect(s.prompt.confirm).toHaveBeenCalledTimes(1)
     release(true)
     expect(await a).toBe(true)
