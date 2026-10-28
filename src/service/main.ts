@@ -59,7 +59,7 @@ export async function runService(
     })
     const core = new CoreService({ vault, allowlist, approver, audit, login, mode: () => approver.effectiveMode() })
 
-    let currentVersion = '2.0.0-dev.0'
+    let currentVersion = '2.0.0'
     try {
       currentVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
     } catch {}
