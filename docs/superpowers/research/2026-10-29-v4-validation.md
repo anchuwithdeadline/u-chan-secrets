@@ -23,7 +23,9 @@ A repeated read-only host check compared SHA-256 before and after: the active Co
 
 A real official Codex CLI rehearsal used a disposable config directory, never the active user's configuration. Inspection reported missing; explicit application saved both registrations; a repeat inspection reported ready without changes. Backup bytes matched the original file. Codex can prepend warnings to a missing-registration error, so the implementation recognizes the exact final error line while keeping raw stderr private.
 
-The packaged Chrome launcher parsed and exited successfully against the existing healthy endpoint; no new browser was started. This host blocks unsigned PowerShell files under its normal execution policy. Explicit setup startup therefore uses a process-local execution policy for the packaged launcher, without changing machine policy or elevating. Background persistence after an actual new launch remains unverified.
+The packaged Chrome launcher parsed and exited successfully against the existing healthy endpoint; no new browser was started by that first check. This host blocks unsigned PowerShell files under its normal execution policy. Explicit setup startup therefore uses a process-local execution policy for the packaged launcher, without changing machine policy or elevating.
+
+A separate native Chrome rehearsal then used a fresh disposable user profile and its own ephemeral loopback port. It started without an initial page, opened an `about:blank` fixture tab through CDP, and kept the endpoint alive with zero page targets after closing the last tab. The fixture closed its own browser and verified the endpoint stopped. It never connected to the existing shared-browser endpoint or used vault credentials. This validates background persistence on this host; it does not establish installed V4/service security.
 
 ## Review and package
 
