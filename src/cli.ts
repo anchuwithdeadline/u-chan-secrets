@@ -9,7 +9,7 @@ import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
 
-const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit]'
+const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update'
 
 export interface CliDeps {
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
@@ -129,6 +129,8 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
       limit = parsed
     }
     call = () => d.connect({}).audit(limit)
+  } else if (cmd === 'update' && arg === undefined) {
+    call = () => d.connect({ timeoutMs: 120000 }).update()
   }
 
   if (!call) {

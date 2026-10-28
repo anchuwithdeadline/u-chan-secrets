@@ -9,6 +9,7 @@ const fakeClient = (ok = true) => ({
   setMode: vi.fn(async (m: string) => ({ ok, message: m })),
   importV1: vi.fn(async (_e: unknown[]) => ({ ok, message: 'imported 1 of 1' })),
   audit: vi.fn(async (_limit?: number) => ({ ok, message: ok ? '2026-10-27T... login ok' : 'wrong password' })),
+  update: vi.fn(async () => ({ ok, message: ok ? 'updated to 2.1.0 — restarting service' : 'update failed: integrity check failed' })),
 })
 
 const DEFAULT_V1 = 'C:\\Users\\me\\AppData\\Roaming\\u-chan-secrets\\allowlist.json'
@@ -179,6 +180,30 @@ describe('cli', () => {
     const r = await run([])
     expect(r.code).toBe(1)
     expect(r.err.join('\n')).toContain('audit [limit]')
+  })
+  it('update prints message and exits 0 on success', async () => {
+    const c = fakeClient()
+    const r = await run(['update'], c)
+    expect(r.code).toBe(0)
+    expect(r.out).toEqual(['updated to 2.1.0 — restarting service'])
+    expect(c.update).toHaveBeenCalled()
+  })
+  it('update uses extended 120s timeout', async () => {
+    const c = fakeClient()
+    const r = await run(['update'], c)
+    expect(r.code).toBe(0)
+    expect(r.connect).toHaveBeenCalledWith({ timeoutMs: 120000 })
+  })
+  it('update prints error and exits 1 on failure', async () => {
+    const c = fakeClient(false)
+    const r = await run(['update'], c)
+    expect(r.code).toBe(1)
+    expect(r.err).toEqual(['update failed: integrity check failed'])
+  })
+  it('usage message includes update', async () => {
+    const r = await run([])
+    expect(r.code).toBe(1)
+    expect(r.err.join('\n')).toContain('update')
   })
   it('unknown command prints usage and exits 1', async () => {
     const r = await run([])
