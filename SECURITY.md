@@ -78,6 +78,8 @@ Supported V3 tooling refuses incompatible V2 downgrade after migration. Historic
 
 Compatible package updates verify registry signatures/integrity and preserve private dependencies. Dependency/native-helper changes require a trusted administrator reinstall. Reinstall and merge are not proof of live service health.
 
+Version 3.0.3 verifies npm's ECDSA-SHA256 signature over `name@version:dist.integrity` using the pinned registry key and matching key ID. SHA-512 tarball integrity and a valid signature are both mandatory. Repository-attestation JSON is an additional metadata policy check; it is not cryptographic Sigstore verification and never substitutes for a signature. Empty custom verification keys fail closed. Unknown registry keys require a trusted verifier upgrade. Versions 3.0.0–3.0.2 require the documented trusted reinstall to bootstrap this correction.
+
 ## Verification and exclusions
 
 Run the [manual attack checklist](docs/attack-checklist.md) with disposable state before release. Record PASS, FAIL, or UNAVAILABLE independently for each OS. Preserve separate evidence for source tests, CI, actual native execution, installation, and public/package release.
