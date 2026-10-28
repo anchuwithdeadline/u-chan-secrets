@@ -18,18 +18,40 @@ namespace UChan.Platform.Windows.Assets
         protected override void OnStart(string[] args)
         {
             string[] effectiveArgs = (args != null && args.Length > 0) ? args : _args;
-            if (effectiveArgs == null || effectiveArgs.Length == 0)
+            string targetExe = null;
+            string targetArgs = "";
+
+            if (effectiveArgs != null && effectiveArgs.Length > 0)
             {
-                throw new InvalidOperationException("No target executable specified for UChanSecrets service.");
+                targetExe = effectiveArgs[0];
+                if (effectiveArgs.Length > 1)
+                {
+                    string[] rest = new string[effectiveArgs.Length - 1];
+                    Array.Copy(effectiveArgs, 1, rest, 0, rest.Length);
+                    targetArgs = string.Join(" ", rest);
+                }
+            }
+            else
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string targetFile = System.IO.Path.Combine(baseDir, "service-target.txt");
+                if (System.IO.File.Exists(targetFile))
+                {
+                    string[] lines = System.IO.File.ReadAllLines(targetFile);
+                    if (lines.Length > 0)
+                    {
+                        targetExe = lines[0].Trim();
+                        if (lines.Length > 1)
+                        {
+                            targetArgs = lines[1].Trim();
+                        }
+                    }
+                }
             }
 
-            string targetExe = effectiveArgs[0];
-            string targetArgs = "";
-            if (effectiveArgs.Length > 1)
+            if (string.IsNullOrEmpty(targetExe))
             {
-                string[] rest = new string[effectiveArgs.Length - 1];
-                Array.Copy(effectiveArgs, 1, rest, 0, rest.Length);
-                targetArgs = string.Join(" ", rest);
+                throw new InvalidOperationException("No target executable specified for UChanSecrets service.");
             }
 
             ProcessStartInfo psi = new ProcessStartInfo();

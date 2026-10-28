@@ -93,6 +93,11 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     exec,
   })
 
+  // 4b. Write service target configuration so service host runs node + service bundle on boot
+  const nodeExe = process.execPath
+  const mainJs = path.join(programData, 'main.js')
+  await fs.writeFile(path.join(binDir, 'service-target.txt'), `${nodeExe}\n${mainJs}\n`, 'utf8')
+
   // 5. Write settings file
   const getUserSid = opts.getUserSid ?? (() => defaultGetUserSid(exec))
   const authorizedSid = await getUserSid()

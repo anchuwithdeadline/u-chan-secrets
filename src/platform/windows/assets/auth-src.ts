@@ -127,10 +127,11 @@ namespace UChan.Platform.Windows.Assets
                 }
             }
 
-            // Fallback: if serverPid was directly a client process
+            // Fail closed: if clientPid could not be identified on the pipe handle, reject
             if (clientPid == 0)
             {
-                clientPid = serverPid;
+                Console.Error.WriteLine("Could not identify client process on pipe");
+                return 1;
             }
 
             string clientSid = GetProcessUserSid(clientPid);

@@ -59,6 +59,7 @@ namespace UChan.Platform.Windows.Assets
             Panel contentPanel = new Panel();
             contentPanel.Dock = DockStyle.Fill;
             contentPanel.Padding = new Padding(16);
+            contentPanel.AutoScroll = true;
 
             int yOffset = 60;
             foreach (string line in lines)
