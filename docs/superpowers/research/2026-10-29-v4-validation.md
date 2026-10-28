@@ -33,6 +33,8 @@ The clean worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expected files, 73,17
 
 [Draft PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and live CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
 
+At `dbc5a34`, [Windows/macOS source CI](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40775910511) and [CodeQL](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40775905906) passed. The same canonical fixture correction resolved both hosted runners' backup-test failures. Later documentation-only commits have their own live checks on the PR.
+
 ## Release boundaries
 
 - V3's tightened native adversarial/browser harness still needs a fresh privileged run with physical UAC consent. Earlier fixture evidence does not satisfy the tightened revision.
