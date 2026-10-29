@@ -157,6 +157,8 @@ Check the phrase in the genuine protected prompt before entering a password. Nev
 
 The table uses the globally installed `u-chan` spelling; from source use `node dist/cli.js` with the same arguments.
 
+In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` shim, for example `u-chan.cmd doctor --json`. No machine execution-policy change is needed.
+
 | Command | Purpose |
 |---|---|
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |

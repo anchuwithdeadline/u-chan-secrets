@@ -45,6 +45,7 @@ The corrected utility revision now has static review, regression tests, and fres
 - Two preflights stopped before installation: one found line-ending-only compiled-file differences; the other incorrectly required an `owner.json` file, whereas Windows stores `authorizedSid` inside `settings.json`. The final install used the exact reviewed artifact bytes and the actual Windows schema.
 - After restart, the first cold Bitwarden diagnostic was unknown within its bounded probe; a subsequent full doctor report passed every required check with the vault locked. Process-discovery sharing remained advisory unknown. The non-elevated boundary test passed again afterward, with ten malformed IPC requests denied and grants unchanged.
 - Fresh SDK-driven MCP checks exposed exactly the five expected U-Chan public tools and reported a locked vault. A separate fresh Playwright MCP process, explicitly configured for `http://127.0.0.1:9222`, successfully listed shared-Chrome tabs. This verifies fresh connection paths; it does not prove that an already-running AI session reloaded its MCP configuration.
+- The desktop CLI was installed from public npm 3.0.3 after backing up its prior shims/link metadata. It is now a normal global registry installation rather than a link into the working checkout. Fresh MCP checks passed again using that installed package path. On this host, PowerShell blocks npm's `.ps1` shim; `u-chan.cmd` works without changing machine policy.
 
 ## Reproduce after the user returns
 

@@ -33,7 +33,7 @@ Independent review and follow-up review found no remaining material issue at `f0
 
 The initial pre-closeout worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expected files, 73,172 bytes, zero unexpected package paths. SHA-256: `9392c517e67392fd7d798097870450daec1cfbc06b11257877ce66751660ecdf`. That unpublished artifact predates the merged V3 validation utilities and must be superseded by a fresh package before release.
 
-After integrating V3 closeout and the fixture type declaration, a fresh V4 development package was prepared: 77 files, 85,180 bytes, zero unexpected package paths. SHA-256: `5cf1b23c909e60f31006f62c69de82dbc996c38019cf5b4beb595f630118a6c0`. The earlier package remains in `#0 backup`; this replacement is prepared only, not published or installed.
+After integrating V3 closeout, the fixture type declaration, and final CLI documentation, a fresh V4 development package was prepared: 77 files, 85,233 bytes, zero unexpected package paths. SHA-256: `4ff6d5b5479c88dccf33a079531c8fdd28e28f047b63905af6f76ac12f8880b3`. Earlier packages remain in `#0 backup`; this replacement is prepared only, not published or installed.
 
 [Draft PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and live CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
 
