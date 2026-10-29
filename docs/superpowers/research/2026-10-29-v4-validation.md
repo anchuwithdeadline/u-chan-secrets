@@ -35,7 +35,7 @@ The initial pre-closeout worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expect
 
 After integrating V3 closeout, the fixture type declaration, and final CLI documentation, a fresh V4 development package was prepared: 77 files, 85,233 bytes, zero unexpected package paths. SHA-256: `4ff6d5b5479c88dccf33a079531c8fdd28e28f047b63905af6f76ac12f8880b3`. Earlier packages remain in `#0 backup`; this replacement is prepared only, not published or installed.
 
-[Draft PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and live CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
+[Merged PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
 
 At `dbc5a34`, [Windows/macOS source CI](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40775910511) and [CodeQL](https://github.com/anchuwithdeadline/u-chan-secrets/actions/runs/40775905906) passed. The same canonical fixture correction resolved both hosted runners' backup-test failures. Later documentation-only commits have their own live checks on the PR.
 
