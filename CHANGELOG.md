@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.0.0 development
+## 4.0.0
 
 - Add read-only guided setup for Windows/Codex, with explicit flags for registration changes and dedicated Chrome startup.
 - Preserve advanced Codex settings, back up existing configuration before mutation, and retain completed changes on partial failure.
@@ -9,6 +9,7 @@
 - Distinguish observed process configuration from unverified active AI-session ownership.
 - Add `u-chan allow` with one-attempt default, explicit timed/permanent policy, and optional login success URL/selector.
 - Keep protocol 3, protected-state schema 3, native helpers, and runtime dependencies unchanged. Source integration does not establish publication, installation, or native security verification.
+- Verify a state-preserving Windows rollout with matching 4.0.0 service/CLI versions, real Codex registration, fresh MCP/shared-Chrome checks, and a disposable SYSTEM browser/update fixture. Publication and macOS runtime verification remain separate claims.
 
 ## 3.0.3
 
