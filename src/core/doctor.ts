@@ -67,7 +67,7 @@ export async function checkPlaywrightNow(selfPid = process.pid, expectedEndpoint
 
 export type DiagnosticState = 'pass' | 'fail' | 'unknown'
 // Leave room for the service's full native ACL scan and IPC overhead.
-export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 25000
+export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 70000
 export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
 export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[] }
 export interface ServiceDiagnostic {
