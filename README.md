@@ -6,6 +6,8 @@ V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native 
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
+The tightened V3.0.3 [Windows closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md) passed native isolation, disposable browser/update verification, and a state-preserving reinstall on the documented host. Installed compiled files match the reviewed release artifact exactly. macOS runtime remains unverified; package publication is recorded separately.
+
 ## What V3 changes
 
 - **Diagnose:** `u-chan doctor` explains service, vault, permission, Chrome, and browser-sharing problems without fetching credentials or repairing configuration.
