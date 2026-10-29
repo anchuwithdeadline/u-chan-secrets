@@ -35,7 +35,7 @@ export interface AuditLog {
 }
 export type Selectors = NonNullable<AllowEntry['selectors']>
 export type ApprovalMode = 'easy' | 'hardcore'
-export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
+export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'browser_unavailable', 'destination_unconfirmed', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
 export type ResultCode = typeof RESULT_CODES[number]
 export const isResultCode = (value: unknown): value is ResultCode => typeof value === 'string' && (RESULT_CODES as readonly string[]).includes(value)
 export type ToolResult = { ok: boolean; message: string; code?: ResultCode }

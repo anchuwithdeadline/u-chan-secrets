@@ -38,8 +38,13 @@ describe('fillLogin', () => {
   })
   it('login-filler: stops at a captcha', async () => {
     const r = await run('/captcha')
-    expect(r.outcome).toEqual({ status: 'failed', reason: 'needs you — sign in by hand this time' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'needs you — sign in by hand this time', code: 'needs_human' })
     expect(r.getCreds).not.toHaveBeenCalled()
+  })
+  it('returns explicit human-action codes for passkey and push-approval pages', async () => {
+    for (const path of ['/passkey', '/push-approval']) {
+      expect((await run(path)).outcome).toMatchObject({ status: 'failed', code: 'needs_human' })
+    }
   })
   it('logs in on single-step form', async () => {
     const r = await run('/single')
@@ -69,11 +74,11 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
   })
   it('fails on a 2FA step when the item has no TOTP', async () => {
-    expect((await run('/otp')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP' })
+    expect((await run('/otp')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP', code: 'needs_human' })
   })
   it('fails when the TOTP code is rejected, without leaking the seed', async () => {
     const r = await run('/otp', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
-    expect(r.outcome).toEqual({ status: 'failed', reason: '2FA code rejected (wrong TOTP in Bitwarden?)' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: '2FA code rejected (wrong TOTP in Bitwarden?)', code: 'needs_human' })
     expect(JSON.stringify(r.outcome)).not.toContain('GEZDGNBVGY3TQOJQ')
   })
   it('fills a TOTP field that sits in the password form', async () => {
@@ -82,11 +87,11 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
   })
   it('fails an inline 2FA form when the item has no TOTP', async () => {
-    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP' })
+    expect((await run('/otp-inline')).outcome).toEqual({ status: 'failed', reason: 'the page asks for a 2FA code but the Bitwarden item has no TOTP', code: 'needs_human' })
   })
   it('reports password-or-code on a rejected inline 2FA form', async () => {
     const r = await run('/otp-inline', 'pw', 'u@x', 'GEZDGNBVGY3TQOJQ')
-    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (wrong password or 2FA code?)' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'login form still present (wrong password or 2FA code?)', code: 'needs_human' })
   })
   it('handles two-step form', async () => {
     expect((await run('/two-step')).outcome.status).toBe('logged_in')
@@ -105,15 +110,15 @@ describe('fillLogin', () => {
   it('refuses redirect to foreign host', async () => {
     fx.posts.length = 0
     const r = await run('/redirect-evil')
-    expect(r.outcome).toEqual({ status: 'failed', reason: 'unexpected host localhost' })
+    expect(r.outcome).toEqual({ status: 'failed', reason: 'unexpected login host', code: 'unsupported_form' })
     expect(r.getCreds).not.toHaveBeenCalled()
     expect(fx.posts).toHaveLength(0)
   })
   it('reports username field not found', async () => {
-    expect((await run('/pass-only')).outcome).toEqual({ status: 'failed', reason: 'username field not found' })
+    expect((await run('/pass-only')).outcome).toEqual({ status: 'failed', reason: 'username field not found', code: 'unsupported_form' })
   })
   it('reports password field did not appear', async () => {
-    expect((await run('/stuck')).outcome).toEqual({ status: 'failed', reason: 'password field did not appear' })
+    expect((await run('/stuck')).outcome).toEqual({ status: 'failed', reason: 'password field did not appear', code: 'unsupported_form' })
   })
   it('does not leak credentials in thrown errors', async () => {
     const err = await run('/disabled-pass', 'sekret-pw-777', 'secret-user@x').then(() => undefined, (e: Error) => e)
