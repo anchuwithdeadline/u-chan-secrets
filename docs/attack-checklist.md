@@ -1,6 +1,6 @@
 # U-Chan Secrets — Manual Attack Verification Checklist
 
-V3 release status: source tests and native compilation are separate from these installed-service attacks. The expected outcomes below are test criteria, not recorded passes.
+V3 release status: source tests and native compilation are separate from these installed-service attacks. The expected outcomes below are test criteria, not recorded passes. See the [Windows closeout](superpowers/research/2026-10-29-v3-windows-closeout.md) for actual evidence and final native rerun gates. The user scoped completion to Windows; macOS runtime remains unverified.
 
 ## Additional V3 checks
 

@@ -15,7 +15,7 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 Source merge, package publication, installation, CI, and observed native security verification are separate events. Version `3.0.0` in package metadata does not establish npm publication or deployment.
 
-The [validation report](docs/superpowers/research/2026-10-29-v3-validation.md) records local evidence and CI history. Actual Windows token/session/desktop/input isolation, privileged install/reinstall rehearsal, macOS native behavior, and dynamic-library ownership remain release gates. CI, native compilation, and mock-based tests do not establish those properties.
+The [validation report](docs/superpowers/research/2026-10-29-v3-validation.md) records local evidence and CI history. The tightened [Windows closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md) passed actual native isolation, disposable browser/update verification, module inspection, and final state-preserving V3.0.3 reinstall on the documented host. These observations are scoped to that host and revision. macOS runtime remains unverified. CI, native compilation, and mock-based tests do not establish native security properties by themselves.
 
 ## Threat model
 
