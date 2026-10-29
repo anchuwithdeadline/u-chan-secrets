@@ -9,7 +9,8 @@ Date: 2026-10-29. Candidate: 3.0.3. The user explicitly scoped V3 completion to 
 - The tightened validation utilities passed a fresh Windows privileged/native run after the user returned. The merged non-elevated report confirmed genuine pipe-access denial, successful positive controls, zero captured canaries, and desktop restoration. The separate SYSTEM browser/update run also passed, including complete live-module inspection.
 - Final trusted V3.0.3 reinstall passed. All 56 installed compiled files match the reviewed release artifact byte for byte. Settings (including owner SID), grants, and private Bitwarden data stayed unchanged; a fresh protected state backup was retained. No temporary fixture tasks remain.
 - An earlier request was cancelled while the user slept; it was never counted as success. The resumed successful runs use new UUIDs and independent reports.
-- npm publication requires physical 2FA when challenged. GitHub publication, npm publication, installed files, and runtime verification are recorded separately.
+- npm 3.0.3 publication and the `next` tag change completed after browser account approval. Public `latest` and `next` both resolve to 3.0.3. The real registry signature verified, and the public tarball SHA-256 matched `a6f6a8ba8503e46992552b0f9def4365a6cdbbe9872c0e6de314614be1e51e2d`. The installed updater independently returned `already up to date (version 3.0.3)`.
+- GitHub v3.0.3 is a stable release. GitHub publication, npm publication, installed files, and runtime verification were verified independently; initial registry metadata lagged the accepted asynchronous publish request before public propagation completed.
 
 ## Evidence obtained
 
@@ -43,6 +44,8 @@ The corrected utility revision now has static review, regression tests, and fres
 - Reinstall receipt UUID: `4d09df04-2b5c-450c-9330-2e016c58e4fa`; summary in the same controlled public root. It confirms reused-run refusal, exact installed artifact matching, unchanged protected state, and zero remaining fixture tasks.
 - Two preflights stopped before installation: one found line-ending-only compiled-file differences; the other incorrectly required an `owner.json` file, whereas Windows stores `authorizedSid` inside `settings.json`. The final install used the exact reviewed artifact bytes and the actual Windows schema.
 - After restart, the first cold Bitwarden diagnostic was unknown within its bounded probe; a subsequent full doctor report passed every required check with the vault locked. Process-discovery sharing remained advisory unknown. The non-elevated boundary test passed again afterward, with ten malformed IPC requests denied and grants unchanged.
+- Fresh SDK-driven MCP checks exposed exactly the five expected U-Chan public tools and reported a locked vault. A separate fresh Playwright MCP process, explicitly configured for `http://127.0.0.1:9222`, successfully listed shared-Chrome tabs. This verifies fresh connection paths; it does not prove that an already-running AI session reloaded its MCP configuration.
+- The desktop CLI was installed from public npm 3.0.3 after backing up its prior shims/link metadata. It is now a normal global registry installation rather than a link into the working checkout. Fresh MCP checks passed again using that installed package path. On this host, PowerShell blocks npm's `.ps1` shim; `u-chan.cmd` works without changing machine policy.
 
 ## Reproduce after the user returns
 
@@ -60,4 +63,4 @@ Private fixture evidence remains under the service's `#0 backup`; public summari
 
 ## V4 dependency
 
-V4 planning/source work proceeded under the user's autonomous-work authorization. V3's tightened native and final reinstall gates are now satisfied on this Windows host. V4 still requires its own matching installed-version/MCP verification before a deployment claim, plus any physical npm 2FA step. macOS, biometrics and cryptographic Sigstore verification remain outside this Windows closeout.
+V4 planning/source work proceeded under the user's autonomous-work authorization and merged after independent review and green Windows/macOS source CI plus CodeQL. V3's tightened native, final reinstall, and package-publication gates are satisfied on this Windows host. V4 still requires its own matching installed-version/MCP verification before a deployment claim. The active installation remains V3.0.3. macOS, biometrics and cryptographic Sigstore verification remain outside this Windows closeout.

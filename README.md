@@ -2,7 +2,9 @@
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-V4 adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. The source target is `4.0.0`; this development branch is not a published or installed V4 release. Protocol and protected-state schema remain version 3.
+V4 adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. Source version `4.0.0` is merged and tested but is not a published or installed V4 release. Protocol and protected-state schema remain version 3.
+
+**Stable Windows release: 3.0.3.** Both npm `latest` and `next` point to 3.0.3. The documented host runs that exact reviewed release. V4 source and release preparation are separate; its deployment is not implied by merging this repository.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
@@ -154,6 +156,8 @@ Check the phrase in the genuine protected prompt before entering a password. Nev
 ## Daily commands
 
 The table uses the globally installed `u-chan` spelling; from source use `node dist/cli.js` with the same arguments.
+
+In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` shim, for example `u-chan.cmd doctor --json`. No machine execution-policy change is needed.
 
 | Command | Purpose |
 |---|---|

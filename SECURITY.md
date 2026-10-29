@@ -8,8 +8,8 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 | Source line | Status |
 |---|---|
-| 4.x | Development branch; source and native release gates remain required |
-| 3.x | Previous source line; Windows closeout and package authentication gates remain explicit |
+| 4.x | Merged development source; installed V4 release verification remains required |
+| 3.x | Stable npm 3.0.3; Windows closeout verified on the documented host; macOS runtime unverified |
 | 2.x | Previous architecture; upgrade to V3 source through the documented trusted reinstall flow |
 | 1.x | Deprecated; its user-writable session/authorization storage is outside the V3 boundary |
 
