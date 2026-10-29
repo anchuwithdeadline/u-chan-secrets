@@ -8,7 +8,7 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 | Source line | Status |
 |---|---|
-| 4.x | Windows installed-candidate verification passed on the documented host; publication recorded separately |
+| 4.x | Published 4.0.0 signature/hash verified; Windows rollout passed on the documented host; macOS runtime unverified |
 | 3.x | Stable npm 3.0.3; Windows closeout verified on the documented host; macOS runtime unverified |
 | 2.x | Previous architecture; upgrade to V3 source through the documented trusted reinstall flow |
 | 1.x | Deprecated; its user-writable session/authorization storage is outside the V3 boundary |
