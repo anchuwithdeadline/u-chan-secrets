@@ -2,13 +2,11 @@
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-V4 adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. Source version `4.0.0` is merged and tested but is not a published or installed V4 release. Protocol and protected-state schema remain version 3.
-
-**Stable Windows release: 3.0.3.** Both npm `latest` and `next` point to 3.0.3. The documented host runs that exact reviewed release. V4 source and release preparation are separate; its deployment is not implied by merging this repository.
+Version `4.0.0` adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. Protocol and protected-state schema remain version 3.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
-The tightened V3.0.3 [Windows closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md) passed native isolation, disposable browser/update verification, and a state-preserving reinstall on the documented host. Installed compiled files match the reviewed release artifact exactly. macOS runtime remains unverified; package publication is recorded separately.
+The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) records matching service/CLI versions, preserved protected state, real setup and fresh MCP/browser checks. It builds on the tightened V3.0.3 [native closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md). macOS runtime remains unverified; source merge, installed verification, and package publication are recorded separately.
 
 ## What V3 changes
 

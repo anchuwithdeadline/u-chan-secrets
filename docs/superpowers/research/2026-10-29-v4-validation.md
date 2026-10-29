@@ -1,6 +1,6 @@
 # V4 development validation
 
-Date: 2026-10-29. Scope: Windows desktop guided setup, installed-version/browser diagnostics, native management details, and protected CLI grant proposals. This report does not announce a published or installed V4 release.
+Date: 2026-10-29. Scope: Windows desktop guided setup, installed-version/browser diagnostics, native management details, and protected CLI grant proposals. This report preserves initial source validation; the subsequent [Windows rollout](2026-10-29-v4-rollout.md) records matching installed V4 verification and release state.
 
 ## Source verification
 
@@ -9,7 +9,7 @@ Date: 2026-10-29. Scope: Windows desktop guided setup, installed-version/browser
 - Tests cover exact service/client versions, missing/invalid metadata, browser-target values, UAC failure, advanced Codex configuration preservation, original-byte backups, redirected backup refusal, partial changes, elevated refusal, setup flags/states, and grant policy/success-condition parsing.
 - Protocol 3, protected-state schema 3, native helpers, and dependency ranges remain unchanged.
 
-## Real read-only host check
+## Initial read-only host check on V3
 
 `node dist/cli.js setup --json` ran from the development worktree without apply/start flags. It returned exit 1 and `needs_attention`, with `changed: false`.
 
@@ -31,9 +31,9 @@ A separate native Chrome rehearsal then used a fresh disposable user profile and
 
 Independent review and follow-up review found no remaining material issue at `f0a7270`. Reproducing regressions covered compatible custom settings, conflicting target environment, duplicate CDP flags, normalized non-origin URL input, fixed action IDs, active-ownership caveats, and concurrent browser/permission probe timing. Review also corrected a validation-label error: build-config type checking excludes test types; whole-project checking passed separately after fixture alignment.
 
-The initial pre-closeout worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expected files, 73,172 bytes, zero unexpected package paths. SHA-256: `9392c517e67392fd7d798097870450daec1cfbc06b11257877ce66751660ecdf`. That unpublished artifact predates the merged V3 validation utilities and must be superseded by a fresh package before release.
+The initial pre-closeout worktree produced `u-chan-secrets-4.0.0.tgz`: 68 expected files, 73,172 bytes, zero unexpected package paths. SHA-256: `9392c517e67392fd7d798097870450daec1cfbc06b11257877ce66751660ecdf`. That unpublished artifact predates the merged V3 validation utilities and was superseded by the following candidate.
 
-After integrating V3 closeout, the fixture type declaration, and final CLI documentation, a fresh V4 development package was prepared: 77 files, 85,233 bytes, zero unexpected package paths. SHA-256: `4ff6d5b5479c88dccf33a079531c8fdd28e28f047b63905af6f76ac12f8880b3`. Earlier packages remain in `#0 backup`; this replacement is prepared only, not published or installed.
+After integrating V3 closeout, the fixture type declaration, and CLI documentation, a fresh V4 candidate was prepared: 77 files, 85,233 bytes, zero unexpected package paths. SHA-256: `4ff6d5b5479c88dccf33a079531c8fdd28e28f047b63905af6f76ac12f8880b3`. Earlier packages remain in `#0 backup`. This became the initial installed candidate in the [rollout report](2026-10-29-v4-rollout.md); final release documentation is packaged separately with the same reviewed compiled payload.
 
 [Merged PR #9](https://github.com/anchuwithdeadline/u-chan-secrets/pull/9) carries the source, documentation, and CI checks. Initial macOS CI exposed its system `/var` temporary-path alias in a disposable test fixture; `f204903` canonicalizes that fixture without relaxing production reparse-point checks. This is source-test evidence, not a macOS runtime rehearsal.
 
@@ -42,8 +42,8 @@ At `dbc5a34`, [Windows/macOS source CI](https://github.com/anchuwithdeadline/u-c
 ## Release boundaries
 
 - V3's tightened native/browser gates and final exact-artifact reinstall passed after the user resumed. The [Windows closeout](2026-10-29-v3-windows-closeout.md) records fresh reports, unchanged protected state, and zero remaining fixture tasks. PR #8 is merged; these inherited prerequisites are satisfied on the documented host.
-- npm 3.0.3 is public under both `latest` and `next`; registry signature and exact tarball hash verified. Its GitHub release is stable and the documented host runs the exact reviewed 3.0.3 artifact.
-- V4 source merged through PR #9 after independent review, 382 integrated tests, whole-project type checking, and green Windows/macOS source CI plus CodeQL. V4 remains unpublished and uninstalled; matching installed V4/service verification is a separate deployment prerequisite. The active host stays on V3.0.3.
+- At V3 closeout, npm 3.0.3 was public under both `latest` and `next`; registry signature and exact tarball hash verified. The host ran its exact reviewed 3.0.3 artifact before the subsequent V4 rollout.
+- V4 source merged through PR #9 after independent review, 382 integrated tests, whole-project type checking, and green Windows/macOS source CI plus CodeQL. Matching installed V4 verification is now recorded in the separate rollout report; it must not be inferred from those source checks alone.
 - macOS build/test CI is separate from runtime verification. No Mac runtime was tested.
 - Active AI-session browser ownership remains independently unverified by process/configuration heuristics.
 
