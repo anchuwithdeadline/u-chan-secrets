@@ -10,13 +10,17 @@ import { moduleAuditSucceeded } from './result-policy.mjs'
 const exec = promisify(execFile), root = path.resolve(process.argv[2])
 const home = path.join(process.env.ProgramData ?? 'C:\\ProgramData', 'u-chan-secrets')
 if (!root.startsWith(path.resolve(home, '#0 backup') + path.sep)) throw new Error('Unsafe fixture path')
+const program = process.argv[4] ? path.resolve(process.argv[4]) : path.join(home, 'program')
+if (program !== path.join(home, 'program') && !program.startsWith(path.resolve(home, '#0 backup') + path.sep)) throw new Error('Unsafe candidate path')
+const endpoint = process.argv[5] ?? 'http://127.0.0.1:9222', matrix = process.argv[6] === 'matrix'
 const result = { ok: false }, started = Date.now()
-const load = relative => import(pathToFileURL(path.join(home, 'program', relative)).href)
+const load = relative => import(pathToFileURL(path.join(program, relative)).href)
 const { stdout: identity } = await exec('whoami.exe', ['/user'], { windowsHide: true })
 if (!identity.includes('S-1-5-18')) throw new Error('SYSTEM runner required')
 const username = randomUUID() + '@example.invalid', password = randomUUID() + randomUUID(), cookie = 'u_chan_probe_' + randomUUID().replaceAll('-', '')
 let server, shared, userPage, browser, provider, bitwarden, bwTimer
 let receivedCredentials = false
+let sharedInputCount = 0
 try {
   const { chromium } = await load('node_modules/playwright/index.mjs')
   const { IsolatedLogin } = await load('dist/service/isolated-login.js')
@@ -36,20 +40,31 @@ try {
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const origin = 'http://127.0.0.1:' + server.address().port
-  shared = await chromium.connectOverCDP('http://127.0.0.1:9222')
+  shared = await chromium.connectOverCDP(endpoint)
+  if (matrix) {
+    const binding = '__uChanMatrixInput' + randomUUID().replaceAll('-', '')
+    await shared.contexts()[0].exposeBinding(binding, () => { sharedInputCount++ })
+    await shared.contexts()[0].addInitScript(name => document.addEventListener('input', () => { void window[name]().catch(() => {}) }, true), binding)
+    const { inspectServiceDesktopBrowser } = await load('dist/platform/windows/desktop-browser.js')
+    const metadata = JSON.parse(await fs.readFile(path.join(root, 'matrix-context.json'), 'utf8'))
+    result.desktopIdentity = await inspectServiceDesktopBrowser(endpoint, metadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: metadata.desktopHome })
+    const { observeCdpBrowser } = await load('dist/core/doctor.js')
+    result.fixtureBrowser = await observeCdpBrowser(endpoint)
+  }
   userPage = await shared.contexts()[0].newPage()
   await userPage.addInitScript(() => { window.__uChanProbeInputCount = 0; document.addEventListener('input', () => { window.__uChanProbeInputCount++ }, true) })
   await userPage.goto(origin)
   await userPage.locator('input[type=email]').fill('positive-control@example.invalid')
   result.initScriptPositiveControl = await userPage.evaluate(() => window.__uChanProbeInputCount > 0)
+  if (matrix) { await new Promise(resolve => setTimeout(resolve, 150)); result.allPageInputPositiveControl = sharedInputCount > 0; sharedInputCount = 0 }
   await userPage.goto(origin)
   browser = await chromium.launch({ headless: true, executablePath: await privateBrowserPath(home) })
-  provider = new CdpBrowserProvider('http://127.0.0.1:9222')
-  const target = new CdpSessionTarget(provider)
+  provider = new CdpBrowserProvider(endpoint)
+  const target = new CdpSessionTarget(provider, { hostCheck: (_entry, url) => new URL(url).hostname === '127.0.0.1' })
   const login = new IsolatedLogin({ launch: async () => browser, target, timeoutMs: 15000, hostCheck: url => new URL(url).hostname === '127.0.0.1' })
   const outcome = await login.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], item: 'disposable', loginUrl: origin + '/login', success: { selector: '#signed-in' } }, async () => ({ username, password }))
   result.confirmedFixtureLogin = outcome.status === 'logged_in' && receivedCredentials
-  result.sharedInputEvents = await userPage.evaluate(() => window.__uChanProbeInputCount)
+  result.sharedInputEvents = matrix ? sharedInputCount : await userPage.evaluate(() => window.__uChanProbeInputCount)
   await userPage.goto(origin + '/account')
   result.transferredFixtureSession = await userPage.locator('#signed-in').isVisible()
   const { CoreService } = await load('dist/core/service.js')
@@ -103,7 +118,7 @@ try {
   if (verified.ok) {
     const updateHome = path.join(root, 'update-fixture'), programDir = path.join(updateHome, 'program')
     await fs.mkdir(path.join(programDir, 'node_modules'), { recursive: true })
-    const pkg = JSON.parse(await fs.readFile(path.join(home, 'program', 'package.json'), 'utf8'))
+    const pkg = JSON.parse(await fs.readFile(path.join(program, 'package.json'), 'utf8'))
     await fs.writeFile(path.join(programDir, 'package.json'), JSON.stringify({ ...pkg, version: '3.0.1' }))
     await fs.writeFile(path.join(programDir, 'node_modules', 'private-marker'), 'preserve-private-dependencies')
     const state = JSON.stringify({ protectedFixture: randomUUID() })
@@ -115,6 +130,7 @@ try {
     result.signedUpdateRehearsal = updated.ok && JSON.parse(await fs.readFile(path.join(programDir, 'package.json'), 'utf8')).version === '3.0.2' && await fs.readFile(path.join(programDir, 'node_modules', 'private-marker'), 'utf8') === 'preserve-private-dependencies' && await fs.readFile(path.join(updateHome, 'settings.json'), 'utf8') === state && restarts === 1
   }
   result.ok = result.initScriptPositiveControl && result.confirmedFixtureLogin && result.sharedInputEvents === 0 && result.transferredFixtureSession && result.onceGrantConcurrency && result.clockRollbackPersisted && moduleAuditSucceeded(result.nativeModules) && result.realRegistryVerification && result.signedUpdateRehearsal && matches === 0
+  if (matrix) result.ok &&= result.allPageInputPositiveControl && result.desktopIdentity === 'pass' && ['chrome','edge'].includes(result.fixtureBrowser)
 } catch (e) { result.errorType = e.name }
 finally {
   clearTimeout(bwTimer); if (bitwarden && bitwarden.exitCode === null) bitwarden.kill()

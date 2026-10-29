@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.0.0
+
+- Add per-user Chrome/Edge selection, defaulting to Chrome, with separate dedicated profiles, configuration backups, explicit apply, and matching Codex MCP environment.
+- Validate the listening browser executable, desktop owner, dedicated profile, and loopback endpoint before reuse. The privileged service repeats owner/profile checks and reconnects between operations to avoid stale browser destinations.
+- Require approved login evidence in both the isolated context and the transferred desktop session. Wait for delayed evidence; report unconfirmed/partial state honestly without modifying existing tabs or rolling back unrelated cookies.
+- Block unapproved private-browser requests, redirects, and WebSockets; disable private service workers. Keep credentials private and do not expand approved hosts silently.
+- Return explicit human-action outcomes for recognized CAPTCHA/passkey/push challenges and missing/rejected TOTP. Preserve one-attempt semantics and avoid automatic credential retries.
+- Require V5 verified-transfer capability before a V5 client sends login; retain protocol 3, state schema 3, existing grants, native helpers, and runtime dependencies.
+- Source, artifact publication, installed verification, per-browser Windows fixtures, and macOS native verification remain separate claims.
+
 ## 4.0.1
 
 - Allow up to 60 seconds for the full Windows protected-tree permission scan, with 65-second service and 70-second client deadlines. Growing protected backups could make the previous 15-second scan timeout return `unknown` despite safe ACLs. All paths remain checked; errors, unsafe permissions, and timeouts retain their existing results.

@@ -1,8 +1,8 @@
-# U-Chan Secrets V4
+# U-Chan Secrets V5
 
-A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
+A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated Chrome or Edge profile.
 
-Version `4.0.0` adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. Protocol and protected-state schema remain version 3.
+Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
@@ -18,6 +18,28 @@ The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) rec
 
 Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
 
+## What V5 adds
+
+Choose your browser from a normal Windows terminal:
+
+```powershell
+u-chan setup --browser edge --json
+u-chan setup --browser edge --apply --replace-existing --start-browser
+u-chan setup --browser chrome --apply --replace-existing --start-browser
+```
+
+The first command inspects the proposed choice. `--apply` saves it in user-side `browser.json` and registers the matching MCP environment through the official Codex CLI. Later commands without `--browser` keep the saved choice; a new installation defaults to Chrome. Browser and Codex configuration backups are retained under their respective `#0 backup` directories. Each user's choice is independent.
+
+Chrome and Edge use separate dedicated profiles. Only one browser owns the configured U-Chan CDP endpoint at a time. When switching, close the previous **dedicated U-Chan instance** and rerun setup; keep your personal browser windows open. U-Chan refuses wrong, unknown, personal-profile, or non-loopback listeners instead of silently attaching, selecting another port/browser, or terminating processes. It does not install browsers or change enterprise debugging policy. The legacy `scripts/start-chrome.ps1` explicitly selects Chrome; `scripts/start-browser.ps1 -Browser edge` selects Edge.
+
+The service independently checks the installed owner's SID and dedicated profile before accessing the Windows destination. It derives that user's AppData paths from the profile registry. Advanced installations with a custom desktop profile root must align the trusted service environment's `U_CHAN_DESKTOP_HOME` with the user-side home; changing only a user-side environment variable does not redirect privileged session transfer.
+
+An approved exact URL or visible selector must match in both the private login context and a new verification tab in the destination browser before `login` returns success. Existing user tabs are left alone. Missing evidence returns `authentication_unconfirmed`; private success with unverified desktop state returns `destination_unconfirmed`. Transfer failure/cancellation can leave partial session state and does not log the browser out. Expired or consumed grants are not refunded.
+
+The private credential-bearing context blocks network requests and WebSockets outside approved hosts and disables service workers. Some sites requiring third-party resources or external identity providers therefore remain unsupported; U-Chan does not silently broaden host approval. CAPTCHA, passkey, push approval, or unavailable/rejected TOTP returns `needs_human` with manual sign-in guidance. V5 does not expose or resume the private challenge context, repeat credential submissions, or ask for passwords/codes in AI chat.
+
+A V5 client requires the service's `verified_session_transfer` capability before login. Update both CLI and service; an older service is refused before a login attempt is sent. Existing grants and vault data remain compatible. Native macOS runtime and ownership by an already-running AI session remain unverified.
+
 ## What V4 adds
 
 Use a normal, non-administrator terminal after installing the matching trusted service:
@@ -30,7 +52,7 @@ u-chan setup --client codex --apply --replace-existing --start-browser
 
 The first command only inspects. `--apply` adds missing Codex MCP registrations through the official Codex CLI. `--replace-existing` also permits replacement of recognized simple registrations. Existing configuration is backed up under the Codex configuration directory's `#0 backup` before mutation. Compatible enabled registrations retain custom environment, working directory, tool filters, timeouts, and other settings. Incompatible custom registrations, conflicting target overrides, disabled entries, and HTTP transports require manual configuration and remain untouched. Partial failures retain completed changes and the backup; setup never restores an obsolete whole configuration over concurrent edits.
 
-`--start-browser` explicitly starts the dedicated Chrome profile in the background when its endpoint is unhealthy. No startup task is added. Setup refuses elevated execution and known service/desktop browser-target mismatches. It never installs the privileged service or changes UAC. Run `u-chan install` separately from a trusted administrator terminal.
+`--start-browser` explicitly starts the selected dedicated browser profile in the background when its endpoint is unhealthy. No startup task is added. Setup refuses elevated execution and known service/desktop browser-target mismatches. It never installs the privileged service or changes UAC. Run `u-chan install` separately from a trusted administrator terminal.
 
 Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequired`. `process_configured` means matching process arguments were observed; it does not verify active AI-session ownership. Unobservable sharing remains `unobserved`. Restart the AI session after registration changes. Exit codes: 1 means attention required, 2 means configured with restart required, and 0 means configured without a known restart requirement. A locked vault remains a valid installed state.
 
