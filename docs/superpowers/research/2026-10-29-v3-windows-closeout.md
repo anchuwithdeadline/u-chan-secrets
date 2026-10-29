@@ -6,8 +6,9 @@ Date: 2026-10-29. Candidate: 3.0.3. The user explicitly scoped V3 completion to 
 
 - The production npm-verifier correction is independent of the new validation utilities. It requires SHA-512 integrity and a valid ECDSA-SHA256 signature using npm's current pinned key/key ID. Empty custom keys and unsigned repository-attestation JSON fail closed.
 - Production fix: 356 tests across 47 files and TypeScript build passed; independent review found no remaining Critical/Important issue. Source integration is [PR #7](https://github.com/anchuwithdeadline/u-chan-secrets/pull/7).
-- New validation utilities add regression coverage for fresh run IDs, actual pipe access denial, and incomplete module inspection. Their final privileged rerun is **pending Windows UAC consent**. Earlier execution evidence below does not mark the tightened revision passed.
-- A final UAC request was cancelled after the sleeping user's attacker fixture timed out. No stale request was intentionally left queued. No test failed approval is interpreted as success.
+- The tightened validation utilities passed a fresh Windows privileged/native run after the user returned. The merged non-elevated report confirmed genuine pipe-access denial, successful positive controls, zero captured canaries, and desktop restoration. The separate SYSTEM browser/update run also passed, including complete live-module inspection.
+- Final trusted V3.0.3 reinstall passed. All 56 installed compiled files match the reviewed release artifact byte for byte. Settings (including owner SID), grants, and private Bitwarden data stayed unchanged; a fresh protected state backup was retained. No temporary fixture tasks remain.
+- An earlier request was cancelled while the user slept; it was never counted as success. The resumed successful runs use new UUIDs and independent reports.
 - npm publication requires physical 2FA when challenged. GitHub publication, npm publication, installed files, and runtime verification are recorded separately.
 
 ## Evidence obtained
@@ -19,8 +20,8 @@ Date: 2026-10-29. Candidate: 3.0.3. The user explicitly scoped V3 completion to 
 | Raw IPC policy tampering | Ten malformed grant/success requests returned `bad request`. Grant listing matched its baseline afterward. | This does not authorize any new domain. |
 | Prompt identity/desktop | Disposable actual SYSTEM helper ran in interactive session 1 and on a separate desktop. Timeout and forced failure restored the original desktop. | Fixture uses confirm-only dummy text; no vault password is involved. |
 | Input/capture isolation | User-side hook and image-capture positive controls succeeded. A SYSTEM F24 canary reached the protected form; ordinary-user hook observed zero canary events. SendInput returned zero; direct button message failed; neither PrintWindow nor screen capture saw the marker. | Representative Windows APIs on this host, not proof against all malware or drivers. |
-| Prompt reply pipe | Runtime DACL contained SYSTEM allow rules only. Connection/spoof attempts failed. | Original connection failure was timeout code 121, not an access-denied result. Tightened utility adds an idle SYSTEM-only pipe and requires genuine access denial; rerun pending. |
-| Private execution | Actual service Node had 39 observed modules under Windows/protected service storage. SYSTEM browser/Bitwarden fixture observed 182 modules across 11 processes, with no uninspected process in that run. Two Defender DLLs were accepted only after Microsoft signature and ACL checks. | Tightened utility additionally checks trusted ownership, full path boundaries and live unreadable processes; rerun pending. Dynamic observation is not every possible future lazy-loaded library. |
+| Prompt reply pipe | Tightened runtime check confirmed SYSTEM-only DACL, genuine connection access denial on an idle pipe, and failed spoofing. | Earlier timeout code 121 was not accepted as access-denial proof. |
+| Private execution | Fresh SYSTEM browser/Bitwarden fixture inspected 158 modules across 12 processes, with zero unreadable live processes, zero exited-before-inspection processes, and zero outside paths. Two Defender DLLs passed Microsoft signature and trusted ownership/ACL checks. | Earlier service observation found 39 Windows/protected modules. Dynamic observation is not every possible future lazy-loaded library. |
 | Browser credential separation | Random fixture credentials existed only in SYSTEM memory. Confirmed isolated fixture login succeeded; user-Chrome input listener positive control worked and then observed zero credential-entry events. Filtered session transfer produced the signed-in fixture page. | Loopback HTTP is a disposable fixture with an explicit fixture-only host check. Production approval still requires HTTPS. |
 | Once/timed grants | SYSTEM fixture exercised actual service/store classes: one of two concurrent once attempts succeeded, replay after reopening the store was exhausted, and backward-clock invalidation persisted to protected JSON. | Injected fixture clocks; the machine clock was not changed. Changes while stopped remain unreconstructible. |
 | Update authentication | Original verifier rejected real npm 3.0.2 and accepted forged unsigned attestation metadata. Corrected verifier accepted the actual 65,072-byte registry tarball. Signed disposable update preserved private dependencies/settings and requested one restart. | Versions 3.0.0–3.0.2 need trusted administrator reinstall to bootstrap the fix. Registry-key rotation fails closed. |
@@ -33,7 +34,15 @@ The first utility revision was not accepted as a final merge candidate. Review i
 
 The tightened revision uses a fresh UUID and a read-public channel under `C:\ProgramData\UChanSecurityChecks`. Its owner, reparse state, write/DACL/owner/delete-child rights and parent deletion rights are checked; directories are created with restrictive ACLs and validated afterward. Administrator/SYSTEM never read user result files or write user-selected paths. Only the non-elevated preparer merges its own result with the administrator-owned summary, matching run IDs and successful positive controls. Summary publication is atomic. Reusing a run UUID is refused. Unreadable live runtime processes fail inspection.
 
-These are static-review and regression-tested corrections. Final native execution is still required for the corrected utility revision.
+The corrected utility revision now has static review, regression tests, and fresh native execution evidence on this Windows host.
+
+## Resumed closeout receipts
+
+- Native run UUID: `903d500e-02a3-4916-90db-03528e016570`; public merged report `C:\Users\ADMIN\AppData\Local\Temp\u-chan-security-gn9q9n\report.json`. Private evidence: `C:\ProgramData\u-chan-secrets\#0 backup\adversarial-f1cdefb2-6991-4bd4-897f-c08143ccf156`.
+- Browser run UUID: `0593e44c-89ac-4671-9aed-48840cfa75b9`; administrator-owned public summary under `C:\ProgramData\UChanSecurityChecks\<UUID>\report.json`. Private evidence: `browser-probe-6e6fee03-c0c5-423b-bacd-e099b1b484ff` under protected `#0 backup`.
+- Reinstall receipt UUID: `4d09df04-2b5c-450c-9330-2e016c58e4fa`; summary in the same controlled public root. It confirms reused-run refusal, exact installed artifact matching, unchanged protected state, and zero remaining fixture tasks.
+- Two preflights stopped before installation: one found line-ending-only compiled-file differences; the other incorrectly required an `owner.json` file, whereas Windows stores `authorizedSid` inside `settings.json`. The final install used the exact reviewed artifact bytes and the actual Windows schema.
+- After restart, the first cold Bitwarden diagnostic was unknown within its bounded probe; a subsequent full doctor report passed every required check with the vault locked. Process-discovery sharing remained advisory unknown. The non-elevated boundary test passed again afterward, with ten malformed IPC requests denied and grants unchanged.
 
 ## Reproduce after the user returns
 
@@ -51,4 +60,4 @@ Private fixture evidence remains under the service's `#0 backup`; public summari
 
 ## V4 dependency
 
-V4 planning/source work can proceed under the user's autonomous-work authorization. Shipping V4 as Windows-verified still requires the final V3 native rerun, matching installed-version verification, and any physical npm 2FA step. macOS, biometrics and cryptographic Sigstore verification remain outside this Windows closeout.
+V4 planning/source work proceeded under the user's autonomous-work authorization. V3's tightened native and final reinstall gates are now satisfied on this Windows host. V4 still requires its own matching installed-version/MCP verification before a deployment claim, plus any physical npm 2FA step. macOS, biometrics and cryptographic Sigstore verification remain outside this Windows closeout.
