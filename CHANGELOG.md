@@ -10,6 +10,7 @@
 - Add `u-chan allow` with one-attempt default, explicit timed/permanent policy, and optional login success URL/selector.
 - Keep protocol 3, protected-state schema 3, native helpers, and runtime dependencies unchanged. Source integration does not establish publication, installation, or native security verification.
 - Verify a state-preserving Windows rollout with matching 4.0.0 service/CLI versions, real Codex registration, fresh MCP/shared-Chrome checks, and a disposable SYSTEM browser/update fixture. Publication and macOS runtime verification remain separate claims.
+- Publish 4.0.0 on npm under `latest` and `next`; verify its registry signature and artifact hash, then align all 77 global CLI package files with the public artifact. Required Windows setup diagnostics pass after dedicated Chrome startup; macOS runtime remains unverified.
 
 ## 3.0.3
 
