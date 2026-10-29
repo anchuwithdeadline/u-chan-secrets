@@ -2,14 +2,14 @@ import { expect, it, vi } from 'vitest'
 import { runDoctor, doctorExitCode } from '../src/core/doctor.js'
 import { main } from '../src/cli.js'
 
-it('keeps a reachable service when a full native permission scan takes over five seconds', async () => {
+it('keeps a reachable service when a full native permission scan exceeds the old deadlines', async () => {
   vi.useFakeTimers()
   try {
     const pending = runDoctor({
       platform: 'win32', registration: async () => 'pass', chrome: async () => 'pass', playwright: async () => 'pass',
-      service: () => new Promise(resolve => setTimeout(() => resolve({ assets: 'pass', permissions: 'pass', vault: 'locked' }), 6000)),
+      service: () => new Promise(resolve => setTimeout(() => resolve({ assets: 'pass', permissions: 'pass', vault: 'locked' }), 45000)),
     })
-    await vi.advanceTimersByTimeAsync(6000)
+    await vi.advanceTimersByTimeAsync(45000)
     const report = await pending
     expect(report.checks.find(c => c.id === 'service')?.state).toBe('pass')
     expect(report.checks.find(c => c.id === 'permissions')?.state).toBe('pass')

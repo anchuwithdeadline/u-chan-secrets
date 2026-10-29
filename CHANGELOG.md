@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.0.1
+
+- Allow up to 60 seconds for the full Windows protected-tree permission scan, with 65-second service and 70-second client deadlines. Growing protected backups could make the previous 15-second scan timeout return `unknown` despite safe ACLs. All paths remain checked; errors, unsafe permissions, and timeouts retain their existing results.
+
 ## 4.0.0
 
 - Add read-only guided setup for Windows/Codex, with explicit flags for registration changes and dedicated Chrome startup.
