@@ -26,6 +26,7 @@ import { ensureV3State } from './state.js'
 import { ManagementService } from './manage.js'
 import { privateBrowserPath } from '../platform/runtime-assets.js'
 import { safeVersion } from '../core/doctor.js'
+import { inspectServiceDesktopBrowser } from '../platform/windows/desktop-browser.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -65,9 +66,14 @@ export async function runService(
     const allowlist = new AllowlistStore(cfg.allowlistPath, () => stateReady ??= ensureV3State(cfg.home).catch(e => { stateReady = undefined; throw e }))
     const grants = new GrantCoordinator(allowlist)
     const audit = new FileAuditLog(cfg.auditPath)
+    const endpoint = loadConfig(env, platform).cdpEndpoint
+    const validateTarget = platform === 'win32' ? async () => {
+      const owner = (await settings.get() as unknown as { authorizedSid?: unknown }).authorizedSid
+      return typeof owner === 'string' && await inspectServiceDesktopBrowser(endpoint, owner, env) === 'pass'
+    } : undefined
     const login = new IsolatedLogin({
       launch: async () => chromium.launch({ headless: true, executablePath: await privateBrowserPath(cfg.home), timeout: 15000 }),
-      target: new CdpSessionTarget(new CdpBrowserProvider(loadConfig(env, platform).cdpEndpoint)),
+      target: new CdpSessionTarget(new CdpBrowserProvider(endpoint, { validate: validateTarget })),
     })
     const core = new CoreService({ vault, allowlist, grants, approver, audit, login, mode: () => approver.effectiveMode() })
 

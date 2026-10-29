@@ -15,7 +15,7 @@ const sockPath = () =>
     : join(mkdtempSync(join(tmpdir(), 'ucs-')), 's.sock')
 
 const names = ['login', 'requestAllow', 'revoke', 'listAllowed', 'status', 'unlock', 'lock', 'setMode', 'importV1', 'audit', 'update'] as const
-const fakeApi = () => Object.fromEntries(names.map(n => [n, vi.fn(async () => ({ ok: true, message: n }))])) as any
+const fakeApi = () => ({ ...Object.fromEntries(names.map(n => [n, vi.fn(async () => ({ ok: true, message: n }))])), capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["verified_session_transfer"]}' }) }) as any
 
 const servers: net.Server[] = []
 const start = async (api: any, opts?: any) => {

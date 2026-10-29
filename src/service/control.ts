@@ -31,7 +31,7 @@ export class ControlService implements ControlApi {
   private readonly grants: GrantCoordinator
   constructor(private readonly d: Deps) { this.grants = d.grants ?? new GrantCoordinator(d.allowlist) }
   async capabilities(): Promise<ToolResult> {
-    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants'], serviceVersion: this.d.serviceVersion }) }
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer'], serviceVersion: this.d.serviceVersion }) }
   }
   async diagnose(): Promise<ToolResult> {
     try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }

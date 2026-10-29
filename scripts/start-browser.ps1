@@ -1,6 +1,17 @@
-param([ValidateSet('chrome','edge')][string]$Browser, [switch]$Background, [switch]$CheckOnly)
+param([ValidateSet('chrome','edge')][string]$Browser, [switch]$Background, [switch]$CheckOnly, [string]$DesktopOwnerSid)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'desktop-browser.ps1')
+if ($DesktopOwnerSid) {
+    if (-not $CheckOnly) { throw 'An owner-specific inspection cannot launch a desktop browser.' }
+    $observed = 'unknown'
+    foreach ($kind in @('chrome','edge')) {
+        $configuration = Get-UChanOwnerBrowserConfiguration $DesktopOwnerSid $kind
+        $candidate = Get-UChanBrowserState $configuration
+        if ($candidate -eq 'pass') { 'pass'; return }
+        if ($candidate -eq 'fail' -or $candidate -eq 'missing') { $observed = 'fail' }
+    }
+    $observed; return
+}
 $configuration=Get-UChanBrowserConfiguration $Browser
 $state=Get-UChanBrowserState $configuration
 if ($CheckOnly) { if ($state -eq 'missing') { 'fail' } else { $state }; return }

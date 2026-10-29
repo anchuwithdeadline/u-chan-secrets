@@ -8,7 +8,7 @@ import { UserFacingError } from '../core/types.js'
 import { waitForLoginSuccess } from '../core/login-success.js'
 import { restrictPrivateNetwork } from './private-network.js'
 
-/** Signs in inside a service-owned browser, then hands only the entry's session to the user's Chrome. */
+/** Signs in inside a service-owned browser, then verifies only the approved session in the user's selected browser. */
 export class IsolatedLogin implements LoginRunner {
   private browser?: Browser
   private cancellation?: () => Promise<void>
@@ -18,7 +18,7 @@ export class IsolatedLogin implements LoginRunner {
     else await this.o.target.cancel?.()
   }
   async preflight(signal?: AbortSignal): Promise<void> {
-    const check = signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000)
+    const check = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
     try { await abortable(this.o.target.userAgent(check), check, async () => { await this.o.target.cancel?.() }) }
     catch { throw new UserFacingError(signal?.aborted ? 'login timed out; retry if needed' : 'selected dedicated browser is unavailable; run u-chan setup --start-browser', signal?.aborted ? 'login_timeout' : 'browser_unavailable') }
   }
@@ -26,6 +26,7 @@ export class IsolatedLogin implements LoginRunner {
     const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
     const hostCheck = this.o.hostCheck ?? ((url: string) => isHostAllowed(entry, url))
     let browser = this.browser, ctx: BrowserContext | undefined
+    let transferStarted = false
     let closing: Promise<void> | undefined, stopping: Promise<void> | undefined
     const closeBrowser = async () => {
       const current = browser
@@ -71,14 +72,22 @@ export class IsolatedLogin implements LoginRunner {
       signal.throwIfAborted()
       await options.beforeTransfer?.()
       checkHost()
+      transferStarted = true
       try { await abortable(this.o.target.inject(state, signal), signal, stop) }
       catch (e) {
         if (signal.aborted) throw e
-        return { status: 'failed', reason: 'could not hand the session to Chrome', code: 'session_transfer_failed' }
+        return { status: 'failed', reason: 'session transfer did not complete; some browser session state may already exist', code: 'session_transfer_failed' }
       }
-      return entry.success ? { status: 'logged_in' } : { status: 'unconfirmed', code: 'authentication_unconfirmed', reason: 'session state transferred to Chrome; sign-in was not confirmed; inspect the site before continuing' }
+      await options.beforeTransfer?.()
+      signal.throwIfAborted()
+      if (entry.success) {
+        const verified = this.o.target.verify ? await abortable(this.o.target.verify(entry, page.url(), signal), signal, stop) : false
+        return verified ? { status: 'logged_in' } : { status: 'unconfirmed', code: 'destination_unconfirmed', reason: 'session state was transferred, but login was not confirmed in the selected browser; inspect the site before continuing' }
+      }
+      return { status: 'unconfirmed', code: 'authentication_unconfirmed', reason: 'session state transferred to the selected browser; sign-in was not confirmed; inspect the site before continuing' }
     } catch (e) {
-      if (signal.aborted) return { status: 'failed', code: 'login_timeout', reason: 'login cancelled or timed out; retry with fresh approval if needed' }
+      if (signal.aborted) return { status: 'failed', code: 'login_timeout', reason: transferStarted ? 'login cancelled or timed out after transfer started; browser session state may already exist and login is unconfirmed' : 'login cancelled or timed out; retry with fresh approval if needed' }
+      if (transferStarted) return { status: 'unconfirmed', code: 'destination_unconfirmed', reason: 'destination verification did not complete; browser session state may already exist and login is unconfirmed' }
       if (e instanceof UserFacingError && e.code === 'unsupported_form') return { status: 'failed', code: e.code, reason: e.message }
       throw e
     } finally {

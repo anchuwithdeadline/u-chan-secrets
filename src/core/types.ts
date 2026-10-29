@@ -79,6 +79,7 @@ export interface MasterPasswordChecker { verify(password: string): Promise<boole
 export interface SessionTarget {
   userAgent(signal?: AbortSignal): Promise<string>
   inject(state: SessionState, signal?: AbortSignal): Promise<void>
+  verify?(entry: AllowEntry, finalUrl: string, signal?: AbortSignal): Promise<boolean>
   cancel?(): Promise<void>
 }
 export interface LoginRunner {

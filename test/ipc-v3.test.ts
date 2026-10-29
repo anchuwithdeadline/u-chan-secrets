@@ -13,7 +13,7 @@ async function client(api: any) {
   return new IpcClient(path)
 }
 it('preserves safe result codes through real IPC', async () => {
-  const c = await client({ login: async () => ({ ok: false, message: 'expired', code: 'grant_expired' }) })
+  const c = await client({ capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["verified_session_transfer"]}' }), login: async () => ({ ok: false, message: 'expired', code: 'grant_expired' }) })
   expect(await c.login('a.com')).toEqual({ ok: false, message: 'expired', code: 'grant_expired' })
 })
 it('passes exact policy only after capability verification', async () => {
@@ -39,5 +39,13 @@ it('rejects invalid timed policy before an approval can run', async () => {
     requestAllow: async () => { requested = true; return { ok: true, message: 'approved' } },
   })
   expect((await (c.requestAllow as any)('a.com', 'https://a.com/login', 'item', undefined, { grant: { kind: 'timed', minutes: 1441 } })).ok).toBe(false)
+  expect(requested).toBe(false)
+})
+it('refuses login against a service without verified transfer before sending the attempt', async () => {
+  let requested = false
+  for (const message of ['{}', '{"protocol":3,"features":["grants"]}', '{"protocol":4,"features":["verified_session_transfer"]}', 'invalid']) {
+    const c = await client({ capabilities: async () => ({ ok: true, message }), login: async () => { requested = true; return { ok: true, message: 'should not run' } } })
+    expect(await c.login('a.com')).toMatchObject({ ok: false, code: 'unsupported_service' })
+  }
   expect(requested).toBe(false)
 })

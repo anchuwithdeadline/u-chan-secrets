@@ -45,7 +45,14 @@ export class IpcClient implements CoreApi, ControlApi {
     })
   }
 
-  login(domain: string) { return this.call('login', { domain }) }
+  async login(domain: string): Promise<ToolResult> {
+    const response = await this.capabilities()
+    try {
+      const capability = JSON.parse(response.message)
+      if (response.ok && capability.protocol === 3 && Array.isArray(capability.features) && capability.features.includes('verified_session_transfer')) return this.call('login', { domain })
+    } catch {}
+    return { ok: false, code: 'unsupported_service', message: 'verified login requires a reachable V5 service; update the installed service before login' }
+  }
   async requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult> {
     if (options !== undefined) {
       if (!validOptions(options)) return { ok: false, code: 'invalid_policy', message: 'invalid approval policy or success condition' }

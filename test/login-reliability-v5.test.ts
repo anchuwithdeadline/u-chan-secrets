@@ -34,6 +34,32 @@ it('blocks a cross-host password form action before dummy credentials reach that
   expect(fx.posts.slice(before)).not.toContain('/single')
   expect(target.inject).not.toHaveBeenCalled()
 })
+it('does not claim login when private success fails verification in the destination browser', async () => {
+  const verify = vi.fn(async () => false), inject = vi.fn(async () => {})
+  const target = { userAgent: async () => 'test', inject, verify }
+  const runner = new IsolatedLogin({ launch: async () => browser, target, hostCheck: check, timeoutMs: 1000 })
+  const result = await runner.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], loginUrl: `http://127.0.0.1:${fx.port}/single`, item: 'dummy', success: { selector: 'h1' } }, async () => ({ username: 'u@x', password: 'pw' }))
+  expect(result).toMatchObject({ status: 'unconfirmed', code: 'destination_unconfirmed' })
+  expect(verify).toHaveBeenCalledOnce()
+  expect(inject).toHaveBeenCalledOnce()
+})
+it('never confirms success for a destination without a verifier', async () => {
+  const target = { userAgent: async () => 'test', inject: vi.fn(async () => {}) }
+  const runner = new IsolatedLogin({ launch: async () => browser, target, hostCheck: check, timeoutMs: 1000 })
+  expect(await runner.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], loginUrl: `http://127.0.0.1:${fx.port}/single`, item: 'dummy', success: { selector: 'h1' } }, async () => ({ username: 'u@x', password: 'pw' })))
+    .toMatchObject({ status: 'unconfirmed', code: 'destination_unconfirmed' })
+})
+it('reports possible partial state on cancellation during injection or destination verification', async () => {
+  for (const stage of ['inject','verify']) {
+    const controller = new AbortController(), inject = vi.fn(async () => { if (stage === 'inject') controller.abort() })
+    const target = { userAgent: async () => 'test', inject, verify: async () => { controller.abort(); return false } }
+    const runner = new IsolatedLogin({ launch: async () => browser, target, hostCheck: check, timeoutMs: 1000 })
+    const result = await runner.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], loginUrl: `http://127.0.0.1:${fx.port}/single`, item: 'dummy', success: { selector: 'h1' } }, async () => ({ username: 'u@x', password: 'pw' }), { signal: controller.signal })
+    expect(result).toMatchObject({ status: 'failed', code: 'login_timeout' })
+    expect(result.reason).toContain('browser session state may already exist')
+    expect(inject).toHaveBeenCalledOnce()
+  }
+})
 it('blocks off-host fetch, frames, images, redirects and WebSockets without a network canary hit', async () => {
   const context = await browser.newContext({ serviceWorkers: 'block' })
   const blocked = await restrictPrivateNetwork(context, check, AbortSignal.timeout(10000))

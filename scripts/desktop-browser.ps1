@@ -13,8 +13,8 @@ function Test-UChanBrowserProcess($Observation, [string]$Executable, [string]$Pr
     return 'pass'
 }
 
-function Get-UChanBrowserConfiguration([string]$Browser) {
-    $userHome = if ($env:U_CHAN_HOME) { $env:U_CHAN_HOME } else { Join-Path $env:APPDATA 'u-chan-secrets' }
+function Get-UChanBrowserConfiguration([string]$Browser, [string]$HomeOverride, [string]$OwnerOverride, [string]$LocalOverride) {
+    $userHome = if ($HomeOverride) { $HomeOverride } elseif ($env:U_CHAN_HOME) { $env:U_CHAN_HOME } else { Join-Path $env:APPDATA 'u-chan-secrets' }
     if (-not $Browser) { $Browser = $env:U_CHAN_BROWSER }
     if (-not $Browser) {
         $choice = Join-Path $userHome 'browser.json'
@@ -37,9 +37,26 @@ function Get-UChanBrowserConfiguration([string]$Browser) {
     $cdp = [Uri]$(if ($env:U_CHAN_CDP) { $env:U_CHAN_CDP } else { 'http://127.0.0.1:9222' })
     if ($cdp.Scheme -ne 'http' -or $cdp.Host -notin @('127.0.0.1','localhost','[::1]','::1') -or $cdp.UserInfo -or $cdp.AbsolutePath -ne '/' -or $cdp.Query -or $cdp.Fragment) { throw 'Use an HTTP loopback CDP origin without credentials, path, query or fragment.' }
     $suffix = if ($Browser -eq 'edge') { 'Microsoft\Edge\Application\msedge.exe' } else { 'Google\Chrome\Application\chrome.exe' }
-    $candidates = @(foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) { if ($base) { Join-Path $base $suffix } })
+    $local = if ($LocalOverride) { $LocalOverride } else { $env:LOCALAPPDATA }
+    $candidates = @(foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $local)) { if ($base) { Join-Path $base $suffix } })
     $executables = @($candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-    return @{ Browser=$Browser; Profile=$profile; Endpoint=$cdp; Executables=$executables; OwnerSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+    $owner = if ($OwnerOverride) { $OwnerOverride } else { [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+    return @{ Browser=$Browser; Profile=$profile; Endpoint=$cdp; Executables=$executables; OwnerSid=$owner }
+}
+
+# Privileged checks derive the desktop home from the installed owner's SID, never SYSTEM's APPDATA or user preference files.
+function Get-UChanOwnerBrowserConfiguration([string]$OwnerSid, [string]$Browser) {
+    if ($OwnerSid -notmatch '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') { throw 'Installed desktop owner is invalid.' }
+    $profile = (Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$OwnerSid) -ErrorAction Stop).ProfileImagePath
+    if (-not $profile) { throw 'Installed desktop owner profile is unavailable.' }
+    $profile = [Environment]::ExpandEnvironmentVariables($profile)
+    $roaming = Join-Path $profile 'AppData\Roaming'
+    $local = Join-Path $profile 'AppData\Local'
+    $shell = Get-ItemProperty -LiteralPath ('Registry::HKEY_USERS\'+$OwnerSid+'\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders') -ErrorAction SilentlyContinue
+    if ($shell.AppData) { $roaming = [Environment]::ExpandEnvironmentVariables(($shell.AppData -ireplace '%USERPROFILE%', $profile)) }
+    if ($shell.'Local AppData') { $local = [Environment]::ExpandEnvironmentVariables(($shell.'Local AppData' -ireplace '%USERPROFILE%', $profile)) }
+    $desktopHome = if ($env:U_CHAN_DESKTOP_HOME) { $env:U_CHAN_DESKTOP_HOME } else { Join-Path $roaming 'u-chan-secrets' }
+    return Get-UChanBrowserConfiguration $Browser $desktopHome $OwnerSid $local
 }
 
 function Get-UChanBrowserState($Configuration) {

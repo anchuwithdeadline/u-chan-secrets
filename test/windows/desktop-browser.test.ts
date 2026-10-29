@@ -6,7 +6,12 @@ import { createServer } from 'node:net'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inspectServiceDesktopBrowser } from '../../src/platform/windows/desktop-browser.js'
 const exec = promisify(execFile)
+it('fails closed for unavailable installed-owner metadata without launching a browser', async () => {
+  expect(await inspectServiceDesktopBrowser('http://127.0.0.1:9222', 'not-a-sid')).toBe('unknown')
+  if (process.platform === 'win32') expect(await inspectServiceDesktopBrowser('http://127.0.0.1:9222', 'S-1-5-21-0-0-0-0')).toBe('unknown')
+})
 it('validates real launcher process policy without accepting occupied ports as browser proof', async () => {
   if (process.platform !== 'win32') return
   const executable = 'C:\\Browsers\\msedge.exe', profile = 'C:\\Profiles\\edge-profile', owner = 'S-1-5-21-test'
