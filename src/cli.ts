@@ -4,19 +4,26 @@ import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ApprovalMode, ControlApi, ToolResult } from './core/types.js'
+import type { ApprovalMode, ControlApi, CoreApi, ToolResult } from './core/types.js'
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
-import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
+import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
 import { loadConfig } from './core/config.js'
+import { execFile } from 'node:child_process'
+import { join } from 'node:path'
+import { configureCodex, isElevated } from './client/codex-setup.js'
+import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
+import { parseAllowArgs } from './client/allow.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
 export interface CliDeps {
   doctor?: () => Promise<DiagnosticReport>
+  clientVersion?: string
+  setup?: (options: SetupOptions) => Promise<SetupReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
-  connect: (opts: { timeoutMs?: number }) => ControlApi
+  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'>
   env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
   readFile: (path: string) => Promise<string>
@@ -43,6 +50,9 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   let call: (() => Promise<ToolResult>) | undefined
   const doctor = d.doctor ?? (() => runDoctor({
     platform: d.platform,
+    clientVersion: d.clientVersion ?? 'unknown',
+    clientEndpoint: loadConfig(d.env, d.platform).cdpEndpoint,
+    elevation: d.platform === 'win32' ? async () => (await import('./platform/windows/doctor.js')).checkWindowsUac() : undefined,
     registration: async () => d.platform === 'win32' ? (await import('./platform/windows/doctor.js')).checkWindowsRegistration() : d.platform === 'darwin' ? (await import('./platform/darwin/doctor.js')).checkDarwinRegistration() : 'fail',
     service: async () => {
       const r = await d.connect({ timeoutMs: SERVICE_DIAGNOSTIC_TIMEOUT_MS }).diagnose()
@@ -54,11 +64,54 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     chrome: () => chromeState(loadConfig(d.env, d.platform).cdpEndpoint),
     playwright: async () => {
       if (d.platform !== 'win32') return 'unknown'
-      const state = await checkPlaywrightNow()
+      const state = await checkPlaywrightNow(process.pid, loadConfig(d.env, d.platform).cdpEndpoint)
       return state === 'ok' ? 'pass' : state === 'missing' ? 'fail' : 'unknown'
     },
   }))
   const printDoctor = (r: DiagnosticReport) => d.out(r.checks.map(c => `${c.state.toUpperCase()} ${c.id}: ${c.message}${c.nextAction ? ' ' + c.nextAction : ''}`).join('\n'))
+  if (cmd === 'allow') {
+    const proposal = parseAllowArgs(argv.slice(1))
+    if (!proposal) { d.err('usage: u-chan allow <domain> --login-url <https-url> --item <label> [--once|--minutes <1..1440>|--permanent] [--success-url <https-url>|--success-selector <selector>]'); return 1 }
+    const r = await d.connect({ timeoutMs: 180000 }).requestAllow(proposal.domain, proposal.loginUrl, proposal.item, undefined, proposal.options)
+    if (r.ok) {
+      d.out(r.message)
+      if (!proposal.options.success) d.out('No success condition supplied. Login may return authentication_unconfirmed; independently verify the signed-in page.')
+    } else d.err(r.message)
+    return r.ok ? 0 : 1
+  }
+  if (cmd === 'setup') {
+    const args = argv.slice(1), seen = new Set<string>()
+    let valid = true
+    for (let i = 0; i < args.length; i++) {
+      const flag = args[i]
+      if (seen.has(flag) || !['--client', '--apply', '--replace-existing', '--start-browser', '--json'].includes(flag)) { valid = false; break }
+      seen.add(flag)
+      if (flag === '--client' && args[++i] !== 'codex') { valid = false; break }
+    }
+    if (!valid || (seen.has('--replace-existing') && !seen.has('--apply'))) {
+      d.err('usage: u-chan setup [--client codex] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
+    }
+    const options = { apply: seen.has('--apply'), replaceExisting: seen.has('--replace-existing'), startBrowser: seen.has('--start-browser') }
+    const endpoint = loadConfig(d.env, d.platform).cdpEndpoint
+    const r = d.setup ? await d.setup(options) : await runSetup(options, {
+      platform: d.platform, endpoint, elevated: isElevated, doctor,
+      configure: opts => configureCodex({ ...opts, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
+      startBrowser: () => new Promise(resolve => {
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('../scripts/start-chrome.ps1', import.meta.url)), '-Background'],
+          { timeout: 5000, windowsHide: true, env: d.env, maxBuffer: 65536 }, async err => {
+            if (err) { resolve(false); return }
+            for (let i = 0; i < 5; i++) {
+              if (await chromeState(endpoint, 1000) === 'pass') { resolve(true); return }
+              await new Promise(done => setTimeout(done, 300))
+            }
+            resolve(false)
+          })
+      }),
+    })
+    if (seen.has('--json')) d.out(JSON.stringify(r))
+    else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : [])].join('\n'))
+    return setupExitCode(r)
+  }
   if (cmd === 'doctor' && (arg === undefined || arg === '--json') && rest.length === 0) {
     const r = await doctor()
     if (arg === '--json') d.out(JSON.stringify(r))
@@ -182,7 +235,10 @@ const isEntry = (() => {
 })()
 
 if (isEntry) {
+  let clientVersion = 'unknown'
+  try { clientVersion = safeVersion(JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version) ?? 'unknown' } catch {}
   const code = await main(process.argv.slice(2), {
+    clientVersion,
     connect: (opts) => new IpcClient(defaultEndpoint(process.env, process.platform), opts),
     env: process.env,
     platform: process.platform,

@@ -1,8 +1,8 @@
-# U-Chan Secrets V3
+# U-Chan Secrets V4
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated user Chrome profile.
 
-V3 adds diagnostics, temporary approvals, explicit login outcomes, and a native management window. The source version is `3.0.3`; merging this repository does not publish an npm package or update an installed service.
+V4 adds guided Windows/Codex setup, installed-version and browser-target checks, clearer native status, and CLI proposals for scoped login approval. The source target is `4.0.0`; this development branch is not a published or installed V4 release. Protocol and protected-state schema remain version 3.
 
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
 
@@ -17,6 +17,33 @@ The tightened V3.0.3 [Windows closeout](docs/superpowers/research/2026-10-29-v3-
 - **Preserve state:** privileged migration backup, schema/downgrade guards, and state-preserving reinstall replace manual editing of protected files.
 
 Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
+
+## What V4 adds
+
+Use a normal, non-administrator terminal after installing the matching trusted service:
+
+```powershell
+u-chan setup --json
+u-chan setup --client codex --apply
+u-chan setup --client codex --apply --replace-existing --start-browser
+```
+
+The first command only inspects. `--apply` adds missing Codex MCP registrations through the official Codex CLI. `--replace-existing` also permits replacement of recognized simple registrations. Existing configuration is backed up under the Codex configuration directory's `#0 backup` before mutation. Compatible enabled registrations retain custom environment, working directory, tool filters, timeouts, and other settings. Incompatible custom registrations, conflicting target overrides, disabled entries, and HTTP transports require manual configuration and remain untouched. Partial failures retain completed changes and the backup; setup never restores an obsolete whole configuration over concurrent edits.
+
+`--start-browser` explicitly starts the dedicated Chrome profile in the background when its endpoint is unhealthy. No startup task is added. Setup refuses elevated execution and known service/desktop browser-target mismatches. It never installs the privileged service or changes UAC. Run `u-chan install` separately from a trusted administrator terminal.
+
+Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequired`. `process_configured` means matching process arguments were observed; it does not verify active AI-session ownership. Unobservable sharing remains `unobserved`. Restart the AI session after registration changes. Exit codes: 1 means attention required, 2 means configured with restart required, and 0 means configured without a known restart requirement. A locked vault remains a valid installed state.
+
+Automatic registration supports Codex on Windows only. Configure other clients manually using their documented MCP commands. macOS runtime remains unverified. `doctor` compares the actual CLI and installed service versions, both browser targets, and Windows UAC policy; missing metadata remains unknown. `manage` shows the installed service version and browser status.
+
+Propose a site grant with an explicit success condition:
+
+```sh
+u-chan allow example.com --login-url https://example.com/login --item "Example account" --once --success-url https://example.com/dashboard
+u-chan allow example.com --login-url https://example.com/login --item "Example account" --minutes 30 --success-selector "button[data-action='sign-out']"
+```
+
+The service still requires protected approval. The CLI defaults to one login attempt; timed approvals accept 1–1440 whole minutes, and `--permanent` requests permanent future logins. URL and selector success conditions are mutually exclusive. Without one, login may return `authentication_unconfirmed`; independently verify the signed-in page. Grant expiry does not log out an already transferred browser session.
 
 ## Architecture
 
@@ -51,7 +78,7 @@ Install from a trusted shell before granting an AI unrestricted user-account acc
 
 ## Build and install from source
 
-Use the checkout for the V3 source version. Unversioned npm installation can select a different published version; the package metadata in this repository is not proof of npm publication.
+Use a reviewed checkout for the desired source version. Unversioned npm installation can select a different published version; the package metadata in this repository is not proof of npm publication.
 
 ```sh
 git clone https://github.com/anchuwithdeadline/u-chan-secrets.git
@@ -131,6 +158,8 @@ The table uses the globally installed `u-chan` spelling; from source use `node d
 | Command | Purpose |
 |---|---|
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
+| `setup [--client codex] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex/browser setup |
+| `allow <domain> --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
 | `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
 | `unlock` | Request the protected master-password prompt |
 | `lock` | Forget the service's vault session and request vault lock |

@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { importTimeoutMs, main } from '../src/cli.js'
 import { MAX_FRAME } from '../src/ipc/protocol.js'
-import type { ControlApi, ToolResult } from '../src/core/types.js'
+import type { ToolResult } from '../src/core/types.js'
 
 const fakeClient = (ok = true) => ({
+  manage: vi.fn(async () => ({ ok, message: 'closed' })),
+  diagnose: vi.fn(async () => ({ ok, message: '{}' })),
+  capabilities: vi.fn(async () => ({ ok, message: '{}' })),
+  requestAllow: vi.fn(async () => ({ ok, message: 'approved' })),
   unlock: vi.fn(async () => ({ ok, message: ok ? 'unlocked' : 'wrong password' })),
   lock: vi.fn(async () => ({ ok, message: 'locked' })),
   setMode: vi.fn(async (m: string) => ({ ok, message: m })),
@@ -28,7 +32,7 @@ const run = async (argv: string[], opts: RunOptions | ReturnType<typeof fakeClie
   const files = options.files ?? {}
   const out: string[] = []
   const err: string[] = []
-  const connect = vi.fn((_o: { timeoutMs?: number }) => client as unknown as ControlApi)
+  const connect = vi.fn((_o: { timeoutMs?: number }) => client)
   const code = await main(argv, {
     connect,
     env: { APPDATA: 'C:\\Users\\me\\AppData\\Roaming' },

@@ -68,6 +68,9 @@ describe('e2e-core: MCP → IPC → service', () => {
     const core = new CoreService({ vault, allowlist, approver, audit, login: runner, mode: () => approver.effectiveMode() })
     const control = new ControlService({ vault, approver, limiter, settings, allowlist, audit, platform: 'win32' })
     const api: CoreApi & ControlApi = {
+      manage: () => control.manage(),
+      diagnose: () => control.diagnose(),
+      capabilities: () => control.capabilities(),
       login: (d) => core.login(d),
       requestAllow: (d, u, i, s) => core.requestAllow(d, u, i, s),
       revoke: (d) => core.revoke(d),

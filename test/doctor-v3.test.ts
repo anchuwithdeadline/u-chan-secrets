@@ -38,7 +38,7 @@ it('doctor --json prints a versioned report with the diagnostic exit code', asyn
   const code = await main(['doctor', '--json'], {
     connect: () => { throw new Error('not called') }, env: {}, platform: 'win32', readFile: async () => '',
     out: s => out.push(s), err: s => out.push(s), doctor: async () => report,
-  } as any)
+  })
   expect(code).toBe(2)
   expect(JSON.parse(out[0])).toEqual(report)
 })

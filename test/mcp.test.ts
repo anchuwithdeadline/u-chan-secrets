@@ -102,15 +102,15 @@ describe('withPlaywrightStatus', () => {
     listAllowed: async () => ({ ok: true, message: 'x' }),
     status: async () => ({ ok, message }),
   })
-  it('appends the Playwright MCP state exactly as V1 did', async () => {
+  it('reports process configuration without claiming active AI-session ownership', async () => {
     let pw: PlaywrightCheck = 'missing'
     const core = withPlaywrightStatus(base(true, 'vault: unlocked; mode: easy'), async () => pw)
     expect(await core.status()).toEqual({
       ok: false,
-      message: 'vault: unlocked; mode: easy; playwright: missing --cdp-endpoint (using its own Chrome; restart the AI session)',
+      message: 'vault: unlocked; mode: easy; playwright: missing or mismatched --cdp-endpoint (restart the AI session)',
     })
     pw = 'ok'
-    expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: shared chrome' })
+    expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: shared chrome process configuration observed; active AI session ownership unverified' })
     pw = 'not_found'
     expect(await core.status()).toEqual({ ok: true, message: 'vault: unlocked; mode: easy; playwright: not found' })
     pw = 'unknown'
@@ -118,7 +118,7 @@ describe('withPlaywrightStatus', () => {
   })
   it('keeps a failing service status failing', async () => {
     const core = withPlaywrightStatus(base(false, 'vault: locked; mode: easy'), async () => 'ok')
-    expect(await core.status()).toEqual({ ok: false, message: 'vault: locked; mode: easy; playwright: shared chrome' })
+    expect(await core.status()).toEqual({ ok: false, message: 'vault: locked; mode: easy; playwright: shared chrome process configuration observed; active AI session ownership unverified' })
   })
   it('exposes only the CoreApi methods', () => {
     const core = withPlaywrightStatus({ ...base(true, ''), unlock: async () => ({ ok: true, message: '' }) } as never, async () => 'ok')

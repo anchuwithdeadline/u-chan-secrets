@@ -16,3 +16,14 @@ it('retains a successful native permission result after a six-second protected-t
     expect(await pending).toEqual({ assets: 'pass', permissions: 'pass', vault: 'locked' })
   } finally { vi.useRealTimers() }
 })
+it('probes the service browser concurrently instead of extending the native diagnostic deadline', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', () => new Promise(resolve => setTimeout(() => resolve({ ok: true, json: async () => ({ webSocketDebuggerUrl: 'ws://127.0.0.1:9222/devtools/browser/fixture' }) }), 4000)))
+  try {
+    let settled = false
+    const pending = diagnoseService('private-home', { status: async () => 'locked' } as any, 'win32', 'http://127.0.0.1:9222').then(r => { settled = true; return r })
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(settled).toBe(true)
+    expect(await pending).toMatchObject({ permissions: 'pass', browser: 'pass', browserEndpoint: 'http://127.0.0.1:9222' })
+  } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+})
