@@ -14,7 +14,7 @@ A disposable SYSTEM task ran the exact installed permission function twice. Its 
 
 Version 4.0.1 allows 60 seconds for the native scan, 65 seconds for the service wrapper, and 70 seconds for the outer diagnostic/IPC deadline. It does not skip backups or change ACL acceptance rules. Unsafe owners, unexpected allow rules, reparse points, execution errors, and deadline expiry retain their fail/unknown behavior.
 
-Regression checks exercise a successful 45-second native command and both enclosing diagnostic layers. Windows/macOS CI, CodeQL, build, and whole-project TypeScript checks passed before merge.
+Regression checks simulate a successful 45-second native command and exercise both enclosing diagnostic layers. Windows/macOS CI, CodeQL, build, and whole-project TypeScript checks passed before merge.
 
 ## Publication and installed verification
 
