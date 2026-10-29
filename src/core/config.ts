@@ -1,8 +1,12 @@
 import { join, posix, win32 } from 'node:path'
 import { homedir } from 'node:os'
 import { defaultEndpoint } from '../ipc/endpoint.js'
+import { browserKind, readBrowserChoice, type BrowserKind } from '../client/browser-choice.js'
 
 export interface AppConfig {
+  browser: BrowserKind
+  browserProfile: string
+  browserChoicePath: string
   chromeProfile: string
   cdpEndpoint: string
 }
@@ -38,7 +42,12 @@ export function loadConfig(
       ? join(homedir(), 'Library', 'Application Support')
       : join(homedir(), 'AppData', 'Roaming'))
   const home = env.U_CHAN_HOME ?? join(base, 'u-chan-secrets')
+  const browserChoicePath = join(home, 'browser.json')
+  const browser = env.U_CHAN_BROWSER === undefined ? readBrowserChoice(browserChoicePath) ?? 'chrome' : browserKind(env.U_CHAN_BROWSER)
   return {
+    browser,
+    browserProfile: join(home, `${browser}-profile`),
+    browserChoicePath,
     chromeProfile: join(home, 'chrome-profile'),
     cdpEndpoint: env.U_CHAN_CDP ?? 'http://127.0.0.1:9222',
   }

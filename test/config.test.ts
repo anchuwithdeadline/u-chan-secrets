@@ -31,6 +31,6 @@ describe('serviceConfig', () => {
 
 describe('loadConfig', () => {
   it('keeps only the user-side values', () => {
-    expect(Object.keys(loadConfig({ APPDATA: 'C:\\A' })).sort()).toEqual(['cdpEndpoint', 'chromeProfile'])
+    expect(Object.keys(loadConfig({ APPDATA: 'C:\\A' })).sort()).toEqual(['browser', 'browserChoicePath', 'browserProfile', 'cdpEndpoint', 'chromeProfile'])
   })
 })
