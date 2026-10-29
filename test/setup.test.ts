@@ -62,3 +62,27 @@ it('forwards valid setup options and prints a machine-readable report with its e
   expect(setup).toHaveBeenCalledWith({ apply: true, replaceExisting: true, startBrowser: true })
   expect(JSON.parse(out.mock.calls[0][0])).toEqual(r)
 })
+it('forwards an explicit Edge choice and refuses malformed browser flags without side effects', async () => {
+  const setup = vi.fn(async () => ({ ...(await runSetup(options, fixture())) })), out = vi.fn()
+  await main(['setup','--browser','edge','--apply','--json'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })
+  expect(setup).toHaveBeenCalledWith({ ...options, apply: true, browser: 'edge' })
+  for (const flags of [['--browser'],['--browser','firefox'],['--browser','edge','--browser','chrome']]) {
+    setup.mockClear()
+    expect(await main(['setup',...flags], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })).toBe(1)
+    expect(setup).not.toHaveBeenCalled()
+  }
+})
+it('saves browser choice only after explicit apply and ready client inspection', async () => {
+  const d = { ...fixture(), selectBrowser: vi.fn(async () => ({ changed: true, backupPath: 'browser-backup' })) }
+  await runSetup({ ...options, browser: 'edge' }, d)
+  expect(d.selectBrowser).not.toHaveBeenCalled()
+  expect(d.configure).toHaveBeenCalledWith({ apply: false, replaceExisting: false, browser: 'edge' })
+  const r = await runSetup({ ...options, browser: 'edge', apply: true }, d)
+  expect(d.selectBrowser).toHaveBeenCalledWith('edge')
+  expect(r).toMatchObject({ changed: true, browserChanged: true, browserBackupPath: 'browser-backup', restartRequired: true })
+  const notReady = { ...fixture(), selectBrowser: d.selectBrowser }
+  notReady.configure.mockResolvedValue({ state: 'manual', changed: false, message: 'Preserved.' } as any)
+  d.selectBrowser.mockClear()
+  await runSetup({ ...options, browser: 'edge', apply: true }, notReady)
+  expect(d.selectBrowser).not.toHaveBeenCalled()
+})

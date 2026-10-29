@@ -17,13 +17,13 @@ const INSTRUCTIONS = [
   'U-Chan Secrets logs into websites for you without exposing passwords.',
   'Use it whenever a site needs sign-in (admin pages, dashboards, a Playwright page showing a login form).',
   'Never ask the user for a password, and never type one into a form yourself.',
-  'Flow: list_allowed -> login(domain) -> continue with the Playwright MCP tools in the same Chrome.',
+  'Flow: list_allowed -> login(domain) -> continue with the Playwright MCP tools in the same selected dedicated Chrome or Edge browser.',
   'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a U-Chan window.',
   'If login fails, call status: a locked vault means the user must run u-chan unlock themselves. If login says "needs you", ask the user to sign in by hand.',
 ].join('\n')
 
 const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
-  ok: 'shared chrome process configuration observed; active AI session ownership unverified',
+  ok: 'shared browser process configuration observed; active AI session ownership unverified',
   missing: 'missing or mismatched --cdp-endpoint (restart the AI session)',
   not_found: 'not found',
   unknown: 'unknown',
@@ -67,7 +67,7 @@ export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
     {
       description:
         'Use this whenever a website needs sign-in: an admin page, a dashboard, or a Playwright page that shows a login form. ' +
-        'Signs into an allowlisted domain with Bitwarden credentials inside the U-Chan service and hands only the session to the shared Chrome; the credentials are never revealed. ' +
+        'Signs into an allowlisted domain with Bitwarden credentials inside the U-Chan service and hands only the session to the selected dedicated browser; the credentials are never revealed. ' +
         'After the result is ok, continue browsing with the Playwright MCP tools in the same browser.',
       inputSchema: { domain: z.string() },
     },
@@ -101,7 +101,7 @@ export function createMcpServer(core: CoreApi, version = '0.1.0'): McpServer {
 
   server.registerTool(
     'status',
-    { description: 'Report Bitwarden vault lock state, approval mode and whether Playwright MCP shares the Chrome. Call it first when login fails.' },
+    { description: 'Report Bitwarden vault lock state, approval mode and whether Playwright MCP shares the selected browser. Call it first when login fails.' },
     () => run(() => core.status()),
   )
 

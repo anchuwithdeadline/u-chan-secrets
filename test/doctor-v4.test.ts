@@ -15,6 +15,12 @@ it('checks the actual installed version and both browser targets', async () => {
   const mismatch = await runDoctor({ ...deps, service: async () => ({ ...(await deps.service()), serviceVersion: '3.0.3' }) })
   expect(mismatch.checks.find(c => c.id === 'version')?.state).toBe('fail')
 })
+it('reports the selected Edge separately and fails an observed Chrome mismatch', async () => {
+  const report = await runDoctor({ ...deps, browser: 'edge', browserIdentity: async () => 'pass', service: async () => ({ ...(await deps.service()), browserKind: 'chrome' }) })
+  expect(report).toMatchObject({ browser: 'edge', observedBrowser: 'chrome' })
+  expect(report.checks.find(c => c.id === 'browser_identity')?.state).toBe('fail')
+  expect(doctorExitCode(report)).toBe(1)
+})
 it('does not echo invalid version metadata or guess an old service version', async () => {
   const report = await runDoctor({ ...deps, service: async () => ({ ...(await deps.service()), serviceVersion: 'SECRET\npretend-version' }) })
   expect(report.checks.find(c => c.id === 'version')?.state).toBe('unknown')
