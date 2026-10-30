@@ -94,6 +94,12 @@ describe('Windows Service Installer', () => {
     expect(binExists).toBe(true)
     expect(dataExists).toBe(true)
 
+    // The privileged Edge identity check loads these scripts relative to the installed program.
+    for (const file of ['start-browser.ps1', 'desktop-browser.ps1']) {
+      expect(await fs.readFile(path.join(programDataDir, 'program', 'scripts', file), 'utf8'))
+        .toBe(await fs.readFile(path.join('scripts', file), 'utf8'))
+    }
+
     // Settings written
     const settingsRaw = await fs.readFile(path.join(programDataDir, 'settings.json'), 'utf8')
     const settings = JSON.parse(settingsRaw)

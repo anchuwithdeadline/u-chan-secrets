@@ -72,9 +72,16 @@ function Get-UChanOwnerBrowserConfiguration([string]$OwnerSid, [string]$Browser)
     $profile = [Environment]::ExpandEnvironmentVariables($profile)
     $roaming = Join-Path $profile 'AppData\Roaming'
     $local = Join-Path $profile 'AppData\Local'
-    $shell = Get-ItemProperty -LiteralPath ('Registry::HKEY_USERS\'+$OwnerSid+'\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders') -ErrorAction SilentlyContinue
-    if ($shell.AppData) { $roaming = [Environment]::ExpandEnvironmentVariables(($shell.AppData -ireplace '%USERPROFILE%', $profile)) }
-    if ($shell.'Local AppData') { $local = [Environment]::ExpandEnvironmentVariables(($shell.'Local AppData' -ireplace '%USERPROFILE%', $profile)) }
+    $shell = Get-Item -LiteralPath ('Registry::HKEY_USERS\'+$OwnerSid+'\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders') -ErrorAction SilentlyContinue
+    if ($shell) {
+        # Read REG_EXPAND_SZ literally; Registry providers otherwise expand USERPROFILE as SYSTEM before substitution.
+        try {
+            $rawRoaming = $shell.GetValue('AppData', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $rawLocal = $shell.GetValue('Local AppData', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        } finally { $shell.Close() }
+        if ($rawRoaming) { $roaming = [Environment]::ExpandEnvironmentVariables(($rawRoaming -ireplace '%USERPROFILE%', $profile)) }
+        if ($rawLocal) { $local = [Environment]::ExpandEnvironmentVariables(($rawLocal -ireplace '%USERPROFILE%', $profile)) }
+    }
     $desktopHome = if ($env:U_CHAN_DESKTOP_HOME) { $env:U_CHAN_DESKTOP_HOME } else { Join-Path $roaming 'u-chan-secrets' }
     return Get-UChanBrowserConfiguration $Browser $desktopHome $OwnerSid $local
 }

@@ -8,6 +8,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectServiceDesktopBrowser } from '../../src/platform/windows/desktop-browser.js'
 const exec = promisify(execFile)
+it('keeps installed-owner browser paths independent of the service USERPROFILE', async () => {
+  if (process.platform !== 'win32') return
+  const scriptPath = fileURLToPath(new URL('../../scripts/desktop-browser.ps1', import.meta.url)).replaceAll("'", "''")
+  const script = `$ErrorActionPreference='Stop';. '${scriptPath}';$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$before=Get-UChanOwnerBrowserConfiguration $sid 'edge';$env:USERPROFILE=Join-Path $env:TEMP 'u-chan-simulated-service-profile';$after=Get-UChanOwnerBrowserConfiguration $sid 'edge';[pscustomobject]@{sameProfile=($before.Profile -eq $after.Profile);sameExecutables=([string]::Join(';',$before.Executables) -eq [string]::Join(';',$after.Executables))}|ConvertTo-Json -Compress`
+  const result = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 15000, windowsHide: true })
+  expect(JSON.parse(result.stdout)).toEqual({ sameProfile: true, sameExecutables: true })
+}, 20000)
 it('fails closed for unavailable installed-owner metadata without launching a browser', async () => {
   expect(await inspectServiceDesktopBrowser('http://127.0.0.1:9222', 'not-a-sid')).toBe('unknown')
   if (process.platform === 'win32') expect(await inspectServiceDesktopBrowser('http://127.0.0.1:9222', 'S-1-5-21-0-0-0-0')).toBe('unknown')

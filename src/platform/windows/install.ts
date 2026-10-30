@@ -108,6 +108,10 @@ export async function installWindowsService(opts: WindowsInstallOptions = {}): P
     const pkgRoot = opts.packageRoot ?? fileURLToPath(new URL('../../../', import.meta.url))
     await fs.cp( path.join(pkgRoot, 'dist'), path.join(stagedProgram, 'dist'), { recursive: true })
     await fs.cp( path.join(pkgRoot, 'package.json'), path.join(stagedProgram, 'package.json'))
+    await fs.mkdir(path.join(stagedProgram, 'scripts'))
+    for (const file of ['start-browser.ps1', 'desktop-browser.ps1']) {
+      await fs.copyFile(path.join(pkgRoot, 'scripts', file), path.join(stagedProgram, 'scripts', file))
+    }
     const srcNm = path.join(pkgRoot, 'node_modules')
     const destNm = path.join(stagedProgram, 'node_modules')
     {

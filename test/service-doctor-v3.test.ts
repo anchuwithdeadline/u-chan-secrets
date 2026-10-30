@@ -1,12 +1,26 @@
 import { expect, it, vi } from 'vitest'
 
-vi.mock('node:fs/promises', () => ({ lstat: async () => ({ isSymbolicLink: () => false }) }))
+const files = vi.hoisted(() => ({ missing: '' }))
+vi.mock('node:fs/promises', () => ({ lstat: async (file: string) => {
+  if (files.missing && file.endsWith(files.missing)) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+  return { isSymbolicLink: () => false }
+} }))
 vi.mock('../src/platform/runtime-assets.js', () => ({ privateBrowserPath: async () => 'private-browser' }))
 vi.mock('../src/platform/windows/doctor.js', () => ({
   checkWindowsPermissions: () => new Promise(resolve => setTimeout(() => resolve('pass'), 45000)),
 }))
 
 import { diagnoseService } from '../src/service/doctor.js'
+
+it.each(['start-browser.ps1', 'desktop-browser.ps1'])('does not report healthy service assets when %s is missing', async file => {
+  vi.useFakeTimers()
+  files.missing = file
+  try {
+    const pending = diagnoseService('private-home', { status: async () => 'locked' } as any, 'win32')
+    await vi.advanceTimersByTimeAsync(45000)
+    expect((await pending).assets).toBe('unknown')
+  } finally { files.missing = ''; vi.useRealTimers() }
+})
 
 it('retains a successful native permission result after a scan exceeds the old deadlines', async () => {
   vi.useFakeTimers()
