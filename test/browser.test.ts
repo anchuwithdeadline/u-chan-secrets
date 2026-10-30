@@ -1,5 +1,5 @@
 import { createServer } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser } from 'playwright'
 import { CdpBrowserProvider, CdpSessionTarget } from '../src/core/browser.js'
 import { IsolatedLogin } from '../src/service/isolated-login.js'
@@ -42,6 +42,37 @@ describe('CdpBrowserProvider', () => {
     expect(chrome.isConnected()).toBe(true)
     const context = await chrome.newContext()
     await context.close()
+  })
+  it('closes owned tabs on cancellation before dropping CDP while preserving original tabs', async () => {
+    const connection = await chromium.connectOverCDP(`http://127.0.0.1:${port}`), context = connection.contexts()[0]
+    const existing = await context.newPage(), before = new Set(context.pages()), provider = new CdpBrowserProvider(`http://127.0.0.1:${port}`)
+    try {
+      const controller = new AbortController()
+      await expect(provider.withPage(async () => { setTimeout(() => controller.abort(), 50); return new Promise(() => {}) }, controller.signal)).rejects.toThrow()
+      expect(new Set(context.pages())).toEqual(before)
+      expect(existing.isClosed()).toBe(false)
+    } finally { await existing.close(); await provider.disconnect(); await connection.close() }
+  })
+  it('closes a page whose creation finishes after cancellation', async () => {
+    const endpoint=`http://127.0.0.1:${port}`, connection=await chromium.connectOverCDP(endpoint), observer=await chromium.connectOverCDP(endpoint)
+    const context=connection.contexts()[0], before=observer.contexts()[0].pages().length, controller=new AbortController(), original=context.newPage.bind(context)
+    const connectSpy=vi.spyOn(chromium,'connectOverCDP').mockResolvedValue(connection)
+    const pageSpy=vi.spyOn(context,'newPage').mockImplementation(async()=>{const page=await original();controller.abort();await new Promise(resolve=>setTimeout(resolve,50));return page})
+    const provider=new CdpBrowserProvider(endpoint)
+    try {
+      await expect(provider.withPage(async()=> 'must not run',controller.signal)).rejects.toThrow()
+      expect(observer.contexts()[0].pages()).toHaveLength(before)
+    } finally {pageSpy.mockRestore();connectSpy.mockRestore();await provider.disconnect();await connection.close();await observer.close()}
+  })
+  it('blocks all approved-to-approved-to-off-host redirect chains during destination verification', async () => {
+    const provider = new CdpBrowserProvider(`http://127.0.0.1:${port}`), target = new CdpSessionTarget(provider, { hostCheck: (_e,url) => new URL(url).hostname === '127.0.0.1', verifyTimeoutMs: 100 })
+    try {
+      for (const code of [302,303,307,308]) {
+        const url=`http://127.0.0.1:${fx.port}/chain-start/${code}`, before=fx.canaryHits
+        expect(await target.verify({domain:'127.0.0.1',hosts:['127.0.0.1'],loginUrl:url,item:'dummy',success:{url}},url)).toBe(false)
+        expect(fx.canaryHits).toBe(before)
+      }
+    } finally { await provider.disconnect() }
   })
   it('shares cookies with an independent CDP connection', async () => {
     const endpoint = `http://127.0.0.1:${port}`

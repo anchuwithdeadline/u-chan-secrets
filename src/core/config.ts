@@ -52,3 +52,10 @@ export function loadConfig(
     cdpEndpoint: env.U_CHAN_CDP ?? 'http://127.0.0.1:9222',
   }
 }
+
+/** An already-running MCP process must not silently use a selection replaced by later setup. */
+export function resolveLoginBrowser(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): BrowserKind {
+  const config = loadConfig(env, platform), saved = readBrowserChoice(config.browserChoicePath)
+  if (env.U_CHAN_BROWSER !== undefined && saved !== undefined && config.browser !== saved) throw new Error('Browser selection changed; restart the AI session before login.')
+  return config.browser
+}

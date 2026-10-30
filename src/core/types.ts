@@ -1,5 +1,6 @@
 import type { FillOutcome } from './login-filler.js'
 import type { SessionState } from '../service/session-transfer.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 
 export interface AllowEntry {
   grantId?: string
@@ -47,7 +48,7 @@ export class UserFacingError extends Error {
   constructor(message: string, public readonly code?: ResultCode) { super(message) }
 }
 export interface CoreApi {
-  login(domain: string): Promise<ToolResult>
+  login(domain: string, browser?: BrowserKind): Promise<ToolResult>
   requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult>
   revoke(domain: string): Promise<ToolResult>
   listAllowed(): Promise<ToolResult>
@@ -77,6 +78,7 @@ export interface ProtectedPrompt {
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
 export interface SessionTarget {
+  bindBrowser?(browser: BrowserKind, signal?: AbortSignal): Promise<boolean>
   userAgent(signal?: AbortSignal): Promise<string>
   inject(state: SessionState, signal?: AbortSignal): Promise<void>
   verify?(entry: AllowEntry, finalUrl: string, signal?: AbortSignal): Promise<boolean>
@@ -84,8 +86,8 @@ export interface SessionTarget {
 }
 export interface LoginRunner {
   cancel?(): Promise<void>
-  preflight?(signal?: AbortSignal): Promise<void>
-  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> }): Promise<FillOutcome>
+  preflight?(signal?: AbortSignal, browser?: BrowserKind): Promise<void>
+  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void>; browser?: BrowserKind }): Promise<FillOutcome>
 }
 
 export interface RegistryDist {

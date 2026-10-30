@@ -20,12 +20,14 @@ it('validates real launcher process policy without accepting occupied ports as b
     { ...good, CommandLine: good.CommandLine.replace('edge-profile', 'Default') }, { ...good, CommandLine: null },
     { ...good, CommandLine: good.CommandLine + ` --user-data-dir="${profile}"` }, { ...good, Addresses: ['0.0.0.0'] },
     { ...good, Addresses: ['::'] }, { ...good, Addresses: ['::1'] }, { ...good, OwnerSid: null },
-    { ...good, CommandLine: good.CommandLine.replace('=9222', '=9333') }, { ...good, CommandLine: good.CommandLine + ' --remote-debugging-port=9333' }]
+    { ...good, CommandLine: good.CommandLine.replace('=9222', '=9333') }, { ...good, CommandLine: good.CommandLine + ' --remote-debugging-port=9333' },
+    { ...good, CommandLine: `"${executable}" --some-option="ignored --user-data-dir=${profile} " --remote-debugging-port=9222` },
+    { ...good, CommandLine: `"${executable}" --user-data-dir "${profile}" --remote-debugging-port=9222` }]
   const scriptPath = fileURLToPath(new URL('../../scripts/desktop-browser.ps1', import.meta.url)).replaceAll("'", "''")
   const payload = Buffer.from(JSON.stringify(cases)).toString('base64')
   const script = `$ErrorActionPreference='Stop';. '${scriptPath}';$cases=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))|ConvertFrom-Json;$results=@(foreach($case in $cases){Test-UChanBrowserProcess $case '${executable}' '${profile}' '${owner}' 9222});ConvertTo-Json -Compress -InputObject $results`
   const result = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 10000, windowsHide: true }).catch(error => { throw new Error(String(error.stderr)) })
-  expect(JSON.parse(result.stdout)).toEqual(['pass', 'fail', 'fail', 'fail', 'unknown', 'fail', 'fail', 'fail', 'pass', 'unknown', 'fail', 'fail'])
+  expect(JSON.parse(result.stdout)).toEqual(['pass', 'fail', 'fail', 'fail', 'unknown', 'fail', 'fail', 'fail', 'pass', 'unknown', 'fail', 'fail', 'fail', 'fail'])
 }, 15000)
 
 it('refuses a real unrelated listener without creating a profile or launching another browser', async () => {

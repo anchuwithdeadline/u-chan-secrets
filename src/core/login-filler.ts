@@ -70,6 +70,7 @@ export async function fillLogin(
   const afterWaitHost = badHost()
   if (afterWaitHost) return afterWaitHost
   if (await needsHuman()) return failed(NEEDS_YOU, 'needs_human')
+  if (!hasUser && !hasPass && await otpBox.isVisible()) return failed(NEEDS_YOU, 'needs_human')
   if (!hasUser && !hasPass) return { status: 'already_logged_in' }
   if (!hasUser) return failed('username field not found')
 
@@ -158,6 +159,7 @@ export async function fillLogin(
     await page.waitForLoadState('domcontentloaded', { timeout: Math.min(timeout, 3000) }).catch(() => {})
     if ((fail = badHost())) return fail
     if (await otpBox.isVisible()) return failed('2FA code rejected (wrong TOTP in Bitwarden?)', 'needs_human')
+    if (await needsHuman()) return failed(NEEDS_YOU, 'needs_human')
   }
   return { status: 'logged_in' }
 }

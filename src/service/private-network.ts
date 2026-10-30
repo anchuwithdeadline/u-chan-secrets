@@ -1,26 +1,54 @@
-import type { BrowserContext } from 'playwright'
+import { createServer, request as httpRequest, type OutgoingHttpHeaders } from 'node:http'
+import { connect, type Socket } from 'node:net'
 
-/** The private browser must not send credential-bearing traffic outside the approved hosts. */
-export async function restrictPrivateNetwork(context: BrowserContext, hostCheck: (url: string) => boolean, signal: AbortSignal): Promise<() => boolean> {
-  let blocked = false
-  const allowed = (url: string) => { try { return !signal.aborted && hostCheck(url) } catch { return false } }
-  await context.route('**/*', async route => {
-    if (!allowed(route.request().url())) { blocked = true; await route.abort().catch(() => {}); return }
-    try {
-      // Fetch no redirects: fulfilling a 3xx lets the browser create a new intercepted request.
-      const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 10000 })
-      const location = response.headers().location
-      if (location && response.status() >= 300 && response.status() < 400 && !allowed(new URL(location, route.request().url()).href)) {
-        blocked = true; await route.abort().catch(() => {}); return
-      }
-      if (signal.aborted) { await route.abort().catch(() => {}); return }
-      await route.fulfill({ response })
-    } catch { await route.abort().catch(() => {}) }
+/** Per-context HTTP/CONNECT proxy: every redirect and child target must obtain a separately checked destination. */
+export async function createPrivateNetwork(hostCheck: (url: string) => boolean, signal: AbortSignal) {
+  let blocked = false, closing: Promise<void> | undefined
+  const sockets = new Set<Socket>()
+  const allowed = (url: URL) => {
+    try { return !signal.aborted && !url.username && !url.password && hostCheck(url.href) } catch { return false }
+  }
+  const track = (socket: Socket) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); socket.on('error', () => {}); socket.setTimeout(60000, () => socket.destroy()) }
+  const server = createServer((incoming, response) => {
+    let url: URL
+    try { url = new URL(incoming.url ?? '') } catch { blocked = true; response.writeHead(403); response.end(); return }
+    if (url.protocol !== 'http:' || !allowed(url)) { blocked = true; response.writeHead(403); response.end(); return }
+    const headers: OutgoingHttpHeaders = { ...incoming.headers, host: url.host }
+    delete headers['proxy-authorization']; delete headers['proxy-connection']
+    const outgoing = httpRequest(url, { method: incoming.method, headers, agent: false }, upstream => {
+      response.writeHead(upstream.statusCode ?? 502, upstream.headers)
+      upstream.pipe(response)
+    })
+    outgoing.on('socket', track)
+    outgoing.on('error', () => { if (!response.headersSent) response.writeHead(502); response.end() })
+    incoming.on('error', () => outgoing.destroy())
+    incoming.pipe(outgoing) // No redirect following or credential buffering in the proxy.
   })
-  await context.routeWebSocket('**/*', socket => {
-    const url = socket.url().replace(/^wss:/, 'https:').replace(/^ws:/, 'http:')
-    if (allowed(url)) socket.connectToServer()
-    else { blocked = true; void socket.close({ code: 1008, reason: 'Unapproved host' }).catch(() => {}) }
+  server.on('connection', socket => { track(socket); if (sockets.size > 128) socket.destroy() })
+  server.on('clientError', (_error, socket) => socket.destroy())
+  server.on('upgrade', (_request, socket) => { blocked = true; socket.destroy() }) // Production permits WSS via checked CONNECT only.
+  server.on('connect', (incoming, connection, head) => {
+    const client = connection as Socket
+    let url: URL
+    try { url = new URL('https://' + incoming.url) } catch { blocked = true; client.destroy(); return }
+    if (url.pathname !== '/' || url.search || url.hash || !allowed(url)) { blocked = true; client.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return }
+    const upstream = connect({ host: url.hostname.replace(/^\[|\]$/g, ''), port: Number(url.port || 443) })
+    track(upstream)
+    upstream.once('connect', () => {
+      if (signal.aborted || client.destroyed) { upstream.destroy(); return }
+      client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      if (head.length) upstream.write(head)
+      upstream.pipe(client); client.pipe(upstream)
+    })
+    upstream.once('error', () => client.destroy())
+    client.once('close', () => upstream.destroy())
   })
-  return () => blocked
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() }) })
+  const close = () => closing ??= new Promise<void>(resolve => { signal.removeEventListener('abort', abort); for (const socket of sockets) socket.destroy(); server.close(() => resolve()) })
+  const abort = () => { void close() }
+  signal.addEventListener('abort', abort, { once: true })
+  if (signal.aborted) await close()
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Private network unavailable')
+  return { proxy: { server: `http://127.0.0.1:${address.port}`, bypass: '<-loopback>' }, wasBlocked: () => blocked, close }
 }

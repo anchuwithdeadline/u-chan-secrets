@@ -53,7 +53,7 @@ describe('ipc', () => {
     expect(await c.importV1(entries)).toEqual({ ok: true, message: 'importV1' })
     expect(await c.audit(50)).toEqual({ ok: true, message: 'audit' })
     expect(await c.update()).toEqual({ ok: true, message: 'update' })
-    expect(api.login).toHaveBeenCalledWith('a.com')
+    expect(api.login).toHaveBeenCalledWith('a.com', 'chrome')
     expect(api.requestAllow).toHaveBeenCalledWith('a.com', 'https://a.com/l', 'item', sel)
     expect(api.revoke).toHaveBeenCalledWith('a.com')
     expect(api.setMode).toHaveBeenCalledWith('hardcore')
@@ -89,6 +89,7 @@ describe('ipc', () => {
     const p = await start(api)
     expect(JSON.parse((await raw(p, '{"id":1,"method":"nope","params":{}}\n')).text)).toMatchObject({ id: 1, ok: false, message: 'unknown method' })
     expect(JSON.parse((await raw(p, '{"id":2,"method":"login","params":{}}\n')).text)).toMatchObject({ id: 2, ok: false, message: 'bad request' })
+    expect(JSON.parse((await raw(p, '{"id":3,"method":"login","params":{"domain":"a.com","browser":"firefox"}}\n')).text)).toMatchObject({ id: 3, ok: false, message: 'bad request' })
     expect(JSON.parse((await raw(p, 'not json\n')).text)).toMatchObject({ ok: false, message: 'bad request' })
   })
 

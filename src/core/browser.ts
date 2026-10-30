@@ -5,6 +5,8 @@ import { UserFacingError, type SessionTarget } from './types.js'
 import type { AllowEntry } from './types.js'
 import { isHostAllowed } from './allowlist.js'
 import { waitForLoginSuccess } from './login-success.js'
+import { bounded } from './doctor.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 import { abortable } from './abort.js'
 
 export interface BrowserProvider {
@@ -16,24 +18,23 @@ export interface CdpOptions {
   /** Starts Chrome when CDP is down; may return before Chrome is listening. */
   launch?: () => Promise<void>
   launchTimeoutMs?: number
-  validate?: () => Promise<boolean>
+  validate?: (browser?: BrowserKind) => Promise<boolean>
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** Page-scoped navigation guard; redirect responses are checked before following them. */
+/** Request-stage CDP interception checks each real main-frame redirect without rewriting responses. */
 async function restrictPageNavigation(page: Page, allowed: (url: string) => boolean, signal?: AbortSignal): Promise<void> {
-  await page.route('**/*', async route => {
-    const request = route.request()
-    if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) { await route.continue().catch(() => {}); return }
-    if (!allowed(request.url()) || signal?.aborted) { await route.abort().catch(() => {}); return }
-    try {
-      const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 10000 }), location = response.headers().location
-      if (location && response.status() >= 300 && response.status() < 400 && !allowed(new URL(location, request.url()).href)) { await route.abort(); return }
-      if (signal?.aborted) { await route.abort(); return }
-      await route.fulfill({ response })
-    } catch { await route.abort().catch(() => {}) }
+  const session = await page.context().newCDPSession(page)
+  const { frameTree } = await session.send('Page.getFrameTree')
+  session.on('Fetch.requestPaused', event => {
+    let permit = false
+    try { permit = event.frameId !== frameTree.frame.id || (!signal?.aborted && allowed(event.request.url)) } catch {}
+    void session.send(permit ? 'Fetch.continueRequest' : 'Fetch.failRequest', permit ? { requestId: event.requestId } : { requestId: event.requestId, errorReason: 'BlockedByClient' }).catch(() => {})
   })
+  // Bypass service workers only on this owned tab; existing registrations and user tabs are unchanged.
+  await session.send('Network.setBypassServiceWorker', { bypass: true })
+  await session.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] })
 }
 
 /** Runs scripts/start-chrome.ps1 (idempotent: it exits early if the port is already open). */
@@ -52,14 +53,16 @@ export class CdpBrowserProvider implements BrowserProvider {
   private disconnecting?: Promise<void>
   private browser?: Browser
   private connecting?: Promise<Browser>
+  private readonly ownedPages = new Set<Page>()
+  private readonly openingPages = new Set<Promise<Page>>()
 
   constructor(
     private readonly endpoint: string,
     private readonly opts: CdpOptions = {},
   ) {}
 
-  private async getBrowser(autoLaunch: boolean): Promise<Browser> {
-    if (this.opts.validate && !await this.opts.validate()) throw new UserFacingError('selected dedicated browser identity could not be verified', 'browser_unavailable')
+  private async getBrowser(autoLaunch: boolean, selectedBrowser?: BrowserKind): Promise<Browser> {
+    if (this.opts.validate && !await this.opts.validate(selectedBrowser)) throw new UserFacingError('selected dedicated browser identity could not be verified', 'browser_unavailable')
     // Validated service operations reconnect so a browser switch cannot keep using an old cached destination.
     if (this.opts.validate) await this.disconnect()
     if (this.browser?.isConnected()) return this.browser
@@ -94,28 +97,36 @@ export class CdpBrowserProvider implements BrowserProvider {
 
   disconnect(): Promise<void> {
     return this.disconnecting ??= (async () => {
+      await Promise.allSettled([...this.openingPages].map(opening => bounded(() => opening, undefined, 2000)))
+      await Promise.allSettled([...this.ownedPages].map(page => bounded(() => page.close(), undefined, 2000)))
+      this.ownedPages.clear()
       const browser = this.browser ?? await this.connecting?.catch(() => undefined)
       this.browser = undefined
       // For connectOverCDP, close disconnects this transport, not the user's Chrome process.
       await browser?.close().catch(() => {})
     })().finally(() => { this.disconnecting = undefined })
   }
-  async withPage<T>(fn: (page: Page) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const browser = await abortable(this.getBrowser(true), signal, () => this.disconnect(), b => b.close())
+  async withPage<T>(fn: (page: Page) => Promise<T>, signal?: AbortSignal, selectedBrowser?: BrowserKind): Promise<T> {
+    const browser = await abortable(this.getBrowser(true, selectedBrowser), signal, () => this.disconnect(), b => b.close())
     const context = browser.contexts()[0]
     if (!context) throw new UserFacingError('selected dedicated browser has no default context — run u-chan setup --start-browser', 'browser_unavailable')
-    const page = await abortable(context.newPage(), signal, () => this.disconnect(), p => p.close())
+    const opening = context.newPage().then(page => { this.ownedPages.add(page); return page })
+    this.openingPages.add(opening)
+    let page: Page
+    try { page = await abortable(opening, signal, () => this.disconnect(), p => p.close()) }
+    finally { this.openingPages.delete(opening) }
     page.setDefaultTimeout(5000)
     try {
       signal?.throwIfAborted()
       return await abortable(fn(page), signal, () => this.disconnect())
     } finally {
-      await abortable(page.close(), signal, () => this.disconnect()).catch(() => {})
+      await bounded(() => page.close(), undefined, 2000)
+      this.ownedPages.delete(page)
     }
   }
 
-  async withContext<T>(fn: (context: BrowserContext) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const browser = await abortable(this.getBrowser(true), signal, () => this.disconnect(), b => b.close())
+  async withContext<T>(fn: (context: BrowserContext) => Promise<T>, signal?: AbortSignal, selectedBrowser?: BrowserKind): Promise<T> {
+    const browser = await abortable(this.getBrowser(true, selectedBrowser), signal, () => this.disconnect(), b => b.close())
     const context = browser.contexts()[0]
     if (!context) throw new UserFacingError('selected dedicated browser has no default context — run u-chan setup --start-browser', 'browser_unavailable')
     signal?.throwIfAborted()
@@ -134,10 +145,17 @@ export class CdpBrowserProvider implements BrowserProvider {
 
 /** Receives filtered session state and checks approved evidence in the user's dedicated browser over CDP. */
 export class CdpSessionTarget implements SessionTarget {
+  private selectedBrowser: BrowserKind = 'chrome'
   constructor(private readonly provider: CdpBrowserProvider, private readonly options: { hostCheck?: (entry: AllowEntry, url: string) => boolean; verifyTimeoutMs?: number } = {}) {}
 
+  async bindBrowser(browser: BrowserKind): Promise<boolean> {
+    if (browser !== 'chrome' && browser !== 'edge') return false
+    this.selectedBrowser = browser
+    return true // The immediately following provider operation validates this exact kind against the native process.
+  }
+
   userAgent(signal?: AbortSignal): Promise<string> {
-    return this.provider.withPage((page) => page.evaluate(() => navigator.userAgent), signal)
+    return this.provider.withPage((page) => page.evaluate(() => navigator.userAgent), signal, this.selectedBrowser)
   }
   cancel(): Promise<void> { return this.provider.disconnect() }
 
@@ -151,7 +169,7 @@ export class CdpSessionTarget implements SessionTarget {
         await restrictPageNavigation(page, allowed, signal)
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 })
         return waitForLoginSuccess(page, entry.success!, allowed, signal, this.options.verifyTimeoutMs ?? 15000)
-      }, signal)
+      }, signal, this.selectedBrowser)
     } catch { if (signal?.aborted) signal.throwIfAborted(); return false }
   }
 
@@ -162,9 +180,7 @@ export class CdpSessionTarget implements SessionTarget {
       for (const o of state.origins) {
         signal?.throwIfAborted()
         if (!o.localStorage.length) continue
-        const page = await context.newPage()
-        page.setDefaultTimeout(5000)
-        try {
+        await this.provider.withPage(async page => {
           await restrictPageNavigation(page, url => { try { return new URL(url).origin === o.origin } catch { return false } }, signal)
           await page.goto(o.origin, { waitUntil: 'commit' })
           signal?.throwIfAborted()
@@ -175,10 +191,8 @@ export class CdpSessionTarget implements SessionTarget {
             },
             { origin: o.origin, items: o.localStorage },
           )
-        } finally {
-          await page.close().catch(() => {})
-        }
+        }, signal, this.selectedBrowser)
       }
-    }, signal)
+    }, signal, this.selectedBrowser)
   }
 }

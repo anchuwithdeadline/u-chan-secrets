@@ -21,6 +21,7 @@ const username = randomUUID() + '@example.invalid', password = randomUUID() + ra
 let server, shared, userPage, browser, provider, bitwarden, bwTimer
 let receivedCredentials = false
 let sharedInputCount = 0
+let matrixMetadata
 try {
   const { chromium } = await load('node_modules/playwright/index.mjs')
   const { IsolatedLogin } = await load('dist/service/isolated-login.js')
@@ -46,10 +47,11 @@ try {
     await shared.contexts()[0].exposeBinding(binding, () => { sharedInputCount++ })
     await shared.contexts()[0].addInitScript(name => document.addEventListener('input', () => { void window[name]().catch(() => {}) }, true), binding)
     const { inspectServiceDesktopBrowser } = await load('dist/platform/windows/desktop-browser.js')
-    const metadata = JSON.parse(await fs.readFile(path.join(root, 'matrix-context.json'), 'utf8'))
-    result.desktopIdentity = await inspectServiceDesktopBrowser(endpoint, metadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: metadata.desktopHome })
+    matrixMetadata = JSON.parse(await fs.readFile(path.join(root, 'matrix-context.json'), 'utf8'))
     const { observeCdpBrowser } = await load('dist/core/doctor.js')
     result.fixtureBrowser = await observeCdpBrowser(endpoint)
+    result.desktopIdentity = await inspectServiceDesktopBrowser(endpoint, matrixMetadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: matrixMetadata.desktopHome }, result.fixtureBrowser)
+    result.wrongBrowserRejected = await inspectServiceDesktopBrowser(endpoint, matrixMetadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: matrixMetadata.desktopHome }, result.fixtureBrowser === 'edge' ? 'chrome' : 'edge') !== 'pass'
   }
   userPage = await shared.contexts()[0].newPage()
   await userPage.addInitScript(() => { window.__uChanProbeInputCount = 0; document.addEventListener('input', () => { window.__uChanProbeInputCount++ }, true) })
@@ -58,11 +60,14 @@ try {
   result.initScriptPositiveControl = await userPage.evaluate(() => window.__uChanProbeInputCount > 0)
   if (matrix) { await new Promise(resolve => setTimeout(resolve, 150)); result.allPageInputPositiveControl = sharedInputCount > 0; sharedInputCount = 0 }
   await userPage.goto(origin)
-  browser = await chromium.launch({ headless: true, executablePath: await privateBrowserPath(home) })
-  provider = new CdpBrowserProvider(endpoint)
+  browser = await chromium.launch({ headless: true, executablePath: await privateBrowserPath(home), args: ['--disable-http2', '--disable-quic'] })
+  provider = new CdpBrowserProvider(endpoint, matrixMetadata ? { validate: async requested => {
+    const { inspectServiceDesktopBrowser } = await load('dist/platform/windows/desktop-browser.js')
+    return await inspectServiceDesktopBrowser(endpoint, matrixMetadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: matrixMetadata.desktopHome }, requested) === 'pass'
+  } } : {})
   const target = new CdpSessionTarget(provider, { hostCheck: (_entry, url) => new URL(url).hostname === '127.0.0.1' })
   const login = new IsolatedLogin({ launch: async () => browser, target, timeoutMs: 15000, hostCheck: url => new URL(url).hostname === '127.0.0.1' })
-  const outcome = await login.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], item: 'disposable', loginUrl: origin + '/login', success: { selector: '#signed-in' } }, async () => ({ username, password }))
+  const outcome = await login.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], item: 'disposable', loginUrl: origin + '/login', success: { selector: '#signed-in' } }, async () => ({ username, password }), { browser: result.fixtureBrowser ?? 'chrome' })
   result.confirmedFixtureLogin = outcome.status === 'logged_in' && receivedCredentials
   result.sharedInputEvents = matrix ? sharedInputCount : await userPage.evaluate(() => window.__uChanProbeInputCount)
   await userPage.goto(origin + '/account')
@@ -75,9 +80,9 @@ try {
   await store.upsert(once)
   let credentialReads = 0
   const deps = { vault: { status: async () => 'unlocked', getLogin: async () => { credentialReads++; return { username, password } } }, allowlist: store, approver: { ask: async () => false }, audit: { record: async () => {} }, login, mode: async () => 'easy' }
-  const core = new CoreService(deps), attempts = await Promise.all([core.login(once.domain), core.login(once.domain)])
+  const core = new CoreService(deps), attempts = await Promise.all([core.login(once.domain, result.fixtureBrowser ?? 'chrome'), core.login(once.domain, result.fixtureBrowser ?? 'chrome')])
   const restarted = new CoreService({ ...deps, allowlist: new AllowlistStore(grantPath) })
-  const replay = await restarted.login(once.domain)
+  const replay = await restarted.login(once.domain, result.fixtureBrowser ?? 'chrome')
   result.onceGrantConcurrency = attempts.filter(r => r.ok).length === 1 && attempts.filter(r => r.code === 'grant_exhausted').length === 1 && credentialReads === 1 && replay.code === 'grant_exhausted'
   let wall = Date.now(), mono = 0
   const timed = { ...once, grantId: randomUUID(), remainingUses: undefined, expiresAt: new Date(wall + 60000).toISOString() }
@@ -86,6 +91,16 @@ try {
   wall -= 5000; mono += 1000
   await clock.run(async () => {})
   result.clockRollbackPersisted = (await new AllowlistStore(grantPath).get(timed.domain)).expiresAt === new Date(0).toISOString()
+  if (matrix) {
+    const { createPrivateNetwork } = await load('dist/service/private-network.js')
+    const network = await createPrivateNetwork(url => new URL(url).protocol === 'https:' && new URL(url).hostname === 'example.com', AbortSignal.timeout(20000))
+    const context = await browser.newContext({ serviceWorkers: 'block', proxy: network.proxy })
+    try {
+      const page = await context.newPage()
+      await page.goto('https://example.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
+      result.privateHttpsCertificateValidated = await page.locator('h1').filter({ hasText: 'Example Domain' }).isVisible()
+    } finally { await context.close(); await network.close() }
+  }
   await fs.mkdir(path.join(root, 'bw-fixture'))
   bitwarden = spawn(path.join(home, 'bin', 'bw.exe'), ['status'], { windowsHide: true, stdio: 'ignore', env: { ...process.env, BITWARDENCLI_APPDATA_DIR: path.join(root, 'bw-fixture'), BW_NOINTERACTION: 'true' } })
   const bwFinished = new Promise(resolve => bitwarden.once('exit', resolve))
@@ -130,7 +145,7 @@ try {
     result.signedUpdateRehearsal = updated.ok && JSON.parse(await fs.readFile(path.join(programDir, 'package.json'), 'utf8')).version === '3.0.2' && await fs.readFile(path.join(programDir, 'node_modules', 'private-marker'), 'utf8') === 'preserve-private-dependencies' && await fs.readFile(path.join(updateHome, 'settings.json'), 'utf8') === state && restarts === 1
   }
   result.ok = result.initScriptPositiveControl && result.confirmedFixtureLogin && result.sharedInputEvents === 0 && result.transferredFixtureSession && result.onceGrantConcurrency && result.clockRollbackPersisted && moduleAuditSucceeded(result.nativeModules) && result.realRegistryVerification && result.signedUpdateRehearsal && matches === 0
-  if (matrix) result.ok &&= result.allPageInputPositiveControl && result.desktopIdentity === 'pass' && ['chrome','edge'].includes(result.fixtureBrowser)
+  if (matrix) result.ok &&= result.allPageInputPositiveControl && result.desktopIdentity === 'pass' && result.wrongBrowserRejected && result.privateHttpsCertificateValidated && ['chrome','edge'].includes(result.fixtureBrowser)
 } catch (e) { result.errorType = e.name }
 finally {
   clearTimeout(bwTimer); if (bitwarden && bitwarden.exitCode === null) bitwarden.kill()

@@ -1,15 +1,35 @@
 # Shared user-side Chrome/Edge launcher and read-only process policy. No elevation or vault access.
+function Split-UChanWindowsCommandLine([string]$CommandLine) {
+    if (-not ('UChanWindowsCommandLine' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class UChanWindowsCommandLine {
+    [DllImport("shell32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern IntPtr CommandLineToArgvW(string value, out int count);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr value);
+    public static string[] Split(string value) {
+        int count; IntPtr memory=CommandLineToArgvW(value,out count);
+        if(memory==IntPtr.Zero) throw new InvalidOperationException("Command line is unavailable");
+        try { string[] result=new string[count]; for(int i=0;i<count;i++)result[i]=Marshal.PtrToStringUni(Marshal.ReadIntPtr(memory,i*IntPtr.Size)); return result; }
+        finally { LocalFree(memory); }
+    }
+}
+'@
+    }
+    return [UChanWindowsCommandLine]::Split($CommandLine)
+}
 function Test-UChanBrowserProcess($Observation, [string]$Executable, [string]$Profile, [string]$OwnerSid, [int]$Port) {
     if (-not $Observation.ExecutablePath -or -not $Observation.OwnerSid -or -not $Observation.CommandLine -or -not $Observation.Addresses) { return 'unknown' }
     if ($Observation.ExecutablePath -ine $Executable -or $Observation.OwnerSid -ne $OwnerSid) { return 'fail' }
     foreach ($address in $Observation.Addresses) { if ($address -notin @('127.0.0.1','::1')) { return 'fail' } }
-    $profiles = [regex]::Matches($Observation.CommandLine, '(?i)(?:^|\s)(?:"--user-data-dir=([^"]+)"|--user-data-dir=(?:"([^"]+)"|([^\s"]+))|--user-data-dir\s+(?:"([^"]+)"|([^\s"]+)))')
-    if ($profiles.Count -ne 1) { return 'fail' }
-    $actual = @($profiles[0].Groups | Select-Object -Skip 1 | Where-Object Success | ForEach-Object Value)
-    if ($actual.Count -ne 1) { return 'fail' }
-    try { if ([IO.Path]::GetFullPath($actual[0]).TrimEnd('\') -ine [IO.Path]::GetFullPath($Profile).TrimEnd('\')) { return 'fail' } } catch { return 'fail' }
-    $ports = [regex]::Matches($Observation.CommandLine, '(?i)(?:^|\s)"?--remote-debugging-port=(\d+)"?(?=\s|$)')
-    if ($ports.Count -ne 1 -or [int]$ports[0].Groups[1].Value -ne $Port) { return 'fail' }
+    try { $tokens = @(Split-UChanWindowsCommandLine $Observation.CommandLine) } catch { return 'unknown' }
+    if ($tokens.Count -lt 1 -or $tokens[0] -ine $Executable) { return 'fail' }
+    $profiles = @($tokens | Where-Object { $_ -imatch '^--user-data-dir(?:=|$)' })
+    if ($profiles.Count -ne 1 -or $profiles[0] -inotmatch '^--user-data-dir=.+$') { return 'fail' }
+    $actual = $profiles[0].Substring('--user-data-dir='.Length)
+    try { if ([IO.Path]::GetFullPath($actual).TrimEnd('\') -ine [IO.Path]::GetFullPath($Profile).TrimEnd('\')) { return 'fail' } } catch { return 'fail' }
+    $ports = @($tokens | Where-Object { $_ -imatch '^--remote-debugging-port(?:=|$)' })
+    if ($ports.Count -ne 1 -or $ports[0] -inotmatch '^--remote-debugging-port=[0-9]+$' -or $ports[0].Substring('--remote-debugging-port='.Length) -ne [string]$Port) { return 'fail' }
     return 'pass'
 }
 

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { AllowlistStore } from '../src/core/allowlist.js'
 import { CoreService } from '../src/core/service.js'
 import { GrantCoordinator } from '../src/service/grants.js'
+import { IsolatedLogin } from '../src/service/isolated-login.js'
 let dir: string, store: AllowlistStore, clock: number, mono: number, grants: GrantCoordinator
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'ucs-grants-')); store = new AllowlistStore(join(dir, 'allow.json')); clock = 1_800_000_000_000; mono = 0; grants = new GrantCoordinator(store, { now: () => clock, monotonic: () => mono }) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
@@ -26,6 +27,16 @@ it('only one concurrent login can use a once grant, including after restart', as
 it('does not consume a once grant on locked-vault or Chrome preflight failure', async () => {
   await store.upsert({ ...entry, remainingUses: 1 })
   expect((await service({ vault: { status: async () => 'locked' } }).login('a.com')).code).toBe('vault_locked')
+  expect((await store.get('a.com'))?.remainingUses).toBe(1)
+})
+it('rejects an Edge/Chrome binding mismatch before reserving an attempt or fetching credentials', async () => {
+  await store.upsert({...entry,remainingUses:1})
+  let reads=0, selected: unknown
+  const login=new IsolatedLogin({launch:async()=>{throw new Error('unexpected launch')},target:{userAgent:async()=> 'test',inject:async()=>{},bindBrowser:async (kind: unknown)=>{selected=kind;return false}} as any})
+  const svc=service({login,vault:{status:async()=> 'unlocked',getLogin:async()=>{reads++;return{username:'dummy',password:'dummy'}}}})
+  expect(await (svc.login as any)('a.com','edge')).toMatchObject({ok:false,code:'browser_unavailable'})
+  expect(selected).toBe('edge')
+  expect(reads).toBe(0)
   expect((await store.get('a.com'))?.remainingUses).toBe(1)
 })
 it('consumes a reserved attempt even when login fails', async () => {

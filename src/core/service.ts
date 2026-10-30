@@ -7,6 +7,7 @@ import type { AllowOptions } from './types.js'
 import { GrantCoordinator } from '../service/grants.js'
 import { randomUUID } from 'node:crypto'
 import { abortable } from './abort.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 import {
   UserFacingError,
   type Approver,
@@ -78,9 +79,10 @@ export class CoreService implements CoreApi {
     return result
   }
 
-  login(domain: string): Promise<ToolResult> {
+  login(domain: string, browser: BrowserKind = 'chrome'): Promise<ToolResult> {
     const secrets: string[] = []
     return this.guarded('login', domain, secrets, async () => {
+      if (browser !== 'chrome' && browser !== 'edge') throw new UserFacingError('invalid browser selection', 'invalid_policy')
       const entry = await this.deps.allowlist.get(domainOf(domain))
       if (!entry) throw new UserFacingError('domain is not allowlisted — use request_allow', 'grant_missing')
       this.grants.check(entry)
@@ -91,7 +93,7 @@ export class CoreService implements CoreApi {
       }
       const status = await within(this.deps.vault.status(signal))
       if (status !== 'unlocked') throw new UserFacingError(status === 'locked' ? 'vault locked — run u-chan unlock' : status === 'unauthenticated' ? 'complete Bitwarden service login during setup' : 'Bitwarden is unavailable', status === 'locked' ? 'vault_locked' : status === 'unauthenticated' ? 'vault_unauthenticated' : 'vault_unavailable')
-      if (this.deps.login.preflight) await within(this.deps.login.preflight(signal))
+      if (this.deps.login.preflight) await within(this.deps.login.preflight(signal, browser))
       signal.throwIfAborted()
       await this.grants.reserve(entry.domain)
       const getCreds = async () => {
@@ -100,7 +102,7 @@ export class CoreService implements CoreApi {
         secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
         return c
       }
-      const out = await this.deps.login.run(entry, getCreds, { signal, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } })
+      const out = await this.deps.login.run(entry, getCreds, { signal, browser, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } })
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }
       const message = out.reason ?? 'login failed'
@@ -134,7 +136,7 @@ export class CoreService implements CoreApi {
         ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
         ...(entry.success ? [`Success condition: ${JSON.stringify(entry.success)}`] : []),
         entry.remainingUses !== undefined ? 'Duration: one login attempt; a failed reserved attempt also counts.' : entry.expiresAt ? `Duration: until ${entry.expiresAt}` : 'Duration: permanent future logins.',
-        'Expiry and revocation do not log out sessions already transferred to Chrome.',
+        'Expiry and revocation do not log out sessions already transferred to the selected browser.',
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
       this.grants.approve(entry, epoch)

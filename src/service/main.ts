@@ -27,6 +27,7 @@ import { ManagementService } from './manage.js'
 import { privateBrowserPath } from '../platform/runtime-assets.js'
 import { safeVersion } from '../core/doctor.js'
 import { inspectServiceDesktopBrowser } from '../platform/windows/desktop-browser.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -67,12 +68,12 @@ export async function runService(
     const grants = new GrantCoordinator(allowlist)
     const audit = new FileAuditLog(cfg.auditPath)
     const endpoint = loadConfig(env, platform).cdpEndpoint
-    const validateTarget = platform === 'win32' ? async () => {
+    const validateTarget = platform === 'win32' ? async (browser: BrowserKind = 'chrome') => {
       const owner = (await settings.get() as unknown as { authorizedSid?: unknown }).authorizedSid
-      return typeof owner === 'string' && await inspectServiceDesktopBrowser(endpoint, owner, env) === 'pass'
+      return typeof owner === 'string' && await inspectServiceDesktopBrowser(endpoint, owner, env, browser) === 'pass'
     } : undefined
     const login = new IsolatedLogin({
-      launch: async () => chromium.launch({ headless: true, executablePath: await privateBrowserPath(cfg.home), timeout: 15000 }),
+      launch: async () => chromium.launch({ headless: true, executablePath: await privateBrowserPath(cfg.home), timeout: 15000, args: ['--disable-http2', '--disable-quic'] }),
       target: new CdpSessionTarget(new CdpBrowserProvider(endpoint, { validate: validateTarget })),
     })
     const core = new CoreService({ vault, allowlist, grants, approver, audit, login, mode: () => approver.effectiveMode() })
@@ -107,7 +108,7 @@ export async function runService(
       capabilities: () => control.capabilities(),
       diagnose: () => control.diagnose(),
       manage: () => control.manage(),
-      login: (domain) => core.login(domain),
+      login: (domain, browser) => core.login(domain, browser),
       requestAllow: (domain, loginUrl, item, selectors, options) => core.requestAllow(domain, loginUrl, item, selectors, options),
       revoke: (domain) => core.revoke(domain),
       listAllowed: () => core.listAllowed(),

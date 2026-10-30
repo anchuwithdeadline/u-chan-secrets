@@ -6,7 +6,8 @@ import type { AllowEntry, Credentials, LoginRunner, SessionTarget } from '../cor
 import { filterState } from './session-transfer.js'
 import { UserFacingError } from '../core/types.js'
 import { waitForLoginSuccess } from '../core/login-success.js'
-import { restrictPrivateNetwork } from './private-network.js'
+import { createPrivateNetwork } from './private-network.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 
 /** Signs in inside a service-owned browser, then verifies only the approved session in the user's selected browser. */
 export class IsolatedLogin implements LoginRunner {
@@ -17,16 +18,20 @@ export class IsolatedLogin implements LoginRunner {
     if (this.cancellation) await this.cancellation()
     else await this.o.target.cancel?.()
   }
-  async preflight(signal?: AbortSignal): Promise<void> {
+  async preflight(signal?: AbortSignal, browser: BrowserKind = 'chrome'): Promise<void> {
     const check = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
-    try { await abortable(this.o.target.userAgent(check), check, async () => { await this.o.target.cancel?.() }) }
+    try {
+      if (this.o.target.bindBrowser && !await abortable(this.o.target.bindBrowser(browser, check), check, async () => { await this.o.target.cancel?.() })) throw new Error('browser mismatch')
+      await abortable(this.o.target.userAgent(check), check, async () => { await this.o.target.cancel?.() })
+    }
     catch { throw new UserFacingError(signal?.aborted ? 'login timed out; retry if needed' : 'selected dedicated browser is unavailable; run u-chan setup --start-browser', signal?.aborted ? 'login_timeout' : 'browser_unavailable') }
   }
-  async run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> } = {}): Promise<FillOutcome> {
+  async run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options: { signal?: AbortSignal; beforeTransfer?: () => Promise<void>; browser?: BrowserKind } = {}): Promise<FillOutcome> {
     const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
     const hostCheck = this.o.hostCheck ?? ((url: string) => isHostAllowed(entry, url))
     let browser = this.browser, ctx: BrowserContext | undefined
     let transferStarted = false
+    let network: Awaited<ReturnType<typeof createPrivateNetwork>> | undefined
     let closing: Promise<void> | undefined, stopping: Promise<void> | undefined
     const closeBrowser = async () => {
       const current = browser
@@ -37,23 +42,25 @@ export class IsolatedLogin implements LoginRunner {
     const stop = () => stopping ??= Promise.allSettled([
       ctx ? closeContext() : closeBrowser(),
       this.o.target.cancel?.(),
+      network?.close(),
     ]).then(() => {})
     this.cancellation = stop
     try {
       signal.throwIfAborted()
+      if (this.o.target.bindBrowser && !await abortable(this.o.target.bindBrowser(options.browser ?? 'chrome', signal), signal, stop)) throw new UserFacingError('selected dedicated browser is unavailable or mismatched', 'browser_unavailable')
       const userAgent = await abortable(this.o.target.userAgent(signal), signal, stop)
       if (!browser?.isConnected()) {
         browser = await abortable(this.o.launch(), signal, stop, b => b.close())
         this.browser = browser
       }
-      ctx = await abortable(browser.newContext({ userAgent, serviceWorkers: 'block' }), signal, stop, c => c.close())
-      const wasBlocked = await restrictPrivateNetwork(ctx, hostCheck, signal)
+      network = await abortable(createPrivateNetwork(hostCheck, signal), signal, stop, n => n.close())
+      ctx = await abortable(browser.newContext({ userAgent, serviceWorkers: 'block', proxy: network.proxy }), signal, stop, c => c.close())
       const page = await abortable(ctx.newPage(), signal, stop, p => p.close())
       const checkHost = () => {
         if (!hostCheck(page.url())) throw new UserFacingError('unexpected login host; session was not transferred', 'unsupported_form')
       }
       const outcome = await abortable(fillLogin(page, entry, getCreds, { timeoutMs: this.o.timeoutMs, hostCheck }), signal, stop)
-      if (outcome.status === 'failed') return wasBlocked()
+      if (outcome.status === 'failed') return network.wasBlocked()
         ? { status: 'failed', code: 'unsupported_form', reason: 'an unapproved private-browser request was blocked; session was not transferred' }
         : { ...outcome, code: outcome.code ?? 'unsupported_form' }
       checkHost()
@@ -93,6 +100,7 @@ export class IsolatedLogin implements LoginRunner {
     } finally {
       if (signal.aborted) await stop()
       else await closeContext()
+      await network?.close()
       this.cancellation = undefined
     }
   }

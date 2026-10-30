@@ -12,10 +12,10 @@ export function inspectDesktopBrowser(options: { endpoint: string; browser: Brow
   (error, stdout) => resolve(error ? 'unknown' : stdout.trim() === 'pass' ? 'pass' : stdout.trim() === 'fail' ? 'fail' : 'unknown')))
 }
 
-export function inspectServiceDesktopBrowser(endpoint: string, ownerSid: string, env: NodeJS.ProcessEnv = process.env): Promise<DiagnosticState> {
+export function inspectServiceDesktopBrowser(endpoint: string, ownerSid: string, env: NodeJS.ProcessEnv = process.env, browser?: BrowserKind): Promise<DiagnosticState> {
   if (!/^S-1-5-21-(?:[0-9]+-){3}[0-9]+$/.test(ownerSid)) return Promise.resolve('unknown')
   return new Promise(resolve => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-    fileURLToPath(new URL('../../../scripts/start-browser.ps1', import.meta.url)), '-CheckOnly', '-DesktopOwnerSid', ownerSid],
+    fileURLToPath(new URL('../../../scripts/start-browser.ps1', import.meta.url)), '-CheckOnly', '-DesktopOwnerSid', ownerSid, ...(browser ? ['-Browser', browser] : [])],
   { env: { ...env, U_CHAN_CDP: endpoint }, timeout: 15000, windowsHide: true, maxBuffer: 65536 },
   (error, stdout) => resolve(error ? 'unknown' : stdout.trim() === 'pass' ? 'pass' : stdout.trim() === 'fail' ? 'fail' : 'unknown')))
 }

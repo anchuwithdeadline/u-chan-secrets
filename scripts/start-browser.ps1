@@ -4,7 +4,8 @@ $ErrorActionPreference='Stop'
 if ($DesktopOwnerSid) {
     if (-not $CheckOnly) { throw 'An owner-specific inspection cannot launch a desktop browser.' }
     $observed = 'unknown'
-    foreach ($kind in @('chrome','edge')) {
+    $kinds = if ($Browser) { @($Browser) } else { @('chrome','edge') }
+    foreach ($kind in $kinds) {
         $configuration = Get-UChanOwnerBrowserConfiguration $DesktopOwnerSid $kind
         $candidate = Get-UChanBrowserState $configuration
         if ($candidate -eq 'pass') { 'pass'; return }

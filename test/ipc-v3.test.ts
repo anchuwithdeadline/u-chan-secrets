@@ -7,10 +7,10 @@ import { startIpcServer } from '../src/ipc/server.js'
 import { IpcClient } from '../src/ipc/client.js'
 const servers: net.Server[] = []
 afterEach(() => { servers.splice(0).forEach(s => s.close()) })
-async function client(api: any) {
+async function client(api: any, options?: any) {
   const path = process.platform === 'win32' ? '\\\\.\\pipe\\ucs-v3-' + randomUUID() : join(tmpdir(), 'ucs-' + randomUUID())
   servers.push(await startIpcServer(path, api))
-  return new IpcClient(path)
+  return new IpcClient(path, options)
 }
 it('preserves safe result codes through real IPC', async () => {
   const c = await client({ capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["verified_session_transfer"]}' }), login: async () => ({ ok: false, message: 'expired', code: 'grant_expired' }) })
@@ -48,4 +48,10 @@ it('refuses login against a service without verified transfer before sending the
     expect(await c.login('a.com')).toMatchObject({ ok: false, code: 'unsupported_service' })
   }
   expect(requested).toBe(false)
+})
+it('binds an Edge login request to Edge across real IPC', async () => {
+  let received: unknown
+  const c = await client({ capabilities: async () => ({ok:true,message:'{"protocol":3,"features":["verified_session_transfer"]}'}), login: async (_domain: string, browser: unknown) => {received=browser;return{ok:true,message:'bound'}} },{browser:'edge'})
+  expect((await c.login('a.com')).ok).toBe(true)
+  expect(received).toBe('edge')
 })

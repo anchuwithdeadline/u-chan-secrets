@@ -22,7 +22,7 @@ const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | ty
   capabilities: api => api.capabilities ? api.capabilities() : Promise.resolve({ ok: false, message: 'unknown method' }),
   diagnose: api => api.diagnose(),
   manage: api => api.manage(),
-  login: (api, p) => (str(p.domain) ? api.login(p.domain) : BAD),
+  login: (api, p) => (!str(p.domain) || (p.browser !== undefined && p.browser !== 'chrome' && p.browser !== 'edge') ? BAD : p.browser ? api.login(p.domain, p.browser) : api.login(p.domain)),
   request_allow: (api, p) => {
     const sel = selectorsOf(p.selectors)
     if (sel === BAD || !str(p.domain) || !str(p.loginUrl) || !str(p.item)) return BAD

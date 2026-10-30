@@ -6,6 +6,7 @@
 - Validate the listening browser executable, desktop owner, dedicated profile, and loopback endpoint before reuse. The privileged service repeats owner/profile checks and reconnects between operations to avoid stale browser destinations.
 - Require approved login evidence in both the isolated context and the transferred desktop session. Wait for delayed evidence; report unconfirmed/partial state honestly without modifying existing tabs or rolling back unrelated cookies.
 - Block unapproved private-browser requests, redirects, and WebSockets; disable private service workers. Keep credentials private and do not expand approved hosts silently.
+- Enforce redirect destinations with a per-attempt private HTTP/CONNECT proxy and request-stage CDP checks on owned desktop tabs. Retain TLS validation; private HTTP/2/QUIC are disabled. Close owned tabs before disconnecting on cancellation and parse native command lines with Windows tokenization.
 - Return explicit human-action outcomes for recognized CAPTCHA/passkey/push challenges and missing/rejected TOTP. Preserve one-attempt semantics and avoid automatic credential retries.
 - Require V5 verified-transfer capability before a V5 client sends login; retain protocol 3, state schema 3, existing grants, native helpers, and runtime dependencies.
 - Source, artifact publication, installed verification, per-browser Windows fixtures, and macOS native verification remain separate claims.

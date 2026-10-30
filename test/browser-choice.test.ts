@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest'
 import { mkdtemp, readFile, writeFile, symlink, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadConfig } from '../src/core/config.js'
+import { loadConfig, resolveLoginBrowser } from '../src/core/config.js'
 import { readBrowserChoice, saveBrowserChoice } from '../src/client/browser-choice.js'
 const directories: string[] = []
 async function fixture() { const dir = await mkdtemp(join(tmpdir(), 'ucs-browser-choice-')); directories.push(dir); return dir }
@@ -28,6 +28,12 @@ it('explicit operation environment wins without mutating saved preference', asyn
   await saveBrowserChoice(file, 'edge')
   expect(loadConfig({ U_CHAN_HOME: dir, U_CHAN_BROWSER: 'chrome' }, 'win32').browser).toBe('chrome')
   expect(readBrowserChoice(file)).toBe('edge')
+})
+it('refuses stale MCP browser environment for login rather than silently selecting another browser', async () => {
+  const dir = await fixture()
+  await saveBrowserChoice(join(dir,'browser.json'),'edge')
+  expect(() => resolveLoginBrowser({U_CHAN_HOME:dir,U_CHAN_BROWSER:'chrome'},'win32')).toThrow(/restart/i)
+  expect(resolveLoginBrowser({U_CHAN_HOME:dir,U_CHAN_BROWSER:'edge'},'win32')).toBe('edge')
 })
 it('fails closed on invalid or malformed existing browser selection', async () => {
   const dir = await fixture(), file = join(dir, 'browser.json')

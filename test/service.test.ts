@@ -38,6 +38,12 @@ afterEach(async () => {
 })
 
 describe('login', () => {
+  it('describes grant transfer without falsely naming Chrome for Edge users', async () => {
+    await svc.requestAllow('example.com',entry.loginUrl,entry.item)
+    const text=approve.mock.calls[0][1].join('\n')
+    expect(text).not.toContain('Chrome')
+    expect(text).toContain('selected browser')
+  })
   it('rejects unknown domain without touching vault', async () => {
     expect(await svc.login('nope.com')).toEqual({ ok: false, message: 'domain is not allowlisted — use request_allow', code: 'grant_missing' })
     expect(vault.getLogin).not.toHaveBeenCalled()
@@ -118,7 +124,7 @@ describe('requestAllow', () => {
       'Allow the AI to sign in?', 'Domain: example.com', 'Login URL: https://auth.example.com/login',
       'Bitwarden item: ex', 'Hosts: example.com, auth.example.com',
       'Duration: permanent future logins.',
-      'Expiry and revocation do not log out sessions already transferred to Chrome.',
+      'Expiry and revocation do not log out sessions already transferred to the selected browser.',
     ])
     expect(events[0].result).toBe('approved; permanent')
   })
