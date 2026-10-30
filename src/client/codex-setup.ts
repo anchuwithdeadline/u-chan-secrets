@@ -5,11 +5,13 @@ import { basename, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { safeCdpOrigin } from '../core/doctor.js'
 import { defaultEndpoint } from '../ipc/endpoint.js'
+import { browserKind, type BrowserKind } from './browser-choice.js'
 
 export type CodexSetupState = 'ready' | 'missing' | 'needs_update' | 'manual' | 'unavailable'
 export interface CodexSetupOptions {
   apply: boolean; replaceExisting: boolean; endpoint: string; nodePath: string; entryPath: string; configDir: string
   ipcEndpoint?: string
+  browser?: BrowserKind
 }
 export interface CodexSetupResult { state: CodexSetupState; changed: boolean; backupPath?: string; message: string }
 interface ExecResult { code: number; stdout: string; stderr: string }
@@ -33,7 +35,9 @@ function simple(entry: any, name: string): boolean {
   const t = entry.transport
   if (!t || typeof t !== 'object' || Object.keys(t).some(k => !['type', 'command', 'args', 'env', 'env_vars', 'cwd'].includes(k))) return false
   if (t.type !== 'stdio' || typeof t.command !== 'string' || !Array.isArray(t.args) || !t.args.every((a: unknown) => typeof a === 'string')) return false
-  if (t.cwd != null || (t.env != null && (typeof t.env !== 'object' || Object.keys(t.env).length > 0)) || (t.env_vars != null && (!Array.isArray(t.env_vars) || t.env_vars.length > 0))) return false
+  if (t.cwd != null || (t.env_vars != null && (!Array.isArray(t.env_vars) || t.env_vars.length > 0))) return false
+  if (t.env != null && (typeof t.env !== 'object' || Array.isArray(t.env) || Object.entries(t.env).some(([key, value]) =>
+    name !== 'u_chan_secrets' || (key === 'U_CHAN_BROWSER' ? value !== 'chrome' && value !== 'edge' : key === 'U_CHAN_CDP' ? !safeCdpOrigin(value) : true)))) return false
   const command = basename(t.command.replaceAll('\\', '/')).toLowerCase()
   if (name === 'u_chan_secrets') return ['node', 'node.exe'].includes(command) && t.args.length === 1 && /(?:^|[\\/])index\.js$/.test(t.args[0])
   return ['npx', 'npx.cmd', 'npx.exe'].includes(command) && /^@playwright\/mcp(?:@[^\s]+)?$/.test(t.args[0] ?? '')
@@ -69,6 +73,7 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
   }) }
   try {
     if (!safeCdpOrigin(o.endpoint) || (o.replaceExisting && !o.apply)) return result('manual', 'Use a safe loopback browser target and explicit apply flags.')
+    if (o.browser !== undefined) browserKind(o.browser)
     if (await d.elevated()) return result('unavailable', 'Run setup from a non-administrator desktop terminal.')
     const desired = [
       { name: 'u_chan_secrets', command: o.nodePath, args: [o.entryPath] },
@@ -89,11 +94,12 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
         const name = key.toUpperCase()
         return name === 'U_CHAN_CDP' ? safeCdpOrigin(env[key]) !== safeCdpOrigin(o.endpoint)
           : name === 'U_CHAN_IPC' && env[key] !== ipc
-      })) || (Array.isArray(inherited) && inherited.some(key => typeof key === 'string' && ['U_CHAN_CDP','U_CHAN_IPC'].includes(key.toUpperCase())))) {
+      })) || (Array.isArray(inherited) && inherited.some(key => typeof key === 'string' && ['U_CHAN_CDP','U_CHAN_IPC','U_CHAN_BROWSER'].includes(key.toUpperCase())))) {
         return result('manual', 'Custom target environment preserved; align browser and service targets manually.')
       }
       if (current?.enabled === true && current.transport?.type === 'stdio'
-        && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)) continue
+        && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)
+        && (entry.name !== 'u_chan_secrets' || o.browser === undefined || (env?.U_CHAN_BROWSER === o.browser && safeCdpOrigin(env?.U_CHAN_CDP) === safeCdpOrigin(o.endpoint)))) continue
       if (!simple(current, entry.name)) return result('manual', 'Custom Codex settings preserved; configure this registration manually.')
       pending.push({ entry, replace: true })
     }
@@ -109,7 +115,8 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
         if (removed.code !== 0) return result('unavailable', 'Codex change failed; inspect configuration before retrying.')
         changed = true
       }
-      const added = await d.exec(['mcp', 'add', entry.name, '--', entry.command, ...entry.args])
+      const browserEnv = entry.name === 'u_chan_secrets' && o.browser ? ['--env', `U_CHAN_BROWSER=${o.browser}`, '--env', `U_CHAN_CDP=${safeCdpOrigin(o.endpoint)}`] : []
+      const added = await d.exec(['mcp', 'add', entry.name, ...browserEnv, '--', entry.command, ...entry.args])
       if (added.code !== 0) return result('unavailable', 'Codex change failed; completed changes and backup were retained.')
       changed = true
     }

@@ -29,6 +29,22 @@ async function fixture(entries: Record<string, any> = {}) {
 function entry(command: string, args: string[]) {
   return { name: 'fixture', enabled: true, disabled_reason: null, transport: { type: 'stdio', command, args, env: null, env_vars: [], cwd: null }, enabled_tools: null, disabled_tools: null, startup_timeout_sec: null, tool_timeout_sec: null }
 }
+it('registers explicit browser and endpoint environment using the official CLI after backup', async () => {
+  const f = await fixture()
+  const result = await configureCodex({ ...f.options, browser: 'edge', apply: true }, f.deps)
+  expect(result).toMatchObject({ state: 'ready', changed: true })
+  expect(await readFile(result.backupPath!, 'utf8')).toBe(f.original)
+  expect(f.calls).toContainEqual(['mcp','add','u_chan_secrets','--env','U_CHAN_BROWSER=edge','--env',`U_CHAN_CDP=${f.options.endpoint}`,'--',f.options.nodePath,f.options.entryPath])
+})
+it('requires explicit replacement to switch managed browser choice and preserves advanced custom settings', async () => {
+  const f = await fixture(), current = entry(f.options.nodePath, [f.options.entryPath])
+  current.transport.env = { U_CHAN_BROWSER: 'chrome', U_CHAN_CDP: f.options.endpoint } as any
+  const g = await fixture({ u_chan_secrets: current })
+  expect(await configureCodex({ ...g.options, browser: 'edge', apply: true }, g.deps)).toMatchObject({ state: 'needs_update', changed: false })
+  expect(await configureCodex({ ...g.options, browser: 'edge', apply: true, replaceExisting: true }, g.deps)).toMatchObject({ state: 'ready', changed: true })
+  const h = await fixture({ u_chan_secrets: { ...current, tool_timeout_sec: 90 } })
+  expect(await configureCodex({ ...h.options, browser: 'edge', apply: true, replaceExisting: true }, h.deps)).toMatchObject({ state: 'manual', changed: false })
+})
 it('inspects missing entries without writing files or configuration', async () => {
   const f = await fixture()
   expect(await configureCodex(f.options, f.deps)).toMatchObject({ state: 'missing', changed: false })

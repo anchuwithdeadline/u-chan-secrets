@@ -69,12 +69,14 @@ describe('CdpSessionTarget', () => {
     const provider = new CdpBrowserProvider(`http://127.0.0.1:${port}`)
     const target = new CdpSessionTarget(provider)
     fx.bounceRoot = true
+    const foreignBefore = fx.foreignHostHits
     await expect(
       target.inject({
         cookies: [],
         origins: [{ origin: `http://127.0.0.1:${fx.port}`, localStorage: [{ name: 'leak', value: 'x' }] }],
       }),
     ).rejects.toThrow()
+    expect(fx.foreignHostHits).toBe(foreignBefore)
     const other = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
     const page = await other.contexts()[0]!.newPage()
     await page.goto(`http://localhost:${fx.port}/dash`)

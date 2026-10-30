@@ -37,15 +37,16 @@ export class ManagementService {
           const lines = ['Vault: ' + status, lastAction, 'Grant page ' + (page + 1) + ': ' + grants.length + ' of ' + entries.length + ' shown. Use Previous/Next for more.']
           lines.push('Service version: ' + (safeVersion(checks?.serviceVersion) ?? 'unknown'),
             'Service browser: ' + (['pass', 'fail'].includes(checks?.browser ?? '') ? checks?.browser : 'unknown'))
+          lines.push('Observed desktop browser: ' + (checks?.browserKind === 'edge' ? 'Edge' : checks?.browserKind === 'chrome' ? 'Chrome' : 'unknown'))
           if (status === 'locked') lines.push('Next step: use Unlock to approve a protected vault unlock.')
           if (checks?.assets !== 'pass' || checks?.permissions !== 'pass') lines.push('Next step: run u-chan doctor; repair from a trusted administrator terminal.')
-          if (checks?.browser !== 'pass') lines.push('Next step: start dedicated Chrome and run u-chan setup.')
+          if (checks?.browser !== 'pass') lines.push('Next step: start the selected dedicated browser and run u-chan setup.')
           for (const e of grants) {
             let label = e.expiresAt ? 'until ' + e.expiresAt : e.remainingUses !== undefined ? e.remainingUses + ' attempts remaining' : 'permanent'
             try { this.d.grants.check(e) } catch { label = e.remainingUses === 0 ? 'exhausted' : 'expired' }
             lines.push(clean(e.domain) + ' — ' + label)
           }
-          lines.push('Revocation stops future logins. It does not log out existing Chrome sessions.',
+          lines.push('Revocation stops future logins. It does not log out existing browser sessions.',
             'Revocation waits for any earlier login to finish.',
             'Diagnostics: assets ' + (checks?.assets ?? 'unknown') + '; permissions ' + (checks?.permissions ?? 'unknown'),
             'Recent activity:')

@@ -8,7 +8,7 @@ afterAll(async () => { await browser.close(); await fx.close() })
 const creds = async () => ({ username: 'u@x', password: 'pw' })
 function setup(path = '/single') {
   const inject = vi.fn(async () => {})
-  const runner = new IsolatedLogin({ launch: async () => browser, target: { userAgent: async () => 'test', inject }, timeoutMs: 3000, hostCheck: url => new URL(url).hostname === '127.0.0.1' })
+  const runner = new IsolatedLogin({ launch: async () => browser, target: { userAgent: async () => 'test', inject, verify: async () => true }, timeoutMs: 3000, hostCheck: url => new URL(url).hostname === '127.0.0.1' })
   const entry = { domain: '127.0.0.1', hosts: ['127.0.0.1'], item: 'test', loginUrl: `http://127.0.0.1:${fx.port}${path}` }
   return { runner, inject, entry }
 }

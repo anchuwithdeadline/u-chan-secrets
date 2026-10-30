@@ -1,5 +1,6 @@
 import type { FillOutcome } from './login-filler.js'
 import type { SessionState } from '../service/session-transfer.js'
+import type { BrowserKind } from '../client/browser-choice.js'
 
 export interface AllowEntry {
   grantId?: string
@@ -35,7 +36,7 @@ export interface AuditLog {
 }
 export type Selectors = NonNullable<AllowEntry['selectors']>
 export type ApprovalMode = 'easy' | 'hardcore'
-export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
+export const RESULT_CODES = ['grant_missing', 'grant_expired', 'grant_exhausted', 'invalid_policy', 'unsupported_service', 'vault_locked', 'vault_unauthenticated', 'vault_unavailable', 'chrome_unavailable', 'browser_unavailable', 'destination_unconfirmed', 'unsupported_form', 'needs_human', 'authentication_unconfirmed', 'session_transfer_failed', 'internal_error', 'login_timeout', 'success_condition_failed'] as const
 export type ResultCode = typeof RESULT_CODES[number]
 export const isResultCode = (value: unknown): value is ResultCode => typeof value === 'string' && (RESULT_CODES as readonly string[]).includes(value)
 export type ToolResult = { ok: boolean; message: string; code?: ResultCode }
@@ -47,7 +48,7 @@ export class UserFacingError extends Error {
   constructor(message: string, public readonly code?: ResultCode) { super(message) }
 }
 export interface CoreApi {
-  login(domain: string): Promise<ToolResult>
+  login(domain: string, browser?: BrowserKind): Promise<ToolResult>
   requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult>
   revoke(domain: string): Promise<ToolResult>
   listAllowed(): Promise<ToolResult>
@@ -77,14 +78,16 @@ export interface ProtectedPrompt {
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
 export interface SessionTarget {
+  bindBrowser?(browser: BrowserKind, signal?: AbortSignal): Promise<boolean>
   userAgent(signal?: AbortSignal): Promise<string>
   inject(state: SessionState, signal?: AbortSignal): Promise<void>
+  verify?(entry: AllowEntry, finalUrl: string, signal?: AbortSignal): Promise<boolean>
   cancel?(): Promise<void>
 }
 export interface LoginRunner {
   cancel?(): Promise<void>
-  preflight?(signal?: AbortSignal): Promise<void>
-  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void> }): Promise<FillOutcome>
+  preflight?(signal?: AbortSignal, browser?: BrowserKind): Promise<void>
+  run(entry: AllowEntry, getCreds: () => Promise<Credentials>, options?: { signal?: AbortSignal; beforeTransfer?: () => Promise<void>; browser?: BrowserKind }): Promise<FillOutcome>
 }
 
 export interface RegistryDist {

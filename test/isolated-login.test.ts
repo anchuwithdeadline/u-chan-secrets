@@ -25,6 +25,7 @@ const creds = async () => ({ username: 'u@x', password: 'pw' })
 const mkTarget = (inject = vi.fn(async (_s: SessionState) => {})): SessionTarget & { inject: typeof inject } => ({
   userAgent: async () => 'UCS-Test-Agent/1.0',
   inject,
+  verify: vi.fn(async () => true), // Unit destination supplies explicit evidence; real transfer is covered in browser.test.ts.
 })
 
 describe('IsolatedLogin', () => {
@@ -63,6 +64,6 @@ describe('IsolatedLogin', () => {
   it('isolated-login: inject failure', async () => {
     const target = mkTarget(vi.fn(async (_s: SessionState) => { throw new Error('secret-detail') }))
     const r = await new IsolatedLogin({ launch: async () => browser, target, timeoutMs: 5000, hostCheck }).run(entry(), creds)
-    expect(r).toEqual({ status: 'failed', reason: 'could not hand the session to Chrome', code: 'session_transfer_failed' })
+    expect(r).toEqual({ status: 'failed', reason: 'session transfer did not complete; some browser session state may already exist', code: 'session_transfer_failed' })
   }, 30000)
 })

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { configureCodex, isElevated } from './client/codex-setup.js'
 import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
 import { parseAllowArgs } from './client/allow.js'
+import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
@@ -48,10 +49,16 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
 export async function main(argv: string[], d: CliDeps): Promise<number> {
   const [cmd, arg, ...rest] = argv
   let call: (() => Promise<ToolResult>) | undefined
+  let diagnosticEnv = d.env
   const doctor = d.doctor ?? (() => runDoctor({
     platform: d.platform,
     clientVersion: d.clientVersion ?? 'unknown',
-    clientEndpoint: loadConfig(d.env, d.platform).cdpEndpoint,
+    clientEndpoint: loadConfig(diagnosticEnv, d.platform).cdpEndpoint,
+    browser: loadConfig(diagnosticEnv, d.platform).browser,
+    browserIdentity: d.platform === 'win32' ? async () => {
+      const cfg = loadConfig(diagnosticEnv, d.platform)
+      return (await import('./platform/windows/desktop-browser.js')).inspectDesktopBrowser({ endpoint: cfg.cdpEndpoint, browser: cfg.browser, profile: cfg.browserProfile }, diagnosticEnv)
+    } : undefined,
     elevation: d.platform === 'win32' ? async () => (await import('./platform/windows/doctor.js')).checkWindowsUac() : undefined,
     registration: async () => d.platform === 'win32' ? (await import('./platform/windows/doctor.js')).checkWindowsRegistration() : d.platform === 'darwin' ? (await import('./platform/darwin/doctor.js')).checkDarwinRegistration() : 'fail',
     service: async () => {
@@ -61,10 +68,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
       if (!s || typeof s !== 'object') throw new Error('invalid diagnostics')
       return s
     },
-    chrome: () => chromeState(loadConfig(d.env, d.platform).cdpEndpoint),
+    chrome: () => chromeState(loadConfig(diagnosticEnv, d.platform).cdpEndpoint),
     playwright: async () => {
       if (d.platform !== 'win32') return 'unknown'
-      const state = await checkPlaywrightNow(process.pid, loadConfig(d.env, d.platform).cdpEndpoint)
+      const state = await checkPlaywrightNow(process.pid, loadConfig(diagnosticEnv, d.platform).cdpEndpoint)
       return state === 'ok' ? 'pass' : state === 'missing' ? 'fail' : 'unknown'
     },
   }))
@@ -82,30 +89,27 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   if (cmd === 'setup') {
     const args = argv.slice(1), seen = new Set<string>()
     let valid = true
+    let browser: BrowserKind | undefined
     for (let i = 0; i < args.length; i++) {
       const flag = args[i]
-      if (seen.has(flag) || !['--client', '--apply', '--replace-existing', '--start-browser', '--json'].includes(flag)) { valid = false; break }
+      if (seen.has(flag) || !['--client', '--browser', '--apply', '--replace-existing', '--start-browser', '--json'].includes(flag)) { valid = false; break }
       seen.add(flag)
       if (flag === '--client' && args[++i] !== 'codex') { valid = false; break }
+      if (flag === '--browser') { const value = args[++i]; if (value !== 'chrome' && value !== 'edge') { valid = false; break }; browser = value }
     }
     if (!valid || (seen.has('--replace-existing') && !seen.has('--apply'))) {
-      d.err('usage: u-chan setup [--client codex] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
+      d.err('usage: u-chan setup [--client codex] [--browser chrome|edge] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
     }
-    const options = { apply: seen.has('--apply'), replaceExisting: seen.has('--replace-existing'), startBrowser: seen.has('--start-browser') }
-    const endpoint = loadConfig(d.env, d.platform).cdpEndpoint
+    const options = { apply: seen.has('--apply'), replaceExisting: seen.has('--replace-existing'), startBrowser: seen.has('--start-browser'), ...(browser ? { browser } : {}) }
+    if (browser) diagnosticEnv = { ...d.env, U_CHAN_BROWSER: browser }
+    const cfg = loadConfig(diagnosticEnv, d.platform), endpoint = cfg.cdpEndpoint
     const r = d.setup ? await d.setup(options) : await runSetup(options, {
-      platform: d.platform, endpoint, elevated: isElevated, doctor,
-      configure: opts => configureCodex({ ...opts, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
+      platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor,
+      selectBrowser: choice => saveBrowserChoice(cfg.browserChoicePath, choice),
+      configure: opts => configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
       startBrowser: () => new Promise(resolve => {
-        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('../scripts/start-chrome.ps1', import.meta.url)), '-Background'],
-          { timeout: 5000, windowsHide: true, env: d.env, maxBuffer: 65536 }, async err => {
-            if (err) { resolve(false); return }
-            for (let i = 0; i < 5; i++) {
-              if (await chromeState(endpoint, 1000) === 'pass') { resolve(true); return }
-              await new Promise(done => setTimeout(done, 300))
-            }
-            resolve(false)
-          })
+        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('../scripts/start-browser.ps1', import.meta.url)), '-Browser', cfg.browser, '-Background'],
+          { timeout: 24000, windowsHide: true, env: diagnosticEnv, maxBuffer: 65536 }, err => resolve(!err))
       }),
     })
     if (seen.has('--json')) d.out(JSON.stringify(r))

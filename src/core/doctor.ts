@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import type { BrowserKind } from '../client/browser-choice.js'
 
 export interface Proc {
   pid: number
@@ -69,16 +70,19 @@ export type DiagnosticState = 'pass' | 'fail' | 'unknown'
 // Leave room for the service's full native ACL scan and IPC overhead.
 export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 70000
 export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
-export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[] }
+export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[]; browser?: BrowserKind; observedBrowser?: BrowserKind | 'unknown' }
 export interface ServiceDiagnostic {
   serviceVersion?: string
   browser?: DiagnosticState
   browserEndpoint?: string
+  browserKind?: BrowserKind | 'unknown'
   assets: DiagnosticState
   permissions: DiagnosticState
   vault: DiagnosticState | 'locked' | 'unauthenticated'
 }
 export interface DoctorDeps {
+  browser?: BrowserKind
+  browserIdentity?: () => Promise<DiagnosticState>
   clientVersion?: string
   clientEndpoint?: string
   elevation?: () => Promise<DiagnosticState>
@@ -106,12 +110,13 @@ export async function bounded<T>(probe: () => Promise<T>, fallback: T, timeoutMs
   finally { clearTimeout(timer) }
 }
 export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
-  const [registration, service, chrome, playwright, elevation] = await Promise.all([
+  const [registration, service, chrome, playwright, elevation, identity] = await Promise.all([
     bounded(d.registration, 'unknown' as DiagnosticState),
     bounded(d.service, null, SERVICE_DIAGNOSTIC_TIMEOUT_MS),
     bounded(d.chrome, 'unknown' as DiagnosticState),
     bounded(d.playwright, 'unknown' as DiagnosticState),
     bounded(d.elevation ?? (async () => 'unknown' as DiagnosticState), 'unknown' as DiagnosticState),
+    bounded(d.browserIdentity ?? (async () => 'unknown' as DiagnosticState), 'unknown' as DiagnosticState, 20000),
   ])
   const checks: DiagnosticCheck[] = []
   const add = (id: string, state: DiagnosticState, message: string, nextAction: string, required = true) => {
@@ -130,7 +135,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
   }
   if (d.clientEndpoint !== undefined) {
     const client = safeCdpOrigin(d.clientEndpoint), installed = safeCdpOrigin(service?.browserEndpoint)
-    add('service_browser', state(service?.browser), 'Service browser endpoint checked.', 'Start dedicated Chrome and check the service browser target.')
+    add('service_browser', state(service?.browser), 'Service browser endpoint checked.', 'Start the selected dedicated browser and check the service browser target.')
     add('browser_target', !client || !installed ? 'unknown' : client === installed ? 'pass' : 'fail',
       'Desktop and service browser targets checked.', 'Align the desktop and service loopback browser targets.')
   }
@@ -142,9 +147,23 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
     v === 'locked' ? 'Vault is locked.' : v === 'unauthenticated' ? 'Vault is not authenticated.' : 'Vault availability checked.',
     'Complete Bitwarden service login during trusted setup.')
   if (v === 'locked') checks[checks.length - 1].nextAction = 'Run u-chan unlock.'
-  add('chrome', chrome, 'Dedicated Chrome CDP endpoint checked.', 'Start dedicated Chrome with the provided platform launcher.')
+  const label = d.browser === 'edge' ? 'Edge' : d.browser === 'chrome' ? 'Chrome' : 'browser'
+  add('chrome', chrome, `Dedicated ${label} CDP endpoint checked.`, 'Start the selected dedicated browser with the provided platform launcher.')
+  const kindMismatch = d.browser && (service?.browserKind === 'chrome' || service?.browserKind === 'edge') && service.browserKind !== d.browser
+  if (d.browserIdentity) add('browser_identity', kindMismatch ? 'fail' : identity, `Dedicated ${label} process, owner and profile checked.`, 'Check the selected browser, dedicated profile and occupied endpoint; close only the previous dedicated U-Chan instance before switching.')
   add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint and restart the AI session.', playwright !== 'unknown')
-  return { version: 1, checks }
+  return { version: 1, checks, ...(d.browser ? { browser: d.browser, observedBrowser: service?.browserKind === 'edge' || service?.browserKind === 'chrome' ? service.browserKind : 'unknown' as const } : {}) }
+}
+export async function observeCdpBrowser(endpoint: string): Promise<BrowserKind | 'unknown'> {
+  try {
+    const origin = safeCdpOrigin(endpoint)
+    if (!origin) return 'unknown'
+    const response = await fetch(new URL('/json/version', origin), { signal: AbortSignal.timeout(5000), redirect: 'error' })
+    if (!response.ok) return 'unknown'
+    const metadata = await response.json() as Record<string, unknown>
+    const agent = typeof metadata['User-Agent'] === 'string' ? metadata['User-Agent'] : ''
+    return /(?:Edg|Edge)\//.test(agent) ? 'edge' : /Chrome\//.test(agent) ? 'chrome' : 'unknown'
+  } catch { return 'unknown' }
 }
 export function doctorExitCode(report: DiagnosticReport): 0 | 1 | 2 {
   const required = report.checks.filter(c => c.required)

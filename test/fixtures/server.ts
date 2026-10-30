@@ -4,7 +4,7 @@ import { totpCode } from '../../src/core/totp.js'
 
 export const OTP_SEED = 'JBSWY3DPEHPK3PXP'
 
-export interface Fixture { server: Server; port: number; posts: string[]; bounceRoot: boolean; close(): Promise<void> }
+export interface Fixture { server: Server; port: number; posts: string[]; canaryHits: number; foreignHostHits: number; bounceRoot: boolean; close(): Promise<void> }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const page = (body: string) => `<!doctype html><html><body>${body}</body></html>`
@@ -19,12 +19,18 @@ const otpForm =`<form method="post" action="/otp-verify"><input name="otp" autoc
 
 export async function startFixture(): Promise<Fixture> {
   const posts: string[] = []
+  let canaryHits = 0
+  let foreignHostHits = 0
   let port = 0
   const fxState = { bounceRoot: false }
   const server = createServer((req, res) => {
+    if (req.headers.host?.startsWith('localhost:')) foreignHostHits++
     const url = req.url ?? '/'
+    if (url.startsWith('/off-host-canary')) { canaryHits++; res.writeHead(200); res.end('canary'); return }
     const send = (html: string) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(page(html)) }
-    const redirect = (to: string) => { res.writeHead(302, { location: to, ...(to === '/dash' ? { 'set-cookie': 'sid=1; Path=/' } : {}) }); res.end() }
+    const redirect = (to: string) => { res.writeHead(302, { location: to, ...(['/dash','/protected-dash'].includes(to) ? { 'set-cookie': 'sid=1; Path=/' } : {}) }); res.end() }
+    const chain = /^\/chain-(start|middle)\/(302|303|307|308)$/.exec(url)
+    if (chain) { res.writeHead(Number(chain[2]), { location: chain[1] === 'start' ? `/chain-middle/${chain[2]}` : `http://localhost:${port}/off-host-canary` }); res.end(); return }
     if (req.method === 'POST') {
       posts.push(url)
       let raw = ''
@@ -33,12 +39,15 @@ export async function startFixture(): Promise<Fixture> {
         const form = new URLSearchParams(raw)
         const good = form.get('email') === 'u@x' && form.get('password') === 'pw'
         if (url === '/single') return good ? redirect('/dash') : send(singleForm)
+        if (url === '/verified-single') return good ? redirect('/protected-dash') : send(singleForm.replaceAll('/single','/verified-single'))
         if (url === '/two-step') {
           if (!form.has('password')) return send(stepPassword(form.get('email') ?? ''))
           return good ? redirect('/dash') : send(stepEmail('/two-step'))
         }
         if (url === '/stuck') return send(stepEmail('/stuck'))
         if (url === '/otp') return send(good ? otpForm : otpLogin)
+        if (url === '/otp-push') return send(good ? otpForm.replaceAll('/otp-verify','/otp-push-verify') : otpLogin)
+        if (url === '/otp-push-verify') { res.setHeader('set-cookie','partial-challenge=yes; Path=/'); return send('<h1>Check your phone</h1>') }
         if (url === '/otp-inline') {
           const valid = [Date.now(), Date.now() - 30000].map((t) => totpCode(OTP_SEED, t))
           return good && valid.includes(form.get('totpmfa') ?? '') ? redirect('/dash') : send(otpInline)
@@ -53,6 +62,10 @@ export async function startFixture(): Promise<Fixture> {
     }
     switch (url) {
       case '/single': return send(singleForm)
+      case '/verified-single': return send(singleForm.replaceAll('/single','/verified-single'))
+      case '/protected-dash': return (req.headers.cookie ?? '').includes('sid=1') ? send('<h1 id="account">Authenticated fixture account</h1>') : redirect('/single')
+      case '/off-host-action': return send(singleForm.replace('action="/single"', `action="http://localhost:${port}/single"`))
+      case '/chain-form': return send(singleForm.replace('action="/single"', 'action="/chain-start/307"'))
       case '/two-step': return send(stepEmail('/two-step'))
       case '/already': return redirect('/dash')
       case '/dash': return send('<h1>Dashboard</h1>')
@@ -67,6 +80,8 @@ export async function startFixture(): Promise<Fixture> {
         return send(`<form method="post" action="/single"><input type="email" name="email" oninput="location.href='http://localhost:${port}/single'"><input type="password" name="password"><button type="submit">Login</button></form>`)
       case '/stuck': return send(stepEmail('/stuck'))
       case '/otp': return send(otpLogin)
+      case '/otp-only': { res.setHeader('set-cookie','partial-challenge=yes; Path=/'); return send(otpForm) }
+      case '/otp-push': return send(singleForm.replace('action="/single"','action="/otp-push"'))
       case '/otp-inline': return send(otpInline)
       case '/spa-slow':
         // SPA: URL changes at once on submit, the form only goes away later.
@@ -78,13 +93,16 @@ export async function startFixture(): Promise<Fixture> {
       }
       case '/captcha':
         return send(`${singleForm}<iframe src="/recaptcha/api2/anchor"></iframe>`)
+      case '/passkey': return send('<h1>Use your passkey</h1>')
+      case '/push-approval': return send('<h1>Check your phone</h1>')
       case '/recaptcha/api2/anchor': return send('<p>captcha</p>')
       case '/pass-only':
         return send(`<form method="post" action="/single"><input type="password" name="password"><button type="submit">Login</button></form>`)
     }
     res.writeHead(404); res.end()
   })
+  server.on('upgrade', (_request, socket) => { canaryHits++; socket.destroy() })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   port = (server.address() as AddressInfo).port
-  return { server, port, posts, get bounceRoot() { return fxState.bounceRoot }, set bounceRoot(v: boolean) { fxState.bounceRoot = v }, close: () => new Promise<void>((r) => { server.close(() => r()); server.closeAllConnections() }) }
+  return { server, port, posts, get canaryHits() { return canaryHits }, get foreignHostHits() { return foreignHostHits }, get bounceRoot() { return fxState.bounceRoot }, set bounceRoot(v: boolean) { fxState.bounceRoot = v }, close: () => new Promise<void>((r) => { server.close(() => r()); server.closeAllConnections() }) }
 }

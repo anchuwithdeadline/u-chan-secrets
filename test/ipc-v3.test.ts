@@ -7,13 +7,13 @@ import { startIpcServer } from '../src/ipc/server.js'
 import { IpcClient } from '../src/ipc/client.js'
 const servers: net.Server[] = []
 afterEach(() => { servers.splice(0).forEach(s => s.close()) })
-async function client(api: any) {
+async function client(api: any, options?: any) {
   const path = process.platform === 'win32' ? '\\\\.\\pipe\\ucs-v3-' + randomUUID() : join(tmpdir(), 'ucs-' + randomUUID())
   servers.push(await startIpcServer(path, api))
-  return new IpcClient(path)
+  return new IpcClient(path, options)
 }
 it('preserves safe result codes through real IPC', async () => {
-  const c = await client({ login: async () => ({ ok: false, message: 'expired', code: 'grant_expired' }) })
+  const c = await client({ capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["verified_session_transfer"]}' }), login: async () => ({ ok: false, message: 'expired', code: 'grant_expired' }) })
   expect(await c.login('a.com')).toEqual({ ok: false, message: 'expired', code: 'grant_expired' })
 })
 it('passes exact policy only after capability verification', async () => {
@@ -40,4 +40,18 @@ it('rejects invalid timed policy before an approval can run', async () => {
   })
   expect((await (c.requestAllow as any)('a.com', 'https://a.com/login', 'item', undefined, { grant: { kind: 'timed', minutes: 1441 } })).ok).toBe(false)
   expect(requested).toBe(false)
+})
+it('refuses login against a service without verified transfer before sending the attempt', async () => {
+  let requested = false
+  for (const message of ['{}', '{"protocol":3,"features":["grants"]}', '{"protocol":4,"features":["verified_session_transfer"]}', 'invalid']) {
+    const c = await client({ capabilities: async () => ({ ok: true, message }), login: async () => { requested = true; return { ok: true, message: 'should not run' } } })
+    expect(await c.login('a.com')).toMatchObject({ ok: false, code: 'unsupported_service' })
+  }
+  expect(requested).toBe(false)
+})
+it('binds an Edge login request to Edge across real IPC', async () => {
+  let received: unknown
+  const c = await client({ capabilities: async () => ({ok:true,message:'{"protocol":3,"features":["verified_session_transfer"]}'}), login: async (_domain: string, browser: unknown) => {received=browser;return{ok:true,message:'bound'}} },{browser:'edge'})
+  expect((await c.login('a.com')).ok).toBe(true)
+  expect(received).toBe('edge')
 })

@@ -8,6 +8,7 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 | Source line | Status |
 |---|---|
+| 5.x | Source implementation in progress; publication and per-browser Windows verification recorded separately; macOS runtime unverified |
 | 4.x | Published 4.0.0 signature/hash verified; Windows rollout passed on the documented host; macOS runtime unverified |
 | 3.x | Stable npm 3.0.3; Windows closeout verified on the documented host; macOS runtime unverified |
 | 2.x | Previous architecture; upgrade to V3 source through the documented trusted reinstall flow |
@@ -19,7 +20,7 @@ The [validation report](docs/superpowers/research/2026-10-29-v3-validation.md) r
 
 ## Threat model
 
-Assume the AI may be prompt-injected or actively adversarial while running as the installed desktop user. It can execute shell commands, read/write user files, control the user Chrome through CDP, and call every exposed MCP tool with arbitrary arguments.
+Assume the AI may be prompt-injected or actively adversarial while running as the installed desktop user. It can execute shell commands, read/write user files, control the selected user Chrome/Edge through CDP, and call every exposed MCP tool with arbitrary arguments.
 
 The intended protected assets are website credentials, TOTP seeds/codes, Bitwarden session keys/data, authorization settings, and privileged executable integrity.
 

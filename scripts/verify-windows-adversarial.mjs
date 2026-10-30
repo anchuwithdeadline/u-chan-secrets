@@ -121,16 +121,26 @@ if (command === '--prepare') {
   const publicDirectory = await createChannel(runIdArgument ?? randomUUID())
   const home = path.join(process.env.ProgramData ?? 'C:\\ProgramData', 'u-chan-secrets')
   const root = path.join(home, '#0 backup', 'browser-probe-' + randomUUID()), task = 'UChanBrowserProbe-' + randomUUID()
+  const program = process.argv[4] ? path.resolve(process.argv[4]) : path.join(home, 'program'), endpoint = process.argv[5] ?? 'http://127.0.0.1:9222', matrix = process.argv[6] === 'matrix'
+  if (program !== path.join(home, 'program') && !program.startsWith(path.resolve(home, '#0 backup') + path.sep)) throw new Error('Candidate must be in protected backup storage')
+  const { safeCdpOrigin } = await import('../dist/core/doctor.js')
+  if (!safeCdpOrigin(endpoint)) throw new Error('Unsafe fixture endpoint')
+  const desktopHome = matrix ? path.resolve(process.argv[7] ?? '') : undefined
+  if (matrix && (!desktopHome.startsWith(path.resolve(os.tmpdir(), 'u-chan-v5-matrix-' + runIdArgument) + path.sep) || !['chrome','edge'].includes(path.basename(desktopHome)))) throw new Error('Unsafe disposable desktop home')
   let registered = false
   try {
     await fs.mkdir(root); await setAdminOnlyAcl(root)
+    if (matrix) {
+      const settings = JSON.parse(await fs.readFile(path.join(home, 'settings.json'), 'utf8'))
+      await fs.writeFile(path.join(root, 'matrix-context.json'), JSON.stringify({ desktopHome, ownerSid: settings.authorizedSid }))
+    }
     const runner = path.join(root, 'runner.mjs')
     await fs.copyFile(new URL('./windows-security/browser-worker.mjs', import.meta.url), runner)
     await fs.copyFile(new URL('./windows-security/module-audit.ps1', import.meta.url), path.join(root, 'module-audit.ps1'))
     await fs.copyFile(new URL('./windows-security/result-policy.mjs', import.meta.url), path.join(root, 'result-policy.mjs'))
     await setAdminOnlyAcl(root)
     const transcripts = path.join(process.env.USERPROFILE, '.codex', 'sessions')
-    await ps(`$ErrorActionPreference='Stop';$a=New-ScheduledTaskAction -Execute ${quote(path.join(home, 'bin', 'node.exe'))} -Argument ${quote('"' + runner + '" "' + root + '" "' + transcripts + '"')} -WorkingDirectory ${quote(root)};$p=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest;$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries;Register-ScheduledTask -TaskName ${quote(task)} -Action $a -Principal $p -Settings $s | Out-Null`)
+    await ps(`$ErrorActionPreference='Stop';$a=New-ScheduledTaskAction -Execute ${quote(path.join(home, 'bin', 'node.exe'))} -Argument ${quote('"' + runner + '" "' + root + '" "' + transcripts + '" "' + program + '" "' + endpoint + '"' + (matrix ? ' matrix' : ''))} -WorkingDirectory ${quote(root)};$p=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest;$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries;Register-ScheduledTask -TaskName ${quote(task)} -Action $a -Principal $p -Settings $s | Out-Null`)
     registered = true; await ps(`Start-ScheduledTask -TaskName ${quote(task)}`)
     const output = path.join(root, 'browser-result.json'), deadline = Date.now() + 90000
     while (Date.now() < deadline && !await fs.stat(output).catch(() => null)) await sleep(200)

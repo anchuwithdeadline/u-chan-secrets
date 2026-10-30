@@ -3,6 +3,7 @@ import type { ApprovalMode, ControlApi, CoreApi, Selectors, ToolResult } from '.
 import { FrameReader, encode, type Method } from './protocol.js'
 import { isResultCode, type AllowOptions } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
+import { browserKind, type BrowserKind } from '../client/browser-choice.js'
 
 const DOWN = 'U-Chan service is not running — run u-chan install'
 
@@ -10,8 +11,10 @@ const DOWN = 'U-Chan service is not running — run u-chan install'
 export class IpcClient implements CoreApi, ControlApi {
   private nextId = 1
   private timeoutMs: number
-  constructor(private path: string, opts: { timeoutMs?: number } = {}) {
+  private readonly browser: BrowserKind | (() => BrowserKind)
+  constructor(private path: string, opts: { timeoutMs?: number; browser?: BrowserKind | (() => BrowserKind) } = {}) {
     this.timeoutMs = opts.timeoutMs ?? 180000
+    this.browser = opts.browser ?? 'chrome'
   }
 
   private call(method: Method, params: Record<string, unknown> = {}): Promise<ToolResult> {
@@ -45,7 +48,17 @@ export class IpcClient implements CoreApi, ControlApi {
     })
   }
 
-  login(domain: string) { return this.call('login', { domain }) }
+  async login(domain: string, browser?: BrowserKind): Promise<ToolResult> {
+    let selected: BrowserKind
+    try { selected = browserKind(browser ?? (typeof this.browser === 'function' ? this.browser() : this.browser)) }
+    catch { return { ok: false, code: 'browser_unavailable', message: 'browser selection is invalid or changed; run setup and restart the AI session before login' } }
+    const response = await this.capabilities()
+    try {
+      const capability = JSON.parse(response.message)
+      if (response.ok && capability.protocol === 3 && Array.isArray(capability.features) && capability.features.includes('verified_session_transfer')) return this.call('login', { domain, browser: selected })
+    } catch {}
+    return { ok: false, code: 'unsupported_service', message: 'verified login requires a reachable V5 service; update the installed service before login' }
+  }
   async requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult> {
     if (options !== undefined) {
       if (!validOptions(options)) return { ok: false, code: 'invalid_policy', message: 'invalid approval policy or success condition' }
