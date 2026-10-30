@@ -6,6 +6,7 @@
 - Include both browser policy scripts in Windows service installations and check their presence in service diagnostics.
 - Make `setup --apply` retain the recognized npm PowerShell launcher in `#0 backup` so the short `u-chan` command resolves to `u-chan.cmd` under restrictive PowerShell execution policies. Preserve custom launchers and leave execution policy and shell profiles unchanged.
 - Keep protocol 3, protected-state schema 3, native helpers, dependencies, and existing grants unchanged. Site-specific login success conditions still require local protected approval.
+- Pin native-helper template line endings so unchanged helper bytes remain compatible with signed package-only updates across checkout platforms.
 
 ## 5.0.0
 

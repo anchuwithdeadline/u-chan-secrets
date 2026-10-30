@@ -1,1 +1,3 @@
 *.sh text eol=lf
+# Native helper template bytes must stay stable for signed package-only updates.
+src/platform/windows/assets/*-src.ts text eol=crlf
