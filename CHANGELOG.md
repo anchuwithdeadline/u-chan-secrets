@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.1
+
+- Resolve the installed Windows owner's shell-folder paths from raw registry values before expanding `%USERPROFILE%`. SYSTEM now verifies the owner's dedicated Edge/Chrome profile instead of its own profile.
+- Include both browser policy scripts in Windows service installations and check their presence in service diagnostics.
+- Make `setup --apply` retain the recognized npm PowerShell launcher in `#0 backup` so the short `u-chan` command resolves to `u-chan.cmd` under restrictive PowerShell execution policies. Preserve custom launchers and leave execution policy and shell profiles unchanged.
+- Keep protocol 3, protected-state schema 3, native helpers, dependencies, and existing grants unchanged. Site-specific login success conditions still require local protected approval.
+
 ## 5.0.0
 
 - Add per-user Chrome/Edge selection, defaulting to Chrome, with separate dedicated profiles, configuration backups, explicit apply, and matching Codex MCP environment.

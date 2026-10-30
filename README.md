@@ -20,6 +20,19 @@ Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026
 
 ## What V5 adds
 
+### Updating an existing Windows V5 installation to 5.0.1
+
+Run these commands from a normal, non-administrator PowerShell terminal:
+
+```powershell
+npm.cmd install --global u-chan-secrets@5.0.1
+u-chan.cmd update
+u-chan.cmd setup --apply
+u-chan doctor
+```
+
+The signed service update restarts U-Chan and clears its in-memory vault unlock. Run `u-chan unlock` afterward and enter the master password only in the protected prompt. The explicit `.cmd` spelling bootstraps setup when npm's PowerShell launcher is blocked; afterward the short `u-chan` command works. Restart the AI session if setup requests it. Existing browser choice, grants, and vault data remain local; a site's success condition must be approved separately on each installation. Older versions with changed dependencies or native helpers may require the trusted administrator reinstall described below.
+
 Choose your browser from a normal Windows terminal:
 
 ```powershell
