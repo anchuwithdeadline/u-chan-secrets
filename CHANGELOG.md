@@ -10,6 +10,7 @@
 - Return explicit human-action outcomes for recognized CAPTCHA/passkey/push challenges and missing/rejected TOTP. Preserve one-attempt semantics and avoid automatic credential retries.
 - Require V5 verified-transfer capability before a V5 client sends login; retain protocol 3, state schema 3, existing grants, native helpers, and runtime dependencies.
 - Source, artifact publication, installed verification, per-browser Windows fixtures, and macOS native verification remain separate claims.
+- Publish 5.0.0 under npm `latest` and `next` with verified registry signature/integrity and a matching GitHub artifact. Verify installed Windows service/CLI bytes, disposable SYSTEM Chrome/Edge matrices, and explicit local Edge setup; keep macOS native runtime unverified.
 
 ## 4.0.1
 
