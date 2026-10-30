@@ -60,6 +60,8 @@ Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequ
 
 Automatic registration supports Codex on Windows only. Configure other clients manually using their documented MCP commands. macOS runtime remains unverified. `doctor` compares the actual CLI and installed service versions, both browser targets, and Windows UAC policy; missing metadata remains unknown. `manage` shows the installed service version and browser status.
 
+On Windows, `setup --apply` also makes the short `u-chan` command work when PowerShell blocks scripts. It moves the recognized npm-generated `u-chan.ps1` launcher into the npm directory's `#0 backup`, leaving `u-chan.cmd` available for PowerShell to resolve automatically. Execution policy and PowerShell profiles are unchanged. Inspection without `--apply` is read-only, and custom launchers are preserved. If the first setup command is blocked, run `u-chan.cmd setup --apply`. Rerun setup after an npm installation or update recreates the PowerShell launcher. Shell results and the backup path appear in the setup JSON report.
+
 Propose a site grant with an explicit success condition:
 
 ```sh

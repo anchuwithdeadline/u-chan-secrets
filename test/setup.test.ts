@@ -86,3 +86,18 @@ it('saves browser choice only after explicit apply and ready client inspection',
   await runSetup({ ...options, browser: 'edge', apply: true }, notReady)
   expect(d.selectBrowser).not.toHaveBeenCalled()
 })
+
+it('applies the Windows command fix only on request, without forcing an AI restart', async () => {
+  const d = { ...fixture(), configureShell: vi.fn(async (apply: boolean) => ({ ready: apply, changed: apply, message: 'Shell checked.' })) }
+  expect((await runSetup(options, d)).state).toBe('needs_attention')
+  expect(d.configureShell).toHaveBeenLastCalledWith(false)
+  expect(await runSetup({ ...options, apply: true }, d)).toMatchObject({ state: 'configured', changed: true, restartRequired: false, shell: { changed: true } })
+  expect(d.configureShell).toHaveBeenLastCalledWith(true)
+  d.configureShell.mockClear()
+  d.elevated.mockResolvedValue(true)
+  await runSetup({ ...options, apply: true }, d)
+  expect(d.configureShell).not.toHaveBeenCalled()
+  d.elevated.mockResolvedValue(false)
+  await runSetup({ ...options, apply: true }, { ...d, platform: 'darwin' })
+  expect(d.configureShell).not.toHaveBeenCalled()
+})

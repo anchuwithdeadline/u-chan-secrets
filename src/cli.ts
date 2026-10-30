@@ -16,6 +16,7 @@ import { configureCodex, isElevated } from './client/codex-setup.js'
 import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
 import { parseAllowArgs } from './client/allow.js'
 import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
+import { configureWindowsCommand } from './client/windows-command.js'
 
 const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
@@ -105,6 +106,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     const cfg = loadConfig(diagnosticEnv, d.platform), endpoint = cfg.cdpEndpoint
     const r = d.setup ? await d.setup(options) : await runSetup(options, {
       platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor,
+      configureShell: apply => configureWindowsCommand(apply, d.env.PATH ?? d.env.Path ?? ''),
       selectBrowser: choice => saveBrowserChoice(cfg.browserChoicePath, choice),
       configure: opts => configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
       startBrowser: () => new Promise(resolve => {

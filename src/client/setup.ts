@@ -1,12 +1,14 @@
 import { bounded, safeCdpOrigin, type DiagnosticCheck, type DiagnosticReport } from '../core/doctor.js'
 import type { CodexSetupResult, CodexSetupState } from './codex-setup.js'
 import type { BrowserKind } from './browser-choice.js'
+import type { WindowsCommandResult } from './windows-command.js'
 export interface SetupOptions { apply: boolean; replaceExisting: boolean; startBrowser: boolean; browser?: BrowserKind }
 export interface SetupReport {
   version: 1; state: 'needs_attention' | 'configured'; sharing: 'unobserved' | 'mismatch' | 'process_configured'
   restartRequired: boolean; checks: DiagnosticCheck[]; actions: { id: string; message: string; required: boolean }[]
   client: CodexSetupState; changed: boolean; backupPath?: string
   browser?: BrowserKind; browserChanged?: boolean; browserBackupPath?: string
+  shell?: WindowsCommandResult
 }
 export interface SetupDeps {
   platform: NodeJS.Platform; endpoint: string; elevated: () => Promise<boolean>
@@ -15,6 +17,7 @@ export interface SetupDeps {
   startBrowser: () => Promise<boolean>
   browser?: BrowserKind
   selectBrowser?: (browser: BrowserKind) => Promise<{ changed: boolean; backupPath?: string }>
+  configureShell?: (apply: boolean) => Promise<WindowsCommandResult>
 }
 export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupReport> {
   const r: SetupReport = { version: 1, state: 'needs_attention', sharing: 'unobserved', restartRequired: false, checks: [], actions: [], client: 'unavailable', changed: false }
@@ -25,12 +28,17 @@ export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupRepo
     if (!safeCdpOrigin(d.endpoint)) { action('configure_mcp', 'Configure a safe HTTP loopback browser target.'); return r }
     r.checks = (await d.doctor()).checks
     if (d.platform !== 'win32') { action('configure_mcp', 'Automatic setup supports Windows and Codex only; configure other platforms manually.'); r.client = 'manual'; return r }
+    if (d.configureShell) {
+      r.shell = await d.configureShell(o.apply)
+      r.changed = r.shell.changed
+      action('configure_shell', r.shell.message, !r.shell.ready)
+    }
     if (r.checks.some(c => c.id === 'browser_target' && c.state === 'fail')) {
       r.sharing = 'mismatch'; action('configure_mcp', 'Align the desktop and service loopback browser targets before applying setup.'); return r
     }
     const configured = await d.configure({ apply: o.apply, replaceExisting: o.replaceExisting, ...(o.browser ? { browser: o.browser } : {}) })
-    r.client = configured.state; r.changed = configured.changed; r.backupPath = configured.backupPath
-    r.restartRequired = r.changed
+    r.client = configured.state; r.changed ||= configured.changed; r.backupPath = configured.backupPath
+    r.restartRequired = configured.changed
     if (o.browser && o.apply && r.client === 'ready') {
       if (!d.selectBrowser) throw new Error('browser selection unavailable')
       const selected = await d.selectBrowser(o.browser)
@@ -45,7 +53,7 @@ export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupRepo
     const pw = r.checks.find(c => c.id === 'playwright')
     const mismatch = r.checks.some(c => c.id === 'browser_target' && c.state === 'fail')
     r.sharing = mismatch || pw?.state === 'fail' ? 'mismatch' : pw?.state === 'pass' ? 'process_configured' : 'unobserved'
-    r.restartRequired = r.changed || pw?.state === 'fail'
+    r.restartRequired ||= pw?.state === 'fail'
     const ids: Record<string, string> = { registration: 'install_service', service: 'install_service', ipc: 'install_service',
       version: 'update_service', assets: 'repair_permissions', permissions: 'repair_permissions', service_browser: 'start_browser', chrome: 'start_browser',
       browser_target: 'configure_mcp', browser_identity: 'start_browser', playwright: 'configure_mcp', uac: 'review_uac' }
@@ -58,7 +66,7 @@ export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupRepo
     if (r.restartRequired) action('restart_client', 'Restart the AI session to load saved MCP registrations.', false)
     action('configure_mcp', 'Active AI-session browser ownership is unverified; check the current client browser connection.', false)
     const requiredOk = r.checks.length > 0 && r.checks.filter(c => c.required).every(c => c.state === 'pass')
-    if (requiredOk && r.client === 'ready' && started && !mismatch) r.state = 'configured'
+    if (requiredOk && r.client === 'ready' && started && !mismatch && r.shell?.ready !== false) r.state = 'configured'
     return r
   } catch { action('configure_mcp', 'Setup inspection failed; run u-chan doctor and inspect retained configuration changes.'); return r }
 }
