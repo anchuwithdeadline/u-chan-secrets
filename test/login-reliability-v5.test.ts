@@ -9,6 +9,12 @@ let browser: Browser, fx: Fixture
 beforeAll(async () => { browser = await chromium.launch(); fx = await startFixture() })
 afterAll(async () => { await browser.close(); await fx.close() })
 const check = (url: string) => new URL(url).hostname === '127.0.0.1'
+it('refuses plaintext proxy forwarding in the production default even if a callback permits it', async () => {
+  const before=fx.canaryHits, network=await createPrivateNetwork(()=>true,AbortSignal.timeout(10000))
+  const context=await browser.newContext({proxy:network.proxy})
+  try {const page=await context.newPage();await page.goto(`http://127.0.0.1:${fx.port}/off-host-canary`).catch(()=>{});expect(fx.canaryHits).toBe(before);expect(network.wasBlocked()).toBe(true)}
+  finally {await context.close();await network.close()}
+})
 it('does not echo a rejected destination hostname that could contain reflected secrets', async () => {
   const fakePage = { goto: async () => {}, url: () => 'https://NO_LOG_SECRET.invalid/login' }
   const result = await fillLogin(fakePage as any, { domain: 'a.test', hosts: ['a.test'], loginUrl: 'https://a.test/login', item: 'dummy' }, vi.fn(), { hostCheck: () => false })
@@ -76,7 +82,7 @@ it('reports possible partial state on cancellation during injection or destinati
   }
 })
 it('blocks off-host fetch, frames, images, redirects and WebSockets without a network canary hit', async () => {
-  const network = await createPrivateNetwork(check, AbortSignal.timeout(10000))
+  const network = await createPrivateNetwork(check, AbortSignal.timeout(10000), `http://127.0.0.1:${fx.port}`)
   const context = await browser.newContext({ serviceWorkers: 'block', proxy: network.proxy })
   try {
     const page = await context.newPage(), before = fx.canaryHits
@@ -86,7 +92,7 @@ it('blocks off-host fetch, frames, images, redirects and WebSockets without a ne
       await fetch(outside).catch(() => {})
       for (const status of [302,303,307,308]) await fetch(`http://127.0.0.1:${port}/chain-start/${status}`).catch(() => {})
       for (const kind of ['img','iframe']) { const element = document.createElement(kind); element.setAttribute('src', outside); document.body.append(element) }
-      const frame = document.createElement('iframe'); frame.src = `http://127.0.0.1:${port}/chain-start/307`; document.body.append(frame)
+      const frame = document.createElement('iframe'); frame.src = '/chain-start/307'; document.body.append(frame)
       await new Promise<void>(resolve => {
         const source = `fetch('http://127.0.0.1:${port}/chain-start/308').catch(()=>{}).then(()=>postMessage('finished'))`
         const worker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })))

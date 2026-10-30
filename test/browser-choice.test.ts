@@ -1,11 +1,11 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, readFile, writeFile, symlink, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, symlink, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadConfig, resolveLoginBrowser } from '../src/core/config.js'
 import { readBrowserChoice, saveBrowserChoice } from '../src/client/browser-choice.js'
 const directories: string[] = []
-async function fixture() { const dir = await mkdtemp(join(tmpdir(), 'ucs-browser-choice-')); directories.push(dir); return dir }
+async function fixture() { const dir = await realpath(await mkdtemp(join(tmpdir(), 'ucs-browser-choice-'))); directories.push(dir); return dir }
 afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 it('defaults to Chrome and preserves custom CDP and the legacy Chrome profile', async () => {

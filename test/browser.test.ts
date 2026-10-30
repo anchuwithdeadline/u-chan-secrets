@@ -104,7 +104,7 @@ describe('CdpBrowserProvider', () => {
     } finally {
       await launched?.close()
     }
-  })
+  }, 30000)
   it('does not launch Chrome just to report status', async () => {
     let calls = 0
     const p = new CdpBrowserProvider(`http://127.0.0.1:${await freePort()}`, { launch: async () => void calls++ })

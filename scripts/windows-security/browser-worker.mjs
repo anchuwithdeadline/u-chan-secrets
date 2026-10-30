@@ -103,8 +103,11 @@ try {
     const context = await browser.newContext({ serviceWorkers: 'block', proxy: network.proxy })
     try {
       const page = await context.newPage()
-      await page.goto('https://example.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
-      result.privateHttpsCertificateValidated = await page.locator('h1').filter({ hasText: 'Example Domain' }).isVisible()
+      const response = await page.goto('https://example.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
+      const security = await response?.securityDetails()
+      result.privateHttpsHttpStatus = response?.status()
+      result.privateHttpsProtocol = security?.protocol?.startsWith('TLS') ? security.protocol : 'unknown'
+      result.privateHttpsCertificateValidated = !!response && new URL(response.url()).origin === 'https://example.com' && new URL(page.url()).origin === 'https://example.com' && result.privateHttpsProtocol !== 'unknown'
     } finally { await context.close(); await network.close() }
   }
   await fs.mkdir(path.join(root, 'bw-fixture'))

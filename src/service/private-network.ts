@@ -2,8 +2,10 @@ import { createServer, request as httpRequest, type OutgoingHttpHeaders } from '
 import { connect, type Socket } from 'node:net'
 
 /** Per-context HTTP/CONNECT proxy: every redirect and child target must obtain a separately checked destination. */
-export async function createPrivateNetwork(hostCheck: (url: string) => boolean, signal: AbortSignal) {
+export async function createPrivateNetwork(hostCheck: (url: string) => boolean, signal: AbortSignal, loopbackHttpOriginForTesting?: string) {
   let blocked = false, closing: Promise<void> | undefined
+  const testOrigin = loopbackHttpOriginForTesting ? new URL(loopbackHttpOriginForTesting) : undefined
+  if (testOrigin && (testOrigin.protocol !== 'http:' || testOrigin.hostname !== '127.0.0.1' || testOrigin.username || testOrigin.password)) throw new Error('Invalid loopback fixture origin')
   const sockets = new Set<Socket>()
   const allowed = (url: URL) => {
     try { return !signal.aborted && !url.username && !url.password && hostCheck(url.href) } catch { return false }
@@ -12,10 +14,11 @@ export async function createPrivateNetwork(hostCheck: (url: string) => boolean, 
   const server = createServer((incoming, response) => {
     let url: URL
     try { url = new URL(incoming.url ?? '') } catch { blocked = true; response.writeHead(403); response.end(); return }
-    if (url.protocol !== 'http:' || !allowed(url)) { blocked = true; response.writeHead(403); response.end(); return }
-    const headers: OutgoingHttpHeaders = { ...incoming.headers, host: url.host }
+    if (!testOrigin || url.protocol !== 'http:' || url.origin !== testOrigin.origin || !allowed(url)) { blocked = true; response.writeHead(403); response.end(); return }
+    const headers: OutgoingHttpHeaders = { ...incoming.headers, host: testOrigin.host }
     delete headers['proxy-authorization']; delete headers['proxy-connection']
-    const outgoing = httpRequest(url, { method: incoming.method, headers, agent: false }, upstream => {
+    // Plain HTTP exists only for explicitly injected loopback fixtures; the production path uses approved HTTPS CONNECT.
+    const outgoing = httpRequest({ hostname: '127.0.0.1', port: Number(testOrigin.port || 80), path: url.pathname + url.search, method: incoming.method, headers, agent: false }, upstream => {
       response.writeHead(upstream.statusCode ?? 502, upstream.headers)
       upstream.pipe(response)
     })

@@ -53,7 +53,8 @@ export class IsolatedLogin implements LoginRunner {
         browser = await abortable(this.o.launch(), signal, stop, b => b.close())
         this.browser = browser
       }
-      network = await abortable(createPrivateNetwork(hostCheck, signal), signal, stop, n => n.close())
+      const fixtureOrigin = this.o.hostCheck && new URL(entry.loginUrl).protocol === 'http:' ? new URL(entry.loginUrl).origin : undefined
+      network = await abortable(createPrivateNetwork(hostCheck, signal, fixtureOrigin), signal, stop, n => n.close())
       ctx = await abortable(browser.newContext({ userAgent, serviceWorkers: 'block', proxy: network.proxy }), signal, stop, c => c.close())
       const page = await abortable(ctx.newPage(), signal, stop, p => p.close())
       const checkHost = () => {
