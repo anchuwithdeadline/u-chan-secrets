@@ -8,7 +8,7 @@ Include the affected version, OS, approval mode, attack steps, expected/observed
 
 | Source line | Status |
 |---|---|
-| 5.x | Source implementation in progress; publication and per-browser Windows verification recorded separately; macOS runtime unverified |
+| 5.x | Published 5.0.0 signature/hash verified; disposable Chrome/Edge SYSTEM matrices and Windows installation verified on the documented host; macOS runtime unverified |
 | 4.x | Published 4.0.0 signature/hash verified; Windows rollout passed on the documented host; macOS runtime unverified |
 | 3.x | Stable npm 3.0.3; Windows closeout verified on the documented host; macOS runtime unverified |
 | 2.x | Previous architecture; upgrade to V3 source through the documented trusted reinstall flow |
