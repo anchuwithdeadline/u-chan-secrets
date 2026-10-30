@@ -66,6 +66,12 @@ try {
     return await inspectServiceDesktopBrowser(endpoint, matrixMetadata.ownerSid, { ...process.env, U_CHAN_DESKTOP_HOME: matrixMetadata.desktopHome }, requested) === 'pass'
   } } : {})
   const target = new CdpSessionTarget(provider, { hostCheck: (_entry, url) => new URL(url).hostname === '127.0.0.1' })
+  if (matrix) {
+    await provider.withPage(async page => { await page.goto(origin); await page.locator('input[type=email]').fill('cross-connection-control@example.invalid') }, undefined, result.fixtureBrowser)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    result.crossConnectionInputPositiveControl = sharedInputCount > 0
+    sharedInputCount = 0
+  }
   const login = new IsolatedLogin({ launch: async () => browser, target, timeoutMs: 15000, hostCheck: url => new URL(url).hostname === '127.0.0.1' })
   const outcome = await login.run({ domain: '127.0.0.1', hosts: ['127.0.0.1'], item: 'disposable', loginUrl: origin + '/login', success: { selector: '#signed-in' } }, async () => ({ username, password }), { browser: result.fixtureBrowser ?? 'chrome' })
   result.confirmedFixtureLogin = outcome.status === 'logged_in' && receivedCredentials
@@ -145,7 +151,7 @@ try {
     result.signedUpdateRehearsal = updated.ok && JSON.parse(await fs.readFile(path.join(programDir, 'package.json'), 'utf8')).version === '3.0.2' && await fs.readFile(path.join(programDir, 'node_modules', 'private-marker'), 'utf8') === 'preserve-private-dependencies' && await fs.readFile(path.join(updateHome, 'settings.json'), 'utf8') === state && restarts === 1
   }
   result.ok = result.initScriptPositiveControl && result.confirmedFixtureLogin && result.sharedInputEvents === 0 && result.transferredFixtureSession && result.onceGrantConcurrency && result.clockRollbackPersisted && moduleAuditSucceeded(result.nativeModules) && result.realRegistryVerification && result.signedUpdateRehearsal && matches === 0
-  if (matrix) result.ok &&= result.allPageInputPositiveControl && result.desktopIdentity === 'pass' && result.wrongBrowserRejected && result.privateHttpsCertificateValidated && ['chrome','edge'].includes(result.fixtureBrowser)
+  if (matrix) result.ok &&= result.allPageInputPositiveControl && result.crossConnectionInputPositiveControl && result.desktopIdentity === 'pass' && result.wrongBrowserRejected && result.privateHttpsCertificateValidated && ['chrome','edge'].includes(result.fixtureBrowser)
 } catch (e) { result.errorType = e.name }
 finally {
   clearTimeout(bwTimer); if (bitwarden && bitwarden.exitCode === null) bitwarden.kill()
