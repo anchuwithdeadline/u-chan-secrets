@@ -4,7 +4,7 @@ A local MCP server that signs into approved websites with Bitwarden credentials.
 
 Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.
 
-**Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [validation evidence](docs/superpowers/research/2026-10-29-v3-validation.md) and [SECURITY.md](SECURITY.md).
+**Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [V5 validation evidence](docs/superpowers/research/2026-10-30-v5-validation.md) and [SECURITY.md](SECURITY.md).
 
 The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) records matching service/CLI versions, preserved protected state, real setup and fresh MCP/browser checks. It builds on the tightened V3.0.3 [native closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md). macOS runtime remains unverified; source merge, installed verification, and package publication are recorded separately.
 
@@ -184,7 +184,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 | Command | Purpose |
 |---|---|
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
-| `setup [--client codex] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex/browser setup |
+| `setup [--client codex] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex/browser setup |
 | `allow <domain> --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
 | `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
 | `unlock` | Request the protected master-password prompt |
