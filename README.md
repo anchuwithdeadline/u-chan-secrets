@@ -18,6 +18,11 @@ The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) rec
 
 Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
 
+## What 5.1 adds
+
+- **Claude Code setup:** `u-chan setup --client claude [--apply] [--replace-existing]` checks the user-scope `u-chan-secrets` and `playwright` registrations in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and repairs a Playwright entry missing `--cdp-endpoint`. Inspection reads the file without changing it; changes go through `claude mcp remove`/`add-json --scope user` after a backup in `~/.claude/#0 backup`. Custom registrations are preserved and reported for manual configuration.
+- **Daily start:** `u-chan start` starts the selected dedicated browser when its endpoint is down, opens the protected unlock prompt only when the vault is locked, then prints the doctor report. It needs no administrator rights and changes no configuration. It exits 1 if a required check fails or the vault remains locked. Windows only.
+
 ## What V5 adds
 
 ### Updating an existing Windows V5 installation to 5.0.1
@@ -181,12 +186,15 @@ Start the dedicated Chrome profile from the checkout:
 | Windows | `powershell -File scripts\start-chrome.ps1` |
 | macOS | `bash scripts/start-chrome.sh` |
 
+On Windows, `u-chan setup --client claude --apply` performs this registration instead.
+
 Use a normal user terminal for daily operations:
 
 ```sh
-node dist/cli.js doctor
-node dist/cli.js unlock
+node dist/cli.js start
 ```
+
+`start` launches the dedicated browser if needed, unlocks a locked vault through the protected prompt, and prints `doctor`.
 
 Check the phrase in the genuine protected prompt before entering a password. Never send passwords, TOTP seeds/codes, or vault session keys to an AI conversation.
 
@@ -198,8 +206,9 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 
 | Command | Purpose |
 |---|---|
+| `start` | Windows daily start: dedicated browser, protected unlock if locked, doctor report |
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
-| `setup [--client codex] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex/browser setup |
+| `setup [--client codex\|claude] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex or Claude Code/browser setup |
 | `allow <domain> --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
 | `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
 | `unlock` | Request the protected master-password prompt |

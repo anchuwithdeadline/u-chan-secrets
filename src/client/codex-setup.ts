@@ -48,16 +48,19 @@ async function backup(configDir: string): Promise<string | undefined> {
   const root = resolve(configDir)
   const info = await lstat(root)
   if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(root)).toLowerCase() !== root.toLowerCase()) throw new Error('redirected config')
-  const config = join(root, 'config.toml')
+  return backupFile(join(root, 'config.toml'), join(root, '#0 backup'), '.toml')
+}
+
+/** Copy a regular config file into a non-redirected backup directory; undefined when the file does not exist. */
+export async function backupFile(config: string, dir: string, ext: string): Promise<string | undefined> {
   try {
     const file = await lstat(config)
     if (!file.isFile() || file.isSymbolicLink()) throw new Error('redirected config')
   } catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw err }
-  const dir = join(root, '#0 backup')
-  await mkdir(dir, { mode: 0o700 }).catch(err => { if (err.code !== 'EEXIST') throw err })
+  await mkdir(dir, { recursive: true, mode: 0o700 })
   const target = await lstat(dir)
   if (!target.isDirectory() || target.isSymbolicLink() || (await realpath(dir)).toLowerCase() !== dir.toLowerCase()) throw new Error('redirected backup')
-  const path = join(dir, `u-chan-setup-${randomUUID()}.toml`)
+  const path = join(dir, `u-chan-setup-${randomUUID()}${ext}`)
   await copyFile(config, path, constants.COPYFILE_EXCL)
   await chmod(path, 0o600)
   return path

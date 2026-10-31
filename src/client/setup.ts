@@ -18,16 +18,19 @@ export interface SetupDeps {
   browser?: BrowserKind
   selectBrowser?: (browser: BrowserKind) => Promise<{ changed: boolean; backupPath?: string }>
   configureShell?: (apply: boolean) => Promise<WindowsCommandResult>
+  /** Display name of the AI client being configured; defaults to Codex. */
+  clientName?: string
 }
 export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupReport> {
   const r: SetupReport = { version: 1, state: 'needs_attention', sharing: 'unobserved', restartRequired: false, checks: [], actions: [], client: 'unavailable', changed: false }
   const action = (id: string, message: string, required = true) => r.actions.push({ id, message, required })
+  const clientName = d.clientName ?? 'Codex'
   if (d.browser || o.browser) r.browser = o.browser ?? d.browser
   try {
     if (await bounded(d.elevated, true)) { action('configure_mcp', 'Run setup from a non-administrator desktop terminal.'); return r }
     if (!safeCdpOrigin(d.endpoint)) { action('configure_mcp', 'Configure a safe HTTP loopback browser target.'); return r }
     r.checks = (await d.doctor()).checks
-    if (d.platform !== 'win32') { action('configure_mcp', 'Automatic setup supports Windows and Codex only; configure other platforms manually.'); r.client = 'manual'; return r }
+    if (d.platform !== 'win32') { action('configure_mcp', `Automatic ${clientName} setup supports Windows only; configure other platforms manually.`); r.client = 'manual'; return r }
     if (d.configureShell) {
       r.shell = await d.configureShell(o.apply)
       r.changed = r.shell.changed
@@ -61,7 +64,7 @@ export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupRepo
       const id = c.id === 'vault' ? c.state === 'pass' ? 'unlock_vault' : 'authenticate_vault' : ids[c.id] ?? 'configure_mcp'
       action(id, c.nextAction, c.required && c.state !== 'pass')
     }
-    if (r.client !== 'ready') action('configure_mcp', 'Inspect Codex configuration; apply missing registrations explicitly and preserve custom settings.')
+    if (r.client !== 'ready') action('configure_mcp', `Inspect ${clientName} configuration; apply missing registrations explicitly and preserve custom settings.`)
     if (!started) action('start_browser', 'Selected dedicated browser is unavailable or mismatched. Close only the previous dedicated U-Chan instance before switching, then run setup again.')
     if (r.restartRequired) action('restart_client', 'Restart the AI session to load saved MCP registrations.', false)
     action('configure_mcp', 'Active AI-session browser ownership is unverified; check the current client browser connection.', false)

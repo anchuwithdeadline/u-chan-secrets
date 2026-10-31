@@ -8,22 +8,23 @@ import type { ApprovalMode, ControlApi, CoreApi, ToolResult } from './core/types
 import { IpcClient } from './ipc/client.js'
 import { defaultEndpoint } from './ipc/endpoint.js'
 import { MAX_FRAME, encode } from './ipc/protocol.js'
-import { runDoctor, doctorExitCode, checkPlaywrightNow, chromeState, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
+import { runDoctor, doctorExitCode, bounded, checkPlaywrightNow, chromeState, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type DiagnosticReport } from './core/doctor.js'
 import { loadConfig } from './core/config.js'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { configureCodex, isElevated } from './client/codex-setup.js'
+import { configureClaude } from './client/claude-setup.js'
 import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
 import { parseAllowArgs } from './client/allow.js'
 import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
 import { configureWindowsCommand } from './client/windows-command.js'
 
-const USAGE = 'usage: u-chan install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
+const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
 export interface CliDeps {
   doctor?: () => Promise<DiagnosticReport>
   clientVersion?: string
-  setup?: (options: SetupOptions) => Promise<SetupReport>
+  setup?: (options: SetupOptions, client: 'codex' | 'claude') => Promise<SetupReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
   connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'>
   env: NodeJS.ProcessEnv
@@ -31,6 +32,8 @@ export interface CliDeps {
   readFile: (path: string) => Promise<string>
   out: (line: string) => void
   err: (line: string) => void
+  /** Launches the selected dedicated browser; resolves true when its endpoint is ready. */
+  startBrowser?: (browser: BrowserKind, env: NodeJS.ProcessEnv, background: boolean) => Promise<boolean>
   install?: (opts: { mode?: ApprovalMode; phrase?: string }) => Promise<ToolResult>
   uninstall?: () => Promise<ToolResult>
 }
@@ -76,6 +79,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
       return state === 'ok' ? 'pass' : state === 'missing' ? 'fail' : 'unknown'
     },
   }))
+  const startBrowser = d.startBrowser ?? launchBrowser
   const printDoctor = (r: DiagnosticReport) => d.out(r.checks.map(c => `${c.state.toUpperCase()} ${c.id}: ${c.message}${c.nextAction ? ' ' + c.nextAction : ''}`).join('\n'))
   if (cmd === 'allow') {
     const proposal = parseAllowArgs(argv.slice(1))
@@ -91,32 +95,52 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     const args = argv.slice(1), seen = new Set<string>()
     let valid = true
     let browser: BrowserKind | undefined
+    let client: 'codex' | 'claude' = 'codex'
     for (let i = 0; i < args.length; i++) {
       const flag = args[i]
       if (seen.has(flag) || !['--client', '--browser', '--apply', '--replace-existing', '--start-browser', '--json'].includes(flag)) { valid = false; break }
       seen.add(flag)
-      if (flag === '--client' && args[++i] !== 'codex') { valid = false; break }
+      if (flag === '--client') { const value = args[++i]; if (value !== 'codex' && value !== 'claude') { valid = false; break }; client = value }
       if (flag === '--browser') { const value = args[++i]; if (value !== 'chrome' && value !== 'edge') { valid = false; break }; browser = value }
     }
     if (!valid || (seen.has('--replace-existing') && !seen.has('--apply'))) {
-      d.err('usage: u-chan setup [--client codex] [--browser chrome|edge] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
+      d.err('usage: u-chan setup [--client codex|claude] [--browser chrome|edge] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
     }
     const options = { apply: seen.has('--apply'), replaceExisting: seen.has('--replace-existing'), startBrowser: seen.has('--start-browser'), ...(browser ? { browser } : {}) }
     if (browser) diagnosticEnv = { ...d.env, U_CHAN_BROWSER: browser }
     const cfg = loadConfig(diagnosticEnv, d.platform), endpoint = cfg.cdpEndpoint
-    const r = d.setup ? await d.setup(options) : await runSetup(options, {
-      platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor,
+    const entryPath = fileURLToPath(new URL('./index.js', import.meta.url)), claudeDir = d.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    const r = d.setup ? await d.setup(options, client) : await runSetup(options, {
+      platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor, clientName: client === 'claude' ? 'Claude Code' : 'Codex',
       configureShell: apply => configureWindowsCommand(apply, d.env.PATH ?? d.env.Path ?? ''),
       selectBrowser: choice => saveBrowserChoice(cfg.browserChoicePath, choice),
-      configure: opts => configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath: fileURLToPath(new URL('./index.js', import.meta.url)), configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
-      startBrowser: () => new Promise(resolve => {
-        execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('../scripts/start-browser.ps1', import.meta.url)), '-Browser', cfg.browser, '-Background'],
-          { timeout: 24000, windowsHide: true, env: diagnosticEnv, maxBuffer: 65536 }, err => resolve(!err))
-      }),
+      configure: opts => client === 'claude'
+        ? configureClaude({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: claudeDir, configPath: d.env.CLAUDE_CONFIG_DIR ? join(claudeDir, '.claude.json') : join(homedir(), '.claude.json') })
+        : configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
+      startBrowser: () => startBrowser(cfg.browser, diagnosticEnv, true),
     })
     if (seen.has('--json')) d.out(JSON.stringify(r))
     else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : [])].join('\n'))
     return setupExitCode(r)
+  }
+  if (cmd === 'start' && arg === undefined) {
+    // Daily routine: dedicated browser, vault unlock through the protected prompt, then a doctor summary.
+    if (d.platform !== 'win32') { d.err('u-chan start supports Windows only; start the browser and run u-chan unlock manually.'); return 1 }
+    const cfg = loadConfig(d.env, d.platform)
+    if (await chromeState(cfg.cdpEndpoint) === 'pass') d.out('Browser: ready.')
+    else if (await bounded(() => startBrowser(cfg.browser, d.env, false), false, 25000)) d.out('Browser: started.')
+    else d.err('Browser: could not start the dedicated browser; run u-chan doctor.')
+    let vault: unknown
+    try { const r = await d.connect({ timeoutMs: SERVICE_DIAGNOSTIC_TIMEOUT_MS }).diagnose(); vault = r.ok ? JSON.parse(r.message)?.vault : undefined } catch { vault = undefined }
+    if (vault === 'unlocked') d.out('Vault: unlocked.')
+    else if (vault === 'locked') {
+      const r = await d.connect({}).unlock()
+      if (r.ok) d.out('Vault: ' + r.message)
+      else d.err('Vault: ' + r.message)
+    }
+    const report = await doctor()
+    printDoctor(report)
+    return doctorExitCode(report) === 1 || report.checks.some(c => c.id === 'vault' && c.nextAction === 'Run u-chan unlock.') ? 1 : 0
   }
   if (cmd === 'doctor' && (arg === undefined || arg === '--json') && rest.length === 0) {
     const r = await doctor()
@@ -230,6 +254,13 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   else d.err(r.message)
   if (r.ok && cmd === 'install' && !d.install) printDoctor(await doctor())
   return r.ok ? 0 : 1
+}
+
+function launchBrowser(browser: BrowserKind, env: NodeJS.ProcessEnv, background: boolean): Promise<boolean> {
+  return new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('../scripts/start-browser.ps1', import.meta.url)), '-Browser', browser, ...(background ? ['-Background'] : [])],
+      { timeout: 24000, windowsHide: true, env, maxBuffer: 65536 }, err => resolve(!err))
+  })
 }
 
 const isEntry = (() => {

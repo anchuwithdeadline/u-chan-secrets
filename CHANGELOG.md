@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.1.0
+
+- Add `u-chan setup --client claude`: inspect Claude Code user-scope `u-chan-secrets` and `playwright` registrations read-only, and apply missing or simple replacements (including a Playwright entry without `--cdp-endpoint`) through the official `claude mcp` CLI after backing up `.claude.json`. Custom registrations and conflicting target environment are preserved.
+- Add `u-chan start` (Windows): start the selected dedicated browser when its endpoint is down, open the protected unlock prompt only for a locked vault, then print doctor.
+- Point the doctor Playwright hint at the setup command. Protocol 3, protected-state schema 3, native helpers, dependencies, and grants are unchanged.
+
 ## 5.0.1
 
 - Resolve the installed Windows owner's shell-folder paths from raw registry values before expanding `%USERPROFILE%`. SYSTEM now verifies the owner's dedicated Edge/Chrome profile instead of its own profile.

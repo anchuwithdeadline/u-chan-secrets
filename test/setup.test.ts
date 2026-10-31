@@ -59,13 +59,13 @@ it('forwards valid setup options and prints a machine-readable report with its e
   r.restartRequired = true
   const setup = vi.fn(async () => r)
   expect(await main(['setup', '--client', 'codex', '--apply', '--replace-existing', '--start-browser', '--json'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })).toBe(2)
-  expect(setup).toHaveBeenCalledWith({ apply: true, replaceExisting: true, startBrowser: true })
+  expect(setup).toHaveBeenCalledWith({ apply: true, replaceExisting: true, startBrowser: true }, 'codex')
   expect(JSON.parse(out.mock.calls[0][0])).toEqual(r)
 })
 it('forwards an explicit Edge choice and refuses malformed browser flags without side effects', async () => {
   const setup = vi.fn(async () => ({ ...(await runSetup(options, fixture())) })), out = vi.fn()
   await main(['setup','--browser','edge','--apply','--json'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })
-  expect(setup).toHaveBeenCalledWith({ ...options, apply: true, browser: 'edge' })
+  expect(setup).toHaveBeenCalledWith({ ...options, apply: true, browser: 'edge' }, 'codex')
   for (const flags of [['--browser'],['--browser','firefox'],['--browser','edge','--browser','chrome']]) {
     setup.mockClear()
     expect(await main(['setup',...flags], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })).toBe(1)
@@ -100,4 +100,11 @@ it('applies the Windows command fix only on request, without forcing an AI resta
   d.elevated.mockResolvedValue(false)
   await runSetup({ ...options, apply: true }, { ...d, platform: 'darwin' })
   expect(d.configureShell).not.toHaveBeenCalled()
+})
+it('forwards --client claude and names Claude Code in client guidance', async () => {
+  const setup = vi.fn(async () => runSetup(options, fixture()))
+  expect(await main(['setup', '--client', 'claude', '--apply'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out: vi.fn(), err: vi.fn() })).toBe(0)
+  expect(setup).toHaveBeenCalledWith({ ...options, apply: true }, 'claude')
+  const d = fixture(); d.configure.mockResolvedValue({ state: 'missing', changed: false, message: 'Checked.' })
+  expect((await runSetup(options, { ...d, clientName: 'Claude Code' })).actions.some(a => a.message.startsWith('Inspect Claude Code configuration'))).toBe(true)
 })
