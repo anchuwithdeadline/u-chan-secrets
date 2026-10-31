@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
 import type { SessionState } from '../service/session-transfer.js'
 import { UserFacingError, type SessionTarget } from './types.js'
@@ -36,17 +35,6 @@ async function restrictPageNavigation(page: Page, allowed: (url: string) => bool
   await session.send('Network.setBypassServiceWorker', { bypass: true })
   await session.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] })
 }
-
-/** Runs scripts/start-chrome.ps1 (idempotent: it exits early if the port is already open). */
-export const startChromeScript = (scriptPath: string) => (): Promise<void> =>
-  new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
-      { timeout: 30000, windowsHide: true },
-      (err) => (err ? reject(err) : resolve()),
-    )
-  })
 
 /** Attaches to the user's Chrome over CDP so cookies are shared with Playwright MCP. Never closes the browser. */
 export class CdpBrowserProvider implements BrowserProvider {
