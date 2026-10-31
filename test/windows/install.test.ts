@@ -192,7 +192,6 @@ describe('windowsPlatformAdapters', () => {
 
     // Test authorize with matching SID
     const dummySocket = {} as net.Socket
-    const fakeGetClientSid = vi.fn(async () => authorizedSid)
     // We test that authorize validates against the authorizedSid
     // By passing an authorizer that reads the SID
     const isAllowed = await adapters.authorize(dummySocket)

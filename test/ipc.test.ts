@@ -7,7 +7,6 @@ import { randomBytes } from 'node:crypto'
 import { startIpcServer } from '../src/ipc/server.js'
 import { IpcClient } from '../src/ipc/client.js'
 import { FrameReader, MAX_FRAME } from '../src/ipc/protocol.js'
-import { defaultEndpoint } from '../src/ipc/endpoint.js'
 
 const sockPath = () =>
   process.platform === 'win32'

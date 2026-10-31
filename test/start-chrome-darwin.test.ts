@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 
 describe('macOS start-chrome.sh script', () => {

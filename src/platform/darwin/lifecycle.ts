@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import type { ApprovalMode } from '../../core/types.js'
-import { generateLaunchdPlist, PLIST_LABEL, PLIST_PATH } from './plist.js'
+import { generateLaunchdPlist, PLIST_PATH } from './plist.js'
 import { assertCompatibleState } from '../../service/state.js'
 import { stageBrowser } from '../runtime-assets.js'
 
