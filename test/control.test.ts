@@ -34,6 +34,56 @@ beforeEach(async () => {
 afterEach(() => rm(dir, { recursive: true, force: true }))
 
 describe('control: unlock', () => {
+  it('does not prompt again while the vault is already unlocked', async () => {
+    vault.status.mockResolvedValue('unlocked')
+    expect(await make().unlock()).toEqual({ ok: true, message: 'already unlocked' })
+    expect(approver.askPassword).not.toHaveBeenCalled()
+    expect(vault.unlock).not.toHaveBeenCalled()
+  })
+  it('shares a successful unlock, then prompts again after the vault locks', async () => {
+    const control = make()
+    const results = await Promise.all([control.unlock(), control.unlock(), control.unlock()])
+    expect(results.every(result => result.ok)).toBe(true)
+    expect(approver.askPassword).toHaveBeenCalledTimes(1)
+    expect(vault.unlock).toHaveBeenCalledTimes(1)
+    await control.lock()
+    expect((await control.unlock()).ok).toBe(true)
+    expect(approver.askPassword).toHaveBeenCalledTimes(2)
+  })
+  it('shares concurrent unlocks and counts a rejected password once', async () => {
+    let answer!: (password: string) => void
+    approver.askPassword.mockImplementation(() => new Promise<string>(resolve => { answer = resolve }))
+    vault.unlock.mockResolvedValue(false)
+    const fail = vi.spyOn(limiter, 'fail'), control = make()
+    const first = control.unlock(), second = control.unlock()
+    await vi.waitFor(() => expect(approver.askPassword).toHaveBeenCalledTimes(1))
+    answer('bad')
+    expect(await Promise.all([first, second])).toEqual([{ ok: false, message: 'wrong password' }, { ok: false, message: 'wrong password' }])
+    expect(fail).toHaveBeenCalledTimes(1)
+    expect(vault.unlock).toHaveBeenCalledTimes(1)
+    approver.askPassword.mockResolvedValue(null)
+    expect(await control.unlock()).toEqual({ ok: false, message: 'cancelled' })
+    expect(approver.askPassword).toHaveBeenCalledTimes(2)
+  })
+  it('does not let a pending password reopen a vault after an explicit lock', async () => {
+    let answer!: (password: string) => void
+    approver.askPassword.mockImplementation(() => new Promise<string>(resolve => { answer = resolve }))
+    const control = make(), pending = control.unlock(), fail = vi.spyOn(limiter, 'fail')
+    await vi.waitFor(() => expect(approver.askPassword).toHaveBeenCalledTimes(1))
+    await control.lock(); answer('pw')
+    expect(await pending).toEqual({ ok: false, message: 'unlock cancelled by lock' })
+    expect(vault.unlock).not.toHaveBeenCalled()
+    expect(fail).not.toHaveBeenCalled()
+  })
+  it('locks again if an explicit lock arrives during Bitwarden unlock', async () => {
+    let finish!: (value: boolean) => void
+    vault.unlock.mockImplementation(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const control = make(), pending = control.unlock()
+    await vi.waitFor(() => expect(vault.unlock).toHaveBeenCalledTimes(1))
+    await control.lock(); finish(true)
+    expect(await pending).toEqual({ ok: false, message: 'unlock cancelled by lock' })
+    expect(vault.lock).toHaveBeenCalledTimes(2)
+  })
   it('unlocks and audits without the password', async () => {
     expect(await make().unlock()).toEqual({ ok: true, message: 'unlocked' })
     expect(vault.unlock).toHaveBeenCalledWith('pw')

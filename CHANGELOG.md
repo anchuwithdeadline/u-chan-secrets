@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — unlock prompt improvements
+
+- Skip the master-password prompt when the service vault is already unlocked, and share concurrent unlock requests as one attempt.
+- Prevent a pending unlock from reopening the vault after an explicit lock. Existing approval and failed-password limits remain in place.
+- Replace the oversized Windows password dialog with a compact, DPI-aware layout, visible verification phrase, masked field, action-specific button, and keyboard controls. Long approval context remains scrollable.
+- This changes the native helper and requires a trusted service reinstall; no installed rollout is implied by the source change.
+
 ## Unreleased — coordinated updates
 
 - Add read-only `u-chan update --check` and coordinated Windows desktop/service updates with capability-gated trusted bootstrap.

@@ -31,6 +31,8 @@ interface Deps {
 /** Commands from the `u-chan` CLI. Audit entries never contain passwords or sessions. */
 export class ControlService implements ControlApi {
   private readonly grants: GrantCoordinator
+  private unlockPending?: Promise<ToolResult>
+  private lockEpoch = 0
   constructor(private readonly d: Deps) { this.grants = d.grants ?? new GrantCoordinator(d.allowlist) }
   async capabilities(): Promise<ToolResult> {
     return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer', ...(this.d.discordSupported ? ['discord_broker', 'discord_discovery'] : []), ...(this.d.updateBoot?['coordinated_update']:[])], serviceVersion: this.d.serviceVersion, ...(this.d.updateBoot?{release:this.d.updateBoot}:{}) }) }
@@ -77,14 +79,31 @@ export class ControlService implements ControlApi {
   }
 
   unlock(): Promise<ToolResult> {
-    return this.guarded('unlock', async () => {
-      if ((await this.d.vault.status()) === 'unauthenticated') return { ok: false, message: LOGIN_MSG }
-      const refused = await this.checkedPassword(['Unlock the vault'], (pw) => this.d.vault.unlock(pw))
+    if (this.unlockPending) return this.unlockPending
+    const epoch = this.lockEpoch
+    const pending = this.guarded('unlock', async () => {
+      const status = await this.d.vault.status()
+      if (epoch !== this.lockEpoch) return { ok: false, message: 'unlock cancelled by lock' }
+      if (status === 'unauthenticated') return { ok: false, message: LOGIN_MSG }
+      if (status === 'unlocked') return { ok: true, message: 'already unlocked' }
+      if (status !== 'locked') return { ok: false, message: 'vault unavailable; run u-chan doctor' }
+      const refused = await this.checkedPassword(['Unlock the vault'], async pw => {
+        if (epoch !== this.lockEpoch) throw new UserFacingError('unlock cancelled by lock')
+        const unlocked = await this.d.vault.unlock(pw)
+        if (epoch !== this.lockEpoch) {
+          await this.d.vault.lock()
+          throw new UserFacingError('unlock cancelled by lock')
+        }
+        return unlocked
+      })
       return refused ?? { ok: true, message: 'unlocked' }
-    })
+    }).finally(() => { if (this.unlockPending === pending) this.unlockPending = undefined })
+    this.unlockPending = pending
+    return pending
   }
 
   lock(): Promise<ToolResult> {
+    this.lockEpoch++
     return this.guarded('lock', async () => {
       await this.d.vault.lock()
       return { ok: true, message: 'locked' }
