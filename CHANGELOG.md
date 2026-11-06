@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — coordinated updates
+
+- Add read-only `u-chan update --check` and coordinated Windows desktop/service updates with capability-gated trusted bootstrap.
+- Stage independently verified signed artifacts, report phase/elapsed time, reconnect through protected jobs, and verify immutable target boot readiness.
+- Retain recovery programs and desktop packages; restore and verify the source service after target startup failure.
+- Preserve owner IPC authorization and normal-user npm boundaries. Block incompatible schema/runtime/helper/dependency changes before activation.
+- Recover completed desktop installations with missing receipts only after exact artifact verification; repair recognized launchers and report AI-session restart requirements.
+- Avoid recursive permission scans of retained update runtimes. macOS application and installed rollout remain separate work.
+
 ## Unreleased
 
 - Add `u-chan discord test <alias>` and `discord_test_connection`: reuse approved read-only metadata inspection to report connection status, server ID, and channel/role counts without raw metadata. No service, native-helper, permission, or dependency change is required.

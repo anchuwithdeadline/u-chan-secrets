@@ -291,7 +291,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 | `mode <easy\|hardcore>` | Change approval mode; lowering protection requires a protected password check |
 | `audit [limit]` | Read recent service audit records |
 | `import-v1 [path]` | Approve each imported entry in a protected window; imported grants are permanent |
-| `update` | Request a verified compatible package update; some changes require administrator reinstall |
+| `update [--check]` | Plan or apply a coordinated compatible desktop/service update; some changes require trusted reinstall |
 | `install [--mode <easy\|hardcore>] [--phrase <phrase>]` | Privileged install/reinstall; existing settings are preserved |
 | `uninstall` | Privileged removal of the service **and all its data** |
 
@@ -355,6 +355,18 @@ Before the first grant-state mutation, the service creates a protected `#0 backu
 Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
 
 Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
+
+### Coordinated updates (source implementation; trusted bootstrap required)
+
+Run `u-chan update --check` for a read-only plan, then `u-chan update` from a normal desktop terminal. The service and desktop independently verify the same signed registry artifact. Compatibility checks run before either installation changes. Windows application supports unchanged native helpers, dependency declarations, and a compatible Node runtime. macOS application is currently unsupported; planning remains available. Services without `coordinated_update` require a matching trusted desktop/service bootstrap; there is no legacy service-only fallback.
+
+The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. A service restart clears its in-memory unlock; enter any subsequent password only through `u-chan unlock`'s protected prompt. Update never unlocks automatically or launches a browser. Restart existing AI sessions when the final result requests it.
+
+Interrupted terminal? Rerun `u-chan update` to observe the protected transaction and resume desktop work. A duplicate desktop invocation reports busy. A 15-minute observation timeout does not cancel an active service transaction. Unknown artifact identity, same-version local changes, and builds ahead of the published release require explicit trusted reconciliation, not an automatic downgrade. A completed npm install with a missing receipt can recover only from its matching desktop checkpoint and a fresh exact artifact verification.
+
+Service rollback copies remain under `%ProgramData%\u-chan-secrets\#0 backup\update-<transaction-id>`. Failed target programs and job status remain under `updates\<transaction-id>`. Desktop rollback tarballs remain under `%APPDATA%\u-chan-secrets\#0 backup\update-<stage-id>\before`; the bounded `desktop-update.json` checkpoint identifies that stage. No automatic cleanup scans historical backups. Target startup failure restores the source program and verifies source readiness. `recovery_required` blocks credential work until trusted recovery. If automatic recovery fails, stop the service in an administrator terminal, preserve both programs, and restore the retained source using the trusted installer procedure. If desktop verification fails, rerun update; if its files are incomplete, reinstall the matching verified desktop release or its retained rollback tarball from a normal terminal using npm with `--ignore-scripts`, then repair managed registrations with `u-chan setup --apply`.
+
+Source validation and native process fixtures do not publish the feature or upgrade an installed service. See the [validation boundaries](docs/superpowers/research/2026-11-06-update-workflow-validation.md).
 
 Versions 3.0.0–3.0.2 have an npm signature-verification defect and cannot reliably bootstrap their own update. Install the matching corrected package from a trusted shell, then use the administrator reinstall above. Version 3.0.3 requires SHA-512 integrity and a valid signature from its pinned npm key; unsigned repository-attestation JSON cannot replace that signature. Future signing-key rotation fails closed and requires a trusted verifier upgrade.
 

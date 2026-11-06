@@ -4,6 +4,7 @@ export type Method =
   | 'login' | 'request_allow' | 'revoke' | 'list_allowed' | 'status'
   | 'unlock' | 'lock' | 'set_mode' | 'import_v1' | 'audit' | 'update'
   | 'discord_request_allow' | 'discord_list_allowed' | 'discord_inspect' | 'discord_apply' | 'discord_revoke'
+  | 'plan_update' | 'begin_update' | 'update_status' | 'activate_update' | 'confirm_update_ready'
 export interface Request { id: number; method: Method; params: Record<string, unknown> }
 export interface Response { id: number; ok: boolean; message: string; code?: import('../core/types.js').ResultCode }
 

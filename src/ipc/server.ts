@@ -4,8 +4,9 @@ import { FrameReader, FrameTooLarge, encode, type Method, type Response } from '
 import { isResultCode } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
 import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
+import { identitySchema, idSchema, type CoordinatedUpdateApi } from '../service/update/protocol.js'
 
-type Api = CoreApi & ControlApi & Partial<DiscordApi>
+type Api = CoreApi & ControlApi & Partial<DiscordApi> & Partial<CoordinatedUpdateApi>
 type Params = Record<string, unknown>
 const BAD = Symbol('bad')
 
@@ -20,6 +21,11 @@ const selectorsOf = (v: unknown): Selectors | undefined | typeof BAD => {
 }
 
 const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | typeof BAD> = {
+  plan_update:api=>api.planUpdate?.()??Promise.resolve({ok:false,message:'coordinated updater unavailable'}),
+  begin_update:(api,p)=>identitySchema.safeParse(p.target).success?api.beginUpdate?.(p.target as import('../service/update/protocol.js').ReleaseIdentity)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,
+  update_status:(api,p)=>idSchema.safeParse(p.id).success?api.updateStatus?.(p.id as string)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,
+  activate_update:(api,p)=>idSchema.safeParse(p.id).success?api.activateUpdate?.(p.id as string)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,
+  confirm_update_ready:(api,p)=>idSchema.safeParse(p.id).success?api.confirmUpdateReady?.(p.id as string)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,
   discord_request_allow: (api, p) => connectionRequestSchema.safeParse(p.proposal).success ? api.discordRequestAllow?.(p.proposal) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,
   discord_list_allowed: api => api.discordListAllowed?.() ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }),
   discord_inspect: (api, p) => aliasSchema.safeParse(p.alias).success && (p.memberId === undefined || snowflake.safeParse(p.memberId).success) && (p.page === undefined || (Number.isInteger(p.page) && (p.page as number) >= 0 && (p.page as number) <= 999)) ? api.discordInspect?.(p.alias as string, p.memberId as string | undefined, p.page as number | undefined) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,
@@ -71,7 +77,7 @@ async function dispatch(api: Api, msg: unknown): Promise<Response> {
 export function startIpcServer(
   path: string,
   api: Api,
-  opts: { authorize?: (socket: net.Socket) => Promise<boolean> } = {},
+  opts: { authorize?: (socket: net.Socket) => Promise<boolean>; beforeRequest?:()=>Promise<void>; admission?:{enter(method:string):(()=>void)|null}; afterResponse?:(method:string,params:Record<string,unknown>)=>Promise<void> } = {},
 ): Promise<net.Server> {
   const server = net.createServer(socket => {
     const reader = new FrameReader()
@@ -90,11 +96,19 @@ export function startIpcServer(
           try {
             const allowed = opts.authorize ? await opts.authorize(socket) : true
             if (!allowed) res = { id, ok: false, message: 'caller not allowed' }
-            else res = await dispatch(api, f)
+            else {
+              await opts.beforeRequest?.()
+              const method=isObj(f)&&str(f.method)?f.method:''
+              const leave=opts.admission?.enter(method)
+              if(opts.admission&&!leave)res={id,ok:false,message:'update in progress; reconnect to update status before credential operations'}
+              else try{res=await dispatch(api,f)}finally{leave?.()}
+            }
           } catch {
             res = { id, ok: false, message: 'internal error' }
           }
-          if (!socket.destroyed) socket.write(encode(res))
+          const after=()=>{if(res.ok&&isObj(f)&&str(f.method)&&isObj(f.params))void opts.afterResponse?.(f.method,f.params).catch(()=>{})}
+          if (!socket.destroyed) socket.write(encode(res),after)
+          else after()
         })
       }
     })

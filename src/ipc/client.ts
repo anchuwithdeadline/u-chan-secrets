@@ -4,12 +4,13 @@ import { FrameReader, encode, type Method } from './protocol.js'
 import { isResultCode, type AllowOptions } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
 import { browserKind, type BrowserKind } from '../client/browser-choice.js'
+import { identitySchema, idSchema, type CoordinatedUpdateApi, type ReleaseIdentity } from '../service/update/protocol.js'
 import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 
 const DOWN = 'U-Chan service is not running — run u-chan install'
 
 /** One connection per call; the service does all privileged work. */
-export class IpcClient implements CoreApi, ControlApi, DiscordApi {
+export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUpdateApi {
   private nextId = 1
   private timeoutMs: number
   private readonly browser: BrowserKind | (() => BrowserKind)
@@ -73,6 +74,16 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi {
     return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
   }
   capabilities() { return this.call('capabilities') }
+  private async coordinatedCall(method:Method,params:Record<string,unknown>={}):Promise<ToolResult>{
+    const result=await this.capabilities()
+    try{const cap=JSON.parse(result.message);if(result.ok&&cap.protocol===3&&Array.isArray(cap.features)&&cap.features.includes('coordinated_update'))return this.call(method,params,Math.max(this.timeoutMs,180000))}catch{}
+    return {ok:false,code:'unsupported_service',message:'coordinated updater bootstrap required; install the matching trusted service before updating'}
+  }
+  planUpdate(){return this.coordinatedCall('plan_update')}
+  beginUpdate(target:ReleaseIdentity){return identitySchema.safeParse(target).success?this.coordinatedCall('begin_update',{target}):Promise.resolve({ok:false,message:'invalid update target'})}
+  updateStatus(id:string){return idSchema.safeParse(id).success?this.coordinatedCall('update_status',{id}):Promise.resolve({ok:false,message:'invalid update job'})}
+  activateUpdate(id:string){return idSchema.safeParse(id).success?this.coordinatedCall('activate_update',{id}):Promise.resolve({ok:false,message:'invalid update job'})}
+  confirmUpdateReady(id:string){return idSchema.safeParse(id).success?this.coordinatedCall('confirm_update_ready',{id}):Promise.resolve({ok:false,message:'invalid update job'})}
   private async discordCall(method: Method, params: Record<string, unknown> = {}, discovery = false): Promise<ToolResult> {
     const r = await this.capabilities()
     try {
