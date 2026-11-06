@@ -152,6 +152,13 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
 
   /** Protected discovery only: return scoped setup metadata, never note contents or token values. */
   async getDiscordSetup(item: string, signal?: AbortSignal): Promise<{ item: string; guildId: string; field: TokenField }> {
+    const session = this.session()
+    if (!session) throw new UserFacingError(UNLOCK_MSG)
+    try {
+      const result = await this.run(['sync'], session, {}, signal)
+      if (result.code !== 0) throw new Error()
+    } catch { throw new UserFacingError('Bitwarden vault sync failed; check the private vault connection') }
+    if (this.sessionKey !== session) throw new UserFacingError(UNLOCK_MSG)
     const data = await this.getItem(item, signal, true)
     if (typeof data.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id)) throw new UserFacingError('vault item has no stable item ID')
     const normalize = (value: string) => value.toLowerCase().replace(/[ _-]/g, '')

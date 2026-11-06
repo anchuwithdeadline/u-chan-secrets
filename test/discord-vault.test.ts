@@ -7,6 +7,18 @@ async function vault(item: object, code = 0, stderr = '') {
   return v
 }
 describe('Discord service token retrieval', () => {
+  it('refreshes the private vault cache before discovering a newly added item', async () => {
+    let synced = false
+    const v = new BitwardenVault({ dataDir: 'unused', idleLockMs: 10000, exec: async (args, env) => {
+      if (args[0] === 'unlock') return { code: 0, stdout: 'SESSION', stderr: '' }
+      expect(env.BW_SESSION).toBe('SESSION')
+      if (args[0] === 'sync') { synced = true; return { code: 0, stdout: 'sync complete', stderr: '' } }
+      return synced ? { code: 0, stdout: JSON.stringify({ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', login: { password: 'SECRET' }, notes: 'Guild ID: 123' }), stderr: '' } : { code: 1, stdout: '', stderr: 'Not found.' }
+    } })
+    await v.unlock('master')
+    expect((await v.getDiscordSetup('VDN Discord Bot')).guildId).toBe('123')
+    expect(synced).toBe(true)
+  })
   it('discovers setup from named metadata without returning password or note content', async () => {
     const v = await vault({ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', login: { password: 'BOT_SECRET' }, notes: 'Server ID: 123456789012345678\nToken: NEVER_RETURN_THIS' })
     const setup = await v.getDiscordSetup('VDN Discord Bot')
