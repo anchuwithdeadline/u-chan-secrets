@@ -1,5 +1,15 @@
 # Security Policy
 
+## Agent unlock and GitHub extension
+
+`request_unlock` accepts no caller-controlled password, reason, or prompt text. It uses authenticated owner IPC and the existing native password collection path. Concurrent requests share one attempt, with a cooldown after dismissal and the existing shared failed-password limiter. Explicit lock invalidates pending unlock work. The tool returns status only. Clients must stop after cancellation or failure rather than retrying indefinitely.
+
+GitHub connections require protected review of the exact repository and Bitwarden item/field reference. A numeric repository ID is captured at enrollment and checked on subsequent requests. The service uses `api.github.com` only, rejects redirects, constructs typed routes, bounds response size/time, projects metadata, and treats returned text as untrusted. No token value crosses MCP or IPC. Errors and audit entries exclude remote error bodies and credential values.
+
+Every issue/draft-PR creation requires separate protected review. Exact content and branch tips are reviewed, vault/connection/repository state is checked again, and an audit intent is written before dispatch. An in-process vault authorization generation is captured immediately after approval and checked with unlocked status immediately before POST; lock, re-unlock, or idle expiry during any intervening await invalidates approval. No request is automatically replayed. Post-send transport failures and unverifiable successes report uncertainty. GitHub cannot atomically bind PR creation to the reviewed tips, so a changed returned tip is uncertain rather than success. The initial connector does not expose repository files, logs, workflow execution, pushes, merges, or deletion.
+
+Tests and static review do not establish live token permissions or installed SYSTEM behavior. Live verification must use a user-selected item and repository; test writes require a separate explicit task and protected approval.
+
 U-Chan Secrets handles real credentials, privileged processes, and signed-in browser sessions. Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/anchuwithdeadline/u-chan-secrets/security/advisories/new), not a public issue.
 
 Include the affected version, OS, approval mode, attack steps, expected/observed behavior, and impact. Use disposable test credentials in reproductions. Never include real passwords, TOTP material, cookies, or vault session keys. Initial response target: seven days.
@@ -101,6 +111,12 @@ Before grant-state mutation, V3 creates an administrator-owned pre-migration sna
 Supported V3 tooling refuses incompatible V2 downgrade after migration. Historical V2 installers cannot enforce the new marker. Deliberate rollback requires stopped-service recovery of reviewed protected state; old permanent grants may return.
 
 Compatible package updates verify registry signatures/integrity and preserve private dependencies. Dependency/native-helper changes require a trusted administrator reinstall. Reinstall and merge are not proof of live service health.
+
+The coordinated updater accepts only a version/integrity identity selected by its independent registry verifier, never a caller-provided local artifact path. Archive inspection bounds compressed/expanded size and rejects links, traversal, Windows special paths, collisions, and unsupported extended metadata. Protected schema compatibility is checked during planning, staging, and immediately before switching. Active/new executable trees receive recursive permission verification; retained transaction roots receive boundary checks without scanning historical runtimes.
+
+Activation waits until authenticated requests are idle. The private detached worker switches programs before requesting old-child exit, then survives as an orphan under the unchanged Windows host. Rollback SCM operations occur only after the old child exits. Owner-only IPC authorization remains unchanged: the SYSTEM worker reads a protected nonce-bound readiness marker rather than obtaining general owner IPC access. Readiness compares the service's immutable boot identity, transaction identity, and a live process. Protected maintenance state blocks credential operations until success or verified rollback; failed recovery remains blocked.
+
+Desktop npm and managed registration repair run only as a non-elevated user. An OS lock serializes desktop mutations. A normal-user checkpoint cannot authorize privileged writes. Desktop recovery verifies fresh signed artifact bytes before restoring a missing receipt. Restart requirements still apply after recovery. Rollback material is retained. Exact native SCM, ACL, and owner-IPC behavior requires separate disposable privileged validation before rollout; ordinary process fixtures do not establish those properties.
 
 Version 3.0.3 verifies npm's ECDSA-SHA256 signature over `name@version:dist.integrity` using the pinned registry key and matching key ID. SHA-512 tarball integrity and a valid signature are both mandatory. Repository-attestation JSON is an additional metadata policy check; it is not cryptographic Sigstore verification and never substitutes for a signature. Empty custom verification keys fail closed. Unknown registry keys require a trusted verifier upgrade. Versions 3.0.0–3.0.2 require the documented trusted reinstall to bootstrap this correction.
 

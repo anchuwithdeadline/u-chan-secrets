@@ -9,7 +9,7 @@ import { FileAuditLog } from '../core/audit.js'
 import { CdpBrowserProvider, CdpSessionTarget } from '../core/browser.js'
 import { loadConfig, serviceConfig } from '../core/config.js'
 import { CoreService } from '../core/service.js'
-import { UserFacingError, type ControlApi, type CoreApi, type ServiceRestarter } from '../core/types.js'
+import { UserFacingError, type ControlApi, type CoreApi } from '../core/types.js'
 import { BitwardenVault } from '../core/vault.js'
 import { startIpcServer } from '../ipc/server.js'
 import { platformAdapters, type PlatformAdapters } from '../platform/index.js'
@@ -19,7 +19,12 @@ import { IsolatedLogin } from './isolated-login.js'
 import { PolicyApprover } from './policy-approver.js'
 import { SettingsStore } from './settings.js'
 import { NpmPackageVerifier } from './update/verifier.js'
-import { ServiceUpdater } from './update/updater.js'
+import { UpdateCoordinator } from './update/coordinator.js'
+import { UpdateGate } from './update/gate.js'
+import { readBootIdentity } from './update/files.js'
+import { productionJournal, secureUpdateDirectory, verifyUpdateActive, launchUpdateWorker } from './update/native.js'
+import { boundedRegistryFetch } from './update/network.js'
+import type { CoordinatedUpdateApi } from './update/protocol.js'
 import { diagnoseService } from './doctor.js'
 import { GrantCoordinator } from './grants.js'
 import { ensureV3State } from './state.js'
@@ -33,6 +38,11 @@ import { DiscordService } from '../discord/service.js'
 import { DiscordHttp } from '../discord/http.js'
 import type { DiscordApi } from '../discord/policy.js'
 import { backupDiscordState } from './state.js'
+import { GithubStore, backupGithubPolicy } from '../github/store.js'
+import { GithubService } from '../github/service.js'
+import { GithubHttp } from '../github/http.js'
+import type { GithubApi } from '../github/policy.js'
+import type { AgentUnlockApi } from '../core/types.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -75,6 +85,9 @@ export async function runService(
     let discordStateReady: Promise<void> | undefined
     const discordStore = new DiscordStore(cfg.discordAllowlistPath, () => discordStateReady ??= backupDiscordState(cfg.home).catch(e => { discordStateReady = undefined; throw e }))
     const discord = new DiscordService({ platform, store: discordStore, vault, approver, audit, http: new DiscordHttp(), queue: work => grants.run(work) })
+    let githubStateReady:Promise<void>|undefined
+    const githubStore=new GithubStore(join(cfg.home,'github-allowlist.json'),()=>githubStateReady??=ensureV3State(cfg.home).then(()=>backupGithubPolicy(cfg.home,secureUpdateDirectory)).catch(error=>{githubStateReady=undefined;throw error}))
+    const github=new GithubService({platform,store:githubStore,vault,approver,audit,http:new GithubHttp(),queue:work=>grants.run(work)})
     const endpoint = loadConfig(env, platform).cdpEndpoint
     const validateTarget = platform === 'win32' ? async (browser: BrowserKind = 'chrome') => {
       const owner = (await settings.get() as unknown as { authorizedSid?: unknown }).authorizedSid
@@ -91,29 +104,23 @@ export async function runService(
       currentVersion = safeVersion(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version) ?? 'unknown'
     } catch {}
 
-    const verifier = new NpmPackageVerifier()
-    const restarter: ServiceRestarter = {
-      restart: async () => {
-        process.exit(0)
-      },
-    }
-    const updater = new ServiceUpdater({
-      verifier,
-      restarter,
-      programDir: cfg.programDir,
-      stagingDir: cfg.stagingDir,
-      currentVersion,
-    })
+    const updateBoot=await readBootIdentity(cfg.programDir), updateGate=new UpdateGate()
+    const coordinator=new UpdateCoordinator({home:cfg.home,boot:updateBoot,platform,verifier:new NpmPackageVerifier({fetcher:boundedRegistryFetch}),journal:productionJournal(cfg.home),gate:updateGate,
+      secure:secureUpdateDirectory,verifyActive:path=>verifyUpdateActive(cfg.home,path),launch:job=>launchUpdateWorker(cfg.home,job),audit:result=>audit.record({action:'update',domain:'',result})})
+    await coordinator.refreshGate()
+    const updater={update:async()=>({ok:false,message:'Use a coordinated-update desktop client; legacy service-only update is disabled'})}
 
     const diagnose = async () => ({ ...await diagnoseService(cfg.home, vault, platform, loadConfig(env, platform).cdpEndpoint), serviceVersion: safeVersion(currentVersion), discordPolicy: await discordStore.list().then(() => 'pass' as const, () => 'fail' as const), discordBroker: platform === 'win32' ? 'available' as const : 'unsupported' as const })
-    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, serviceVersion: safeVersion(currentVersion), manage: () => manager.open(), discordSupported: platform === 'win32' })
+    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, serviceVersion: safeVersion(currentVersion), manage: () => manager.open(), discordSupported: platform === 'win32', githubSupported:platform==='win32', updateBoot })
     const manager = new ManagementService({
       store: allowlist, grants, vault, audit, diagnose, phrase: async () => (await settings.get()).phrase,
       show: req => adapters.prompt.manage ? adapters.prompt.manage(req) : Promise.reject(new Error('unsupported')),
       lock: () => control.lock(), unlock: () => control.unlock(), revoke: domain => core.revoke(domain),
       discordStore, discordRevoke: alias => discord.discordRevoke(alias),
     })
-    const api: CoreApi & ControlApi & DiscordApi = {
+    const api: CoreApi & ControlApi & DiscordApi & CoordinatedUpdateApi & GithubApi & AgentUnlockApi = {
+      requestUnlock:()=>control.requestUnlock(),githubRequestAllow:proposal=>github.githubRequestAllow(proposal),githubListAllowed:()=>github.githubListAllowed(),githubRead:(alias,request)=>github.githubRead(alias,request),githubCreate:(alias,operation)=>github.githubCreate(alias,operation),githubRevoke:alias=>github.githubRevoke(alias),
+      planUpdate:()=>coordinator.planUpdate(),beginUpdate:target=>coordinator.beginUpdate(target),updateStatus:id=>coordinator.updateStatus(id),activateUpdate:id=>coordinator.activateUpdate(id),confirmUpdateReady:id=>coordinator.confirmUpdateReady(id),
       discordRequestAllow: proposal => discord.discordRequestAllow(proposal),
       discordListAllowed: () => discord.discordListAllowed(),
       discordInspect: (alias, memberId, page) => discord.discordInspect(alias, memberId, page),
@@ -134,7 +141,7 @@ export async function runService(
       audit: (limit) => control.audit(limit),
       update: () => control.update(),
     }
-    const server = await startIpcServer(cfg.endpoint, api, { authorize: adapters.authorize })
+    const server = await startIpcServer(cfg.endpoint, api, { authorize: adapters.authorize,admission:updateGate,beforeRequest:()=>coordinator.refreshGate(),afterResponse:(method,params)=>coordinator.afterResponse(method,String(params.id??'')) })
     console.error(`U-Chan service listening on ${cfg.endpoint}`)
     return server
   } catch (e) {

@@ -1,6 +1,31 @@
 # Changelog
 
+## Unreleased — agent unlock and GitHub
+
+- Add `request_unlock` through MCP and authenticated IPC, reusing the native prompt, shared unlock attempt, failed-password limiter, and a cooldown after prompt dismissal.
+- Add repository-bound GitHub connections with bounded metadata, issue/PR, and CI-status reads, plus individually approved issue and draft-PR creation.
+- Keep credentials inside the service; pin the API origin, refuse redirects and arbitrary routes, preserve uncertain write outcomes, and recheck authorization generation before dispatch.
+- Add GitHub CLI setup/read/create/revoke commands. Source support requires a matching service upgrade; no live enrollment or rollout is implied.
+
+## Unreleased — unlock prompt improvements
+
+- Skip the master-password prompt when the service vault is already unlocked, and share concurrent unlock requests as one attempt.
+- Prevent a pending unlock from reopening the vault after an explicit lock. Existing approval and failed-password limits remain in place.
+- Replace the oversized Windows password dialog with a compact, DPI-aware layout, visible verification phrase, masked field, action-specific button, and keyboard controls. Long approval context remains scrollable.
+- This changes the native helper and requires a trusted service reinstall; no installed rollout is implied by the source change.
+
+## Unreleased — coordinated updates
+
+- Add read-only `u-chan update --check` and coordinated Windows desktop/service updates with capability-gated trusted bootstrap.
+- Stage independently verified signed artifacts, report phase/elapsed time, reconnect through protected jobs, and verify immutable target boot readiness.
+- Retain recovery programs and desktop packages; restore and verify the source service after target startup failure.
+- Preserve owner IPC authorization and normal-user npm boundaries. Block incompatible schema/runtime/helper/dependency changes before activation.
+- Recover completed desktop installations with missing receipts only after exact artifact verification; repair recognized launchers and report AI-session restart requirements.
+- Avoid recursive permission scans of retained update runtimes. macOS application and installed rollout remain separate work.
+
 ## Unreleased
+
+- Add `u-chan discord test <alias>` and `discord_test_connection`: reuse approved read-only metadata inspection to report connection status, server ID, and channel/role counts without raw metadata. No service, native-helper, permission, or dependency change is required.
 
 - Allow Discord setup discovery from the user-supplied Bitwarden item when server/field metadata is already stored there. Require protected approval before lookup and another approval before saving the exact UUID-bound connection; never return token values or raw notes.
 

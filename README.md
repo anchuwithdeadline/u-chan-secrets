@@ -1,5 +1,7 @@
 # U-Chan Secrets V5
 
+Unreleased source also supports agent-triggered protected unlock and a repository-scoped GitHub connector. A matching installed service and fresh AI session are required. See [setup, supported actions, and boundaries](docs/github-connector.md) and [validation scope](docs/superpowers/research/2026-11-06-agent-unlock-github-validation.md).
+
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated Chrome or Edge profile.
 
 Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.
@@ -47,11 +49,14 @@ u-chan doctor
 u-chan unlock
 u-chan discord allow discord-connection.json
 u-chan discord list
+u-chan discord test vdn
 u-chan discord inspect vdn
 u-chan discord inspect vdn --page 1
 ```
 
 Enter the master password only in the protected unlock prompt. Confirm the connection's item, field, and exact server ID in the protected approval. Metadata pages return one channel and one role, with `nextPage` and totals. Follow pages for complete results. An optional member ID inspects that member's role IDs: `u-chan discord inspect vdn 223456789012345678`.
+
+`u-chan discord test <alias>` (PowerShell may require `u-chan.cmd`) checks an existing approved connection through read-only metadata inspection. Success reports `status: "connected"`, server ID, channel count, and role count. Failures retain service guidance for locked vaults, missing approval, unavailable services, or Discord rejection. It never grants access, changes resources, returns raw metadata, or proves write permissions. Agents can use the equivalent `discord_test_connection` tool. This desktop-only feature works with an installed service that already supports `discord_broker`; no service reinstall or vault relock is needed.
 
 4. Put a requested tournament setup batch in `discord-operations.json`, then review it through U-Chan:
 
@@ -86,7 +91,7 @@ An overwrite is `{ "id": "...", "type": 0, "allow": "1024", "deny": "2048" }`: t
 
 No deletion, messages, kicks/bans, server creation, webhook access, arbitrary HTTP, or secret-injected shell execution is exposed. A batch stops at its first failure without rollback. Results distinguish completed operations, operations not sent, and unknown write outcomes. **Inspect the server before retrying an unknown outcome**; U-Chan does not replay uncertain writes. Rate-limit results provide `retryAfter` where available.
 
-Agents get five additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
+Agents get six additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_test_connection`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
 
 Connection metadata resides in protected `discord-allowlist.json`; tokens remain in Bitwarden and service memory. The service snapshots protected metadata under protected `#0 backup` before its first broker state mutation per process. Reinstallation preserves connections; a compatible older service leaves the separate file inert. Revocation and vault lock cannot undo completed Discord changes or recall an already dispatched request. See [validation status](docs/superpowers/research/2026-11-06-discord-broker-validation.md) before treating source checks as installed verification.
 
@@ -288,7 +293,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 | `mode <easy\|hardcore>` | Change approval mode; lowering protection requires a protected password check |
 | `audit [limit]` | Read recent service audit records |
 | `import-v1 [path]` | Approve each imported entry in a protected window; imported grants are permanent |
-| `update` | Request a verified compatible package update; some changes require administrator reinstall |
+| `update [--check]` | Plan or apply a coordinated compatible desktop/service update; some changes require trusted reinstall |
 | `install [--mode <easy\|hardcore>] [--phrase <phrase>]` | Privileged install/reinstall; existing settings are preserved |
 | `uninstall` | Privileged removal of the service **and all its data** |
 
@@ -352,6 +357,18 @@ Before the first grant-state mutation, the service creates a protected `#0 backu
 Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
 
 Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
+
+### Coordinated updates (source implementation; trusted bootstrap required)
+
+Run `u-chan update --check` for a read-only plan, then `u-chan update` from a normal desktop terminal. The service and desktop independently verify the same signed registry artifact. Compatibility checks run before either installation changes. Windows application supports unchanged native helpers, dependency declarations, and a compatible Node runtime. macOS application is currently unsupported; planning remains available. Services without `coordinated_update` require a matching trusted desktop/service bootstrap; there is no legacy service-only fallback.
+
+The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. A service restart clears its in-memory unlock; enter any subsequent password only through `u-chan unlock`'s protected prompt. Update never unlocks automatically or launches a browser. Restart existing AI sessions when the final result requests it.
+
+Interrupted terminal? Rerun `u-chan update` to observe the protected transaction and resume desktop work. A duplicate desktop invocation reports busy. A 15-minute observation timeout does not cancel an active service transaction. Unknown artifact identity, same-version local changes, and builds ahead of the published release require explicit trusted reconciliation, not an automatic downgrade. A completed npm install with a missing receipt can recover only from its matching desktop checkpoint and a fresh exact artifact verification.
+
+Service rollback copies remain under `%ProgramData%\u-chan-secrets\#0 backup\update-<transaction-id>`. Failed target programs and job status remain under `updates\<transaction-id>`. Desktop rollback tarballs remain under `%APPDATA%\u-chan-secrets\#0 backup\update-<stage-id>\before`; the bounded `desktop-update.json` checkpoint identifies that stage. No automatic cleanup scans historical backups. Target startup failure restores the source program and verifies source readiness. `recovery_required` blocks credential work until trusted recovery. If automatic recovery fails, stop the service in an administrator terminal, preserve both programs, and restore the retained source using the trusted installer procedure. If desktop verification fails, rerun update; if its files are incomplete, reinstall the matching verified desktop release or its retained rollback tarball from a normal terminal using npm with `--ignore-scripts`, then repair managed registrations with `u-chan setup --apply`.
+
+Source validation and native process fixtures do not publish the feature or upgrade an installed service. See the [validation boundaries](docs/superpowers/research/2026-11-06-update-workflow-validation.md).
 
 Versions 3.0.0–3.0.2 have an npm signature-verification defect and cannot reliably bootstrap their own update. Install the matching corrected package from a trusted shell, then use the administrator reinstall above. Version 3.0.3 requires SHA-512 integrity and a valid signature from its pinned npm key; unsigned repository-attestation JSON cannot replace that signature. Future signing-key rotation fails closed and requires a trusted verifier upgrade.
 

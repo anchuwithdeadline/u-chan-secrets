@@ -24,6 +24,7 @@ interface RunOptions {
   files?: Record<string, string>
   install?: (opts: any) => Promise<ToolResult>
   uninstall?: () => Promise<ToolResult>
+  update?: (checkOnly: boolean) => Promise<ToolResult>
 }
 
 const run = async (argv: string[], opts: RunOptions | ReturnType<typeof fakeClient> = {}) => {
@@ -46,6 +47,7 @@ const run = async (argv: string[], opts: RunOptions | ReturnType<typeof fakeClie
     err: (s) => void err.push(s),
     install: options.install,
     uninstall: options.uninstall,
+    update: options.update,
   })
   return { code, out, err, connect }
 }
@@ -185,24 +187,33 @@ describe('cli', () => {
     expect(r.code).toBe(1)
     expect(r.err.join('\n')).toContain('audit [limit]')
   })
-  it('update prints message and exits 0 on success', async () => {
+  it('refuses legacy update without dispatching service mutation', async () => {
     const c = fakeClient()
     const r = await run(['update'], c)
-    expect(r.code).toBe(0)
-    expect(r.out).toEqual(['updated to 2.1.0 — restarting service'])
-    expect(c.update).toHaveBeenCalled()
+    expect(r.code).toBe(1)
+    expect(r.err.join(' ')).toContain('bootstrap required')
+    expect(c.update).not.toHaveBeenCalled()
   })
-  it('update uses extended 120s timeout', async () => {
+  it('update uses a bounded coordinated timeout', async () => {
     const c = fakeClient()
     const r = await run(['update'], c)
-    expect(r.code).toBe(0)
-    expect(r.connect).toHaveBeenCalledWith({ timeoutMs: 120000 })
+    expect(r.code).toBe(1)
+    expect(r.connect).toHaveBeenCalledWith({ timeoutMs: 180000 })
   })
   it('update prints error and exits 1 on failure', async () => {
     const c = fakeClient(false)
     const r = await run(['update'], c)
     expect(r.code).toBe(1)
-    expect(r.err).toEqual(['update failed: integrity check failed'])
+    expect(r.err).toEqual(['update check or preparation failed; inspect transaction status before retrying'])
+  })
+  it('dispatches coordinated apply and read-only check', async () => {
+    const update = vi.fn(async () => ({ok:true,message:'complete'}))
+    expect((await run(['update'], {update})).code).toBe(0)
+    expect(update).toHaveBeenLastCalledWith(false)
+    expect((await run(['update','--check'], {update})).code).toBe(0)
+    expect(update).toHaveBeenLastCalledWith(true)
+    expect((await run(['update','--unknown'], {update})).code).toBe(1)
+    expect(update).toHaveBeenCalledTimes(2)
   })
   it('usage message includes update', async () => {
     const r = await run([])

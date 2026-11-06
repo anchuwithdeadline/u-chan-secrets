@@ -13,13 +13,16 @@ const result = { ok: true, message: 'safe result' }
 const core = { login: async () => result, requestAllow: async () => result, revoke: async () => result, listAllowed: async () => result, status: async () => result }
 const discord: DiscordApi = { discordRequestAllow: async () => result, discordInspect: async () => result, discordApply: async () => result, discordListAllowed: async () => result, discordRevoke: async () => result }
 describe('Discord agent surface', () => {
-  it('adds five scoped MCP tools and preserves existing website tools', async () => {
+  it('adds scoped MCP tools and preserves existing website tools', async () => {
     const [ct, st] = InMemoryTransport.createLinkedPair()
     const server = createMcpServer(core, 'test', discord)
     await server.connect(st)
     const client = new Client({ name: 'test', version: '1' })
     await client.connect(ct)
-    expect((await client.listTools()).tools).toHaveLength(10)
+    expect((await client.listTools()).tools).toHaveLength(11)
+    const tested = await client.callTool({ name: 'discord_test_connection', arguments: { alias: 'vdn' } })
+    expect(tested.isError).toBe(true) // The stub inspect response is intentionally not connection-test data.
+    expect(tested.content).toEqual([{ type: 'text', text: 'Discord connection test received an invalid service response' }])
     expect((await client.callTool({ name: 'discord_apply', arguments: { alias: 'vdn', operations: [{ type: 'delete' }] } })).isError).toBe(true)
     expect((await client.callTool({ name: 'discord_list_allowed', arguments: {} })).isError).toBe(false)
     expect((await client.callTool({ name: 'discord_request_allow', arguments: { proposal: { alias: 'vdn', item: 'VDN Discord Bot' } } })).isError).toBe(false)

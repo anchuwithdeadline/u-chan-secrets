@@ -303,6 +303,7 @@ namespace UChan.Platform.Windows.Assets
                     if (args[i] == "--domains") domains = ParseLines(args[i + 1]);
                 return RunManagement(title, phrase, lines, domains);
             }
+            if (mode == "password") return RunPasswordDialog(title, phrase, lines);
 
             Form form = new Form();
             form.Text = title;
@@ -311,7 +312,7 @@ namespace UChan.Platform.Windows.Assets
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MaximizeBox = false;
             form.MinimizeBox = false;
-            form.ClientSize = new Size(760, mode == "password" ? 580 : 520);
+            form.ClientSize = new Size(760, 520);
 
             // Anti-phishing phrase banner
             Panel banner = new Panel();
@@ -345,25 +346,6 @@ namespace UChan.Platform.Windows.Assets
             details.Size = new Size(728, 330);
             details.Text = string.Join(Environment.NewLine, lines.ToArray());
             contentPanel.Controls.Add(details);
-            int yOffset = 400;
-
-            TextBox txtPassword = null;
-            if (mode == "password")
-            {
-                Label pwdLabel = new Label();
-                pwdLabel.Text = "Master Password:";
-                pwdLabel.Location = new Point(16, yOffset + 8);
-                pwdLabel.Size = new Size(428, 20);
-                contentPanel.Controls.Add(pwdLabel);
-                yOffset += 30;
-
-                txtPassword = new TextBox();
-                txtPassword.Location = new Point(16, yOffset);
-                txtPassword.Size = new Size(428, 24);
-                txtPassword.UseSystemPasswordChar = true;
-                txtPassword.MaxLength = 512;
-                contentPanel.Controls.Add(txtPassword);
-            }
 
             // Bottom panel for countdown & buttons
             Panel bottomPanel = new Panel();
@@ -418,10 +400,6 @@ namespace UChan.Platform.Windows.Assets
             form.Shown += (s, e) =>
             {
                 timer.Start();
-                if (txtPassword != null)
-                {
-                    txtPassword.Focus();
-                }
             };
 
             DialogResult result = form.ShowDialog();
@@ -429,14 +407,158 @@ namespace UChan.Platform.Windows.Assets
 
             if (result == DialogResult.OK)
             {
-                if (mode == "password" && txtPassword != null)
-                {
-                    Console.Write(txtPassword.Text);
-                }
                 return 0;
             }
 
             return 1;
+        }
+
+        private static int RunPasswordDialog(string title, string phrase, List<string> lines)
+        {
+            using (Form form = new Form())
+            using (Timer timer = new Timer())
+            {
+                bool unlock = lines.Count == 1 && lines[0] == "Unlock the vault";
+                form.Text = title;
+                form.Font = new Font("Segoe UI", 10f);
+                form.AutoScaleDimensions = new SizeF(96f, 96f);
+                form.AutoScaleMode = AutoScaleMode.Dpi;
+                form.StartPosition = FormStartPosition.CenterScreen;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.MaximizeBox = false;
+                form.MinimizeBox = false;
+                form.TopMost = true;
+                form.BackColor = SystemColors.Window;
+                form.ForeColor = SystemColors.WindowText;
+                form.ClientSize = new Size(520, 360);
+                form.Padding = new Padding(24);
+
+                TableLayoutPanel layout = new TableLayoutPanel();
+                layout.Dock = DockStyle.Top;
+                layout.AutoSize = true;
+                layout.ColumnCount = 1;
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                layout.RowCount = 7;
+                for (int row = 0; row < layout.RowCount; row++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+                Label heading = new Label();
+                heading.Text = unlock ? "Unlock vault" : "Confirm action";
+                heading.Font = new Font("Segoe UI", 18f, FontStyle.Bold);
+                heading.AutoSize = true;
+                heading.Margin = new Padding(0, 0, 0, 16);
+
+                Label verification = new Label();
+                verification.Text = "Verification phrase: " + phrase;
+                verification.AutoSize = true;
+                verification.MaximumSize = new Size(472, 0);
+                verification.Dock = DockStyle.Fill;
+                verification.Padding = new Padding(12);
+                verification.Margin = new Padding(0, 0, 0, 16);
+                verification.BackColor = SystemInformation.HighContrast ? SystemColors.Info : Color.FromArgb(235, 243, 255);
+                verification.ForeColor = SystemInformation.HighContrast ? SystemColors.InfoText : Color.FromArgb(16, 44, 87);
+
+                TextBox details = new TextBox();
+                details.Multiline = true;
+                details.ReadOnly = true;
+                details.WordWrap = true;
+                details.ScrollBars = lines.Count > 1 ? ScrollBars.Vertical : ScrollBars.None;
+                details.BorderStyle = BorderStyle.None;
+                details.BackColor = SystemColors.Window;
+                details.ForeColor = SystemColors.WindowText;
+                details.Text = string.Join(Environment.NewLine, lines.ToArray());
+                details.Height = Math.Min(144, Math.Max(32, lines.Count * 22));
+                details.Dock = DockStyle.Fill;
+                details.Margin = new Padding(0, 0, 0, 16);
+                details.AccessibleName = "Requested action";
+                details.TabStop = false;
+
+                Label passwordLabel = new Label();
+                passwordLabel.Text = "Master password";
+                passwordLabel.AutoSize = true;
+                passwordLabel.Margin = new Padding(0, 0, 0, 8);
+
+                TextBox txtPassword = new TextBox();
+                txtPassword.UseSystemPasswordChar = true;
+                txtPassword.MaxLength = 512;
+                txtPassword.Dock = DockStyle.Fill;
+                txtPassword.Margin = new Padding(0, 0, 0, 12);
+                txtPassword.AccessibleName = "Master password";
+                txtPassword.TabIndex = 0;
+
+                Label hint = new Label();
+                hint.Text = "Check your verification phrase before entering your password.";
+                hint.AutoSize = true;
+                hint.MaximumSize = new Size(472, 0);
+                hint.Margin = new Padding(0, 0, 0, 24);
+
+                TableLayoutPanel footer = new TableLayoutPanel();
+                footer.Dock = DockStyle.Fill;
+                footer.AutoSize = true;
+                footer.ColumnCount = 3;
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                footer.Margin = new Padding(0);
+                Label countdown = new Label();
+                countdown.AutoSize = true;
+                countdown.Anchor = AnchorStyles.Left;
+                countdown.Margin = new Padding(0, 0, 12, 0);
+                countdown.Text = "Closes in 2:00";
+
+                Button cancel = new Button();
+                cancel.Text = "Cancel";
+                cancel.Size = new Size(96, 36);
+                cancel.Margin = new Padding(0, 0, 8, 0);
+                cancel.DialogResult = DialogResult.Cancel;
+                cancel.TabIndex = 2;
+                Button submit = new Button();
+                submit.Text = unlock ? "Unlock" : "Confirm";
+                submit.Size = new Size(104, 36);
+                submit.Margin = new Padding(0);
+                submit.DialogResult = DialogResult.OK;
+                submit.Enabled = false;
+                submit.TabIndex = 1;
+                submit.FlatStyle = FlatStyle.Flat;
+                submit.FlatAppearance.BorderSize = 1;
+                submit.UseVisualStyleBackColor = false;
+                submit.BackColor = SystemColors.Control;
+                submit.ForeColor = SystemColors.GrayText;
+                txtPassword.TextChanged += delegate {
+                    submit.Enabled = txtPassword.Text.Length > 0;
+                    submit.BackColor = submit.Enabled ? (SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(29, 78, 216)) : SystemColors.Control;
+                    submit.ForeColor = submit.Enabled ? (SystemInformation.HighContrast ? SystemColors.HighlightText : Color.White) : SystemColors.GrayText;
+                };
+                footer.Controls.Add(countdown, 0, 0);
+                footer.Controls.Add(cancel, 1, 0);
+                footer.Controls.Add(submit, 2, 0);
+                layout.Controls.Add(heading, 0, 0);
+                layout.Controls.Add(verification, 0, 1);
+                layout.Controls.Add(details, 0, 2);
+                layout.Controls.Add(passwordLabel, 0, 3);
+                layout.Controls.Add(txtPassword, 0, 4);
+                layout.Controls.Add(hint, 0, 5);
+                layout.Controls.Add(footer, 0, 6);
+                form.Controls.Add(layout);
+                form.AcceptButton = submit;
+                form.CancelButton = cancel;
+                form.Load += delegate {
+                    layout.PerformLayout();
+                    form.ClientSize = new Size(form.ClientSize.Width, layout.GetPreferredSize(new Size(layout.Width, 0)).Height + form.Padding.Vertical);
+                };
+                int remainingSeconds = 120;
+                timer.Interval = 1000;
+                timer.Tick += delegate {
+                    remainingSeconds--;
+                    countdown.Text = "Closes in " + (remainingSeconds / 60).ToString() + ":" + (remainingSeconds % 60).ToString("00");
+                    if (remainingSeconds <= 0) { form.DialogResult = DialogResult.Cancel; form.Close(); }
+                };
+                form.Shown += delegate { txtPassword.Focus(); timer.Start(); };
+                DialogResult result = form.ShowDialog();
+                timer.Stop();
+                if (result == DialogResult.OK) Console.Write(txtPassword.Text);
+                txtPassword.Clear();
+                return result == DialogResult.OK ? 0 : 1;
+            }
         }
 
         private static int RunManagement(string title, string phrase, List<string> lines, List<string> domains)
