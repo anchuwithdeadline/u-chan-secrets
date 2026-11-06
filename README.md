@@ -47,11 +47,14 @@ u-chan doctor
 u-chan unlock
 u-chan discord allow discord-connection.json
 u-chan discord list
+u-chan discord test vdn
 u-chan discord inspect vdn
 u-chan discord inspect vdn --page 1
 ```
 
 Enter the master password only in the protected unlock prompt. Confirm the connection's item, field, and exact server ID in the protected approval. Metadata pages return one channel and one role, with `nextPage` and totals. Follow pages for complete results. An optional member ID inspects that member's role IDs: `u-chan discord inspect vdn 223456789012345678`.
+
+`u-chan discord test <alias>` (PowerShell may require `u-chan.cmd`) checks an existing approved connection through read-only metadata inspection. Success reports `status: "connected"`, server ID, channel count, and role count. Failures retain service guidance for locked vaults, missing approval, unavailable services, or Discord rejection. It never grants access, changes resources, returns raw metadata, or proves write permissions. Agents can use the equivalent `discord_test_connection` tool. This desktop-only feature works with an installed service that already supports `discord_broker`; no service reinstall or vault relock is needed.
 
 4. Put a requested tournament setup batch in `discord-operations.json`, then review it through U-Chan:
 
@@ -86,7 +89,7 @@ An overwrite is `{ "id": "...", "type": 0, "allow": "1024", "deny": "2048" }`: t
 
 No deletion, messages, kicks/bans, server creation, webhook access, arbitrary HTTP, or secret-injected shell execution is exposed. A batch stops at its first failure without rollback. Results distinguish completed operations, operations not sent, and unknown write outcomes. **Inspect the server before retrying an unknown outcome**; U-Chan does not replay uncertain writes. Rate-limit results provide `retryAfter` where available.
 
-Agents get five additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
+Agents get six additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_test_connection`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
 
 Connection metadata resides in protected `discord-allowlist.json`; tokens remain in Bitwarden and service memory. The service snapshots protected metadata under protected `#0 backup` before its first broker state mutation per process. Reinstallation preserves connections; a compatible older service leaves the separate file inert. Revocation and vault lock cannot undo completed Discord changes or recall an already dispatched request. See [validation status](docs/superpowers/research/2026-11-06-discord-broker-validation.md) before treating source checks as installed verification.
 

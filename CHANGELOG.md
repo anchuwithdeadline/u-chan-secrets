@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `u-chan discord test <alias>` and `discord_test_connection`: reuse approved read-only metadata inspection to report connection status, server ID, and channel/role counts without raw metadata. No service, native-helper, permission, or dependency change is required.
+
 - Allow Discord setup discovery from the user-supplied Bitwarden item when server/field metadata is already stored there. Require protected approval before lookup and another approval before saving the exact UUID-bound connection; never return token values or raw notes.
 
 - Add a Windows-only privileged Discord token broker for approved existing servers: metadata inspection, channel/category and role setup, reordering, and member-role assignment.
