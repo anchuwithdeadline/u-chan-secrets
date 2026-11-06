@@ -72,6 +72,8 @@ export const SERVICE_DIAGNOSTIC_TIMEOUT_MS = 70000
 export interface DiagnosticCheck { id: string; state: DiagnosticState; required: boolean; message: string; nextAction: string }
 export interface DiagnosticReport { version: 1; checks: DiagnosticCheck[]; browser?: BrowserKind; observedBrowser?: BrowserKind | 'unknown' }
 export interface ServiceDiagnostic {
+  discordPolicy?: DiagnosticState
+  discordBroker?: 'available' | 'unsupported'
   serviceVersion?: string
   browser?: DiagnosticState
   browserEndpoint?: string
@@ -142,6 +144,8 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
   if (d.platform === 'win32' && d.elevation) add('uac', elevation, 'Windows administrator prompt policy checked.', 'Set UAC to Always notify in Windows settings.')
   add('assets', state(service?.assets), 'Private service assets checked.', 'Repair the installation from a trusted administrator terminal.')
   add('permissions', state(service?.permissions), 'Protected service permissions checked.', 'Repair protected permissions from a trusted administrator terminal.')
+  if (service?.discordPolicy !== undefined) add('discord_policy', state(service.discordPolicy), 'Protected Discord connection policy checked.', 'Repair Discord connection state from a trusted administrator terminal; never include tokens in policy JSON.')
+  if (service?.discordBroker !== undefined) add('discord_broker', service.discordBroker === 'available' ? 'pass' : 'unknown', service.discordBroker === 'available' ? 'Discord broker source support available; native rendering and active-session ownership require separate verification.' : 'Discord broker requires Windows and complete protected review.', 'Use an upgraded Windows service with the complete protected review helper.', false)
   const v = service?.vault
   add('vault', v === 'locked' ? 'pass' : v === 'unauthenticated' ? 'fail' : state(v),
     v === 'locked' ? 'Vault is locked.' : v === 'unauthenticated' ? 'Vault is not authenticated.' : 'Vault availability checked.',

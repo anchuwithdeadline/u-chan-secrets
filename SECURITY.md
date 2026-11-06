@@ -34,6 +34,22 @@ On Windows, use UAC **Always notify** or a standard account for the AI. The serv
 
 ## Credential and execution boundary
 
+### Discord broker (unreleased source)
+
+The Windows-only broker reads an approved Bitwarden item's password or one explicitly named hidden custom field inside the privileged service. Desktop IPC/MCP never exposes a token retrieval, authenticated generic fetch, or secret-injected execution primitive. Connections bind one alias to one exact server ID and token field, in protected `discord-allowlist.json`; tokens are not persisted there. Before the first broker policy mutation per process, the service creates a protected metadata snapshot under `#0 backup`.
+
+Connection approval permits server/channel/role metadata reads until revoked. Every write batch separately requires protected approval of its exact typed operations and disclosed permission changes. The native review surface must show complete wrapped details without ellipsis. This changes the Windows native helper and therefore requires trusted reinstall; source compilation is not proof of installed input isolation or readability. macOS broker requests are refused.
+
+The broker builds fixed Discord API v10 routes internally, refuses redirects and arbitrary caller URLs/headers, bounds responses and execution, projects response fields, redacts token echoes before returning results, and suppresses raw upstream exceptions. It revalidates server membership, hierarchy, policy, and vault state before dispatch. The limited operation set excludes deletion, messages, moderation, administrator grants, and assignment of an existing administrator role.
+
+Metadata names/topics remain attacker-controlled data. An agent must never treat those strings as instructions. Protected approval is still a human decision: another approved role or overwrite change may grant substantial authority or expose private channels. The complete prompt must be reviewed, including `@everyone` changes and overwrite replacement.
+
+Writes run sequentially, stop at first failure, and do not roll back. An interrupted/ambiguous write may have succeeded; inspect before proposing another batch. Revocation waits behind earlier queued work and blocks future broker access; it cannot undo completed changes, revoke the Discord token, or recall a dispatched HTTP request. Vault lock blocks subsequent credential acquisition/dispatch checks but does not invalidate a token already sent to Discord. Audit intent must succeed before dispatch; an audit failure after execution reports that the change may already exist.
+
+Existing privileged-process integrity, native input isolation, UAC, and protected-tree permission requirements still apply. A protected source tree and successful mocked HTTP tests are not installed-service or live Discord verification.
+
+### Website login and service integrity
+
 The service runs as SYSTEM on Windows or root on macOS. Protected state resides under `%ProgramData%\u-chan-secrets` or `/Library/Application Support/u-chan-secrets`. The desktop thin client forwards requests through caller-authenticated local IPC and never receives vault credentials.
 
 V3 stages private runtime, dependencies, Bitwarden, and Chromium assets. Windows ownership/DACL setup replaces unrelated grants, refuses reparse points, and normalizes the protected tree. Verify the actual permissions and every native library/executable loaded by the service on the target OS.

@@ -18,6 +18,8 @@ import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './
 import { parseAllowArgs } from './client/allow.js'
 import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
 import { configureWindowsCommand } from './client/windows-command.js'
+import { runDiscordCli } from './client/discord.js'
+import type { DiscordApi } from './discord/policy.js'
 
 const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
@@ -26,7 +28,7 @@ export interface CliDeps {
   clientVersion?: string
   setup?: (options: SetupOptions, client: 'codex' | 'claude') => Promise<SetupReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
-  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'>
+  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'> & Partial<DiscordApi>
   env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
   readFile: (path: string) => Promise<string>
@@ -51,6 +53,12 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
 
 /** Returns the process exit code: 0 on success, 1 on failure or bad usage. */
 export async function main(argv: string[], d: CliDeps): Promise<number> {
+  if (argv[0] === 'discord') {
+    const result = await runDiscordCli(argv.slice(1), d.connect({ timeoutMs: 240000 }), d.readFile)
+    if (result.ok) d.out(result.message)
+    else d.err(result.message)
+    return result.ok ? 0 : 1
+  }
   const [cmd, arg, ...rest] = argv
   let call: (() => Promise<ToolResult>) | undefined
   let diagnosticEnv = d.env

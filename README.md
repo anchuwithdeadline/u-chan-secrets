@@ -18,6 +18,76 @@ The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) rec
 
 Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
 
+## Discord broker (unreleased source)
+
+The Windows service can use a Bitwarden bot token to configure **existing approved Discord servers**, without returning the token to the agent. This source upgrade requires a **trusted administrator reinstall** because its protected review helper changes. It is not available merely by updating the desktop MCP package. Existing website tools remain unchanged; macOS Discord requests fail closed.
+
+The bot must already belong to the target server and have the needed Discord permissions and role hierarchy. Approve one connection for server/role/channel metadata. Every write batch then requires a protected prompt displaying its exact changes. The connection never authorizes unattended writes.
+
+1. Keep the token in the login password or an explicitly named **hidden** custom field of your Bitwarden item. A username is not required for password-field token use. Never put the token in the following JSON files, chat, command arguments, or MCP configuration.
+2. Create `discord-connection.json` using the exact server ID and your item reference (prefer its UUID). Example IDs below are placeholders, not a real target:
+
+```json
+{
+  "alias": "vdn",
+  "item": "VDN Discord Bot",
+  "field": { "kind": "password" },
+  "guildId": "123456789012345678"
+}
+```
+
+For a custom field, replace `field` with `{ "kind": "hidden", "name": "Bot token" }`. Missing, visible, or duplicate matching custom fields fail without fallback.
+
+3. After the trusted service reinstall, run from a normal terminal:
+
+```powershell
+u-chan doctor
+u-chan unlock
+u-chan discord allow discord-connection.json
+u-chan discord list
+u-chan discord inspect vdn
+u-chan discord inspect vdn --page 1
+```
+
+Enter the master password only in the protected unlock prompt. Confirm the connection's item, field, and exact server ID in the protected approval. Metadata pages return one channel and one role, with `nextPage` and totals. Follow pages for complete results. An optional member ID inspects that member's role IDs: `u-chan discord inspect vdn 223456789012345678`.
+
+4. Put a requested tournament setup batch in `discord-operations.json`, then review it through U-Chan:
+
+```json
+[
+  { "type": "role_create", "name": "Debater", "permissions": "1024" },
+  { "type": "role_create", "name": "Adjudicator", "permissions": "1024" },
+  { "type": "channel_create", "kind": "category", "name": "Tournament" }
+]
+```
+
+```powershell
+u-chan discord apply vdn discord-operations.json
+u-chan discord revoke vdn
+```
+
+New resource IDs are returned after creation. Use those IDs in a later approved batch to create child channels, assign roles, or set permissions. Each batch is limited to 10 operations and 8 KiB of canonical JSON; larger review displays must be split further. Overlapping existing targets are rejected before approval; combine fields into one edit or use separate batches. Server state is checked again after approval, so conflicting changes and indirect role-position shifts may stop execution. Revoke also works from `u-chan manage` using the distinctly labeled Discord target.
+
+Supported operations and payload fields:
+
+| `type` | Fields |
+|---|---|
+| `role_create` | `name`; optional `permissions` (decimal string, default `"0"`), `color` (integer), `hoist`, `mentionable` |
+| `role_edit` | `roleId`, nonempty `changes` using the role fields above |
+| `role_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
+| `channel_create` | `kind`: `category`, `text`, or `voice`; `name`; optional `parentId`, `topic` (text only), `overwrites` |
+| `channel_edit` | `channelId`, nonempty `changes`: `name`, `parentId`, `topic`, `overwrites` |
+| `channel_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
+| `member_role_add`, `member_role_remove` | `memberId`, `roleId` |
+
+An overwrite is `{ "id": "...", "type": 0, "allow": "1024", "deny": "2048" }`: type 0 targets a role; type 1 targets a verified server member. **Supplying `overwrites` replaces that channel's overwrite list**, which can expose private channels. The protected review displays numeric bits and known permission names; the server ID denotes `@everyone`. Unknown permission bits and administrator grants, including assignment of an existing administrator role, are refused. Managed roles and the bot's authority roles are protected. Discord itself also enforces permissions and hierarchy.
+
+No deletion, messages, kicks/bans, server creation, webhook access, arbitrary HTTP, or secret-injected shell execution is exposed. A batch stops at its first failure without rollback. Results distinguish completed operations, operations not sent, and unknown write outcomes. **Inspect the server before retrying an unknown outcome**; U-Chan does not replay uncertain writes. Rate-limit results provide `retryAfter` where available.
+
+Agents get five additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
+
+Connection metadata resides in protected `discord-allowlist.json`; tokens remain in Bitwarden and service memory. The service snapshots protected metadata under protected `#0 backup` before its first broker state mutation per process. Reinstallation preserves connections; a compatible older service leaves the separate file inert. Revocation and vault lock cannot undo completed Discord changes or recall an already dispatched request. See [validation status](docs/superpowers/research/2026-11-06-discord-broker-validation.md) before treating source checks as installed verification.
+
 ## What 5.1 adds
 
 - **Claude Code setup:** `u-chan setup --client claude [--apply] [--replace-existing]` checks the user-scope `u-chan-secrets` and `playwright` registrations in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and repairs a Playwright entry missing `--cdp-endpoint`. Inspection reads the file without changing it; changes go through `claude mcp remove`/`add-json --scope user` after a backup in `~/.claude/#0 backup`. Custom registrations are preserved and reported for manual configuration.

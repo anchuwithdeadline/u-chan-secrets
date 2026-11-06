@@ -311,7 +311,7 @@ namespace UChan.Platform.Windows.Assets
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MaximizeBox = false;
             form.MinimizeBox = false;
-            form.ClientSize = new Size(460, mode == "password" ? 380 : 320);
+            form.ClientSize = new Size(760, mode == "password" ? 580 : 520);
 
             // Anti-phishing phrase banner
             Panel banner = new Panel();
@@ -335,17 +335,17 @@ namespace UChan.Platform.Windows.Assets
             contentPanel.Padding = new Padding(16);
             contentPanel.AutoScroll = true;
 
-            int yOffset = 60;
-            foreach (string line in lines)
-            {
-                Label lbl = new Label();
-                lbl.Text = line;
-                lbl.Location = new Point(16, yOffset);
-                lbl.Size = new Size(428, 22);
-                lbl.AutoEllipsis = true;
-                contentPanel.Controls.Add(lbl);
-                yOffset += 24;
-            }
+            TextBox details = new TextBox();
+            details.Multiline = true;
+            details.ReadOnly = true;
+            details.WordWrap = true;
+            details.ScrollBars = ScrollBars.Vertical;
+            details.MaxLength = 65536;
+            details.Location = new Point(16, 60);
+            details.Size = new Size(728, 330);
+            details.Text = string.Join(Environment.NewLine, lines.ToArray());
+            contentPanel.Controls.Add(details);
+            int yOffset = 400;
 
             TextBox txtPassword = null;
             if (mode == "password")

@@ -1,10 +1,11 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ManagementService } from '../src/service/manage.js'
 import { AllowlistStore } from '../src/core/allowlist.js'
 import { GrantCoordinator } from '../src/service/grants.js'
+import { DiscordStore } from '../src/discord/store.js'
 const dirs: string[] = []
 afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }) })
 async function setup(actions: unknown[]) {
@@ -53,4 +54,23 @@ it('paginates grants so long lists stay within native transport bounds', async (
   expect((await manager.open()).ok).toBe(true)
   expect((snapshots[0] as any).domains).toHaveLength(20)
   expect((snapshots[1] as any).domains).toHaveLength(6)
+})
+
+it('shows Discord targets separately and routes revocation without treating aliases as website domains', async () => {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'ucs-discord-manage-'))); dirs.push(dir)
+  const store = new AllowlistStore(join(dir, 'website.json')), discordStore = new DiscordStore(join(dir, 'discord.json'))
+  await discordStore.upsert({ alias: 'vdn', item: 'VDN Discord Bot', field: { kind: 'password' }, guildId: '123456789012345678' })
+  let shown = false, revoked = ''
+  const manager = new ManagementService({ store, discordStore, discordRevoke: async alias => { revoked = alias; await discordStore.remove(alias); return { ok: true, message: 'revoked' } }, grants: new GrantCoordinator(store), phrase: async () => 'phrase', vault: { status: async () => 'locked' }, audit: { readTail: async () => [] }, diagnose: async () => ({ assets: 'pass', permissions: 'pass', vault: 'locked' }), show: async req => {
+    if (shown) return { action: 'close' }
+    expect(req.domains).toContain('discord:vdn')
+    expect(req.lines.join('\n')).toContain('123456789012345678')
+    shown = true
+    return { action: 'revoke', domain: 'discord:vdn' }
+  }, lock: async () => ({ ok: true, message: 'locked' }), unlock: async () => ({ ok: true, message: 'unlocked' }), revoke: async () => { throw new Error('must not use website revoke') } })
+  // The next management refresh happens after revocation, so close without requiring the deleted target.
+  const result = await manager.open()
+  expect(result.ok).toBe(true)
+  expect(revoked).toBe('vdn')
+  expect(await discordStore.list()).toEqual([])
 })

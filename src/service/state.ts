@@ -1,5 +1,6 @@
 import { chmod, cp, lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { UserFacingError } from '../core/types.js'
 import { setAdminOnlyAcl } from '../platform/windows/acl.js'
 import { checkWindowsPermissions } from '../platform/windows/doctor.js'
@@ -60,4 +61,24 @@ export async function ensureV3State(home: string, secureDirectory: (path: string
   const tmp = join(home, 'schema.json.tmp')
   await writeFile(tmp, JSON.stringify({ schema: 3, minimumServiceMajor: 3 }), { mode: 0o600 })
   await rename(tmp, join(home, 'schema.json'))
+}
+
+/** A protected metadata snapshot before the broker's first state mutation in this process. */
+export async function backupDiscordState(home: string, secureDirectory: (path: string) => Promise<void> = protect): Promise<void> {
+  await ensureV3State(home, secureDirectory)
+  await secureDirectory(home)
+  const parent = join(home, '#0 backup')
+  await mkdir(parent, { mode: 0o700, recursive: true })
+  await secureDirectory(parent)
+  const backup = join(parent, 'discord-before-' + randomUUID())
+  await mkdir(backup, { mode: 0o700 })
+  await secureDirectory(backup)
+  for (const name of ['discord-allowlist.json', 'allowlist.json', 'settings.json', 'schema.json']) {
+    const source = join(home, name)
+    let stat
+    try { stat = await lstat(source) } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue; throw e }
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new UserFacingError('protected backup refuses links and non-files')
+    await cp(source, join(backup, name), { force: false, errorOnExist: true })
+  }
+  await writeFile(join(backup, 'complete'), 'discord_broker', { mode: 0o600, flag: 'wx' })
 }

@@ -22,6 +22,7 @@ export function serviceConfig(env: NodeJS.ProcessEnv, platform: NodeJS.Platform)
   return {
     home,
     allowlistPath: path.join(home, 'allowlist.json'),
+    discordAllowlistPath: path.join(home, 'discord-allowlist.json'),
     auditPath: path.join(home, 'audit.log'),
     settingsPath: path.join(home, 'settings.json'),
     bwDataDir: path.join(home, 'bw-data'),

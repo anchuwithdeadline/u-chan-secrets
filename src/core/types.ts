@@ -23,7 +23,7 @@ export interface VaultClient {
   lock(): Promise<void>
 }
 export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
-export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import' | 'update'; domain: string; result: string }
+export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import' | 'update' | 'discord_allow' | 'discord_read' | 'discord_write' | 'discord_revoke'; domain: string; result: string }
 export interface AuditRecord {
   ts: string
   action: AuditEvent['action']

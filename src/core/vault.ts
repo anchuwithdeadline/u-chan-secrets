@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { UserFacingError, type Credentials, type MasterPasswordChecker, type VaultClient, type VaultStatus } from './types.js'
 import { redact } from './redact.js'
+import { tokenFieldSchema, type TokenField } from '../discord/policy.js'
 
 export type Exec = (args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>
 
@@ -115,7 +116,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     }
   }
 
-  async getLogin(item: string, signal?: AbortSignal): Promise<Credentials> {
+  private async getItem(item: string, signal?: AbortSignal, quiet = false): Promise<Record<string, unknown>> {
     const session = this.session()
     if (!session) throw new UserFacingError((await this.status(signal)) === 'unauthenticated' ? LOGIN_MSG : UNLOCK_MSG)
     let r: ExecResult
@@ -139,15 +140,38 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
         throw new UserFacingError(UNLOCK_MSG)
       }
       if (err.includes('you are not logged in')) throw new UserFacingError(LOGIN_MSG)
-      console.error(`bw failed (exit ${r.code}): ${redact(r.stderr.trim(), [session])}`)
+      if (!quiet) console.error(`bw failed (exit ${r.code}): ${redact(r.stderr.trim(), [session])}`)
       throw new UserFacingError(`bw failed (exit ${r.code})`)
     }
-    let login: { username?: unknown; password?: unknown; totp?: unknown } | undefined
     try {
-      login = (JSON.parse(r.stdout) as { login?: typeof login }).login
-    } catch {
-      throw new UserFacingError('unexpected bw output')
+      const value = JSON.parse(r.stdout)
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
+      return value
+    } catch { throw new UserFacingError('unexpected bw output') }
+  }
+
+  /** Privileged service only. Never expose this method through IPC or MCP. */
+  async getToken(item: string, field: TokenField, signal?: AbortSignal): Promise<string> {
+    const parsed = tokenFieldSchema.safeParse(field)
+    if (!parsed.success) throw new UserFacingError('invalid token field')
+    const data = await this.getItem(item, signal, true)
+    let token: unknown
+    if (field.kind === 'password') token = (data.login as { password?: unknown } | undefined)?.password
+    else {
+      const fields = Array.isArray(data.fields) ? data.fields.filter(f => f && typeof f === 'object' && f.name === field.name) : []
+      if (fields.length !== 1 || fields[0].type !== 1) throw new UserFacingError('token field is missing or ambiguous')
+      token = fields[0].value
     }
+    if (typeof token !== 'string' || !token || token.length > 4096 || /[\s\p{Cc}\p{Cf}]/u.test(token)) throw new UserFacingError('token field is missing or invalid')
+    signal?.throwIfAborted()
+    this.lastUse = this.now()
+    return token
+  }
+
+  async getLogin(item: string, signal?: AbortSignal): Promise<Credentials> {
+    const data = await this.getItem(item, signal)
+    let login: { username?: unknown; password?: unknown; totp?: unknown } | undefined
+    login = data.login as typeof login
     if (typeof login?.username !== 'string' || typeof login?.password !== 'string' || !login.username || !login.password) {
       throw new UserFacingError('item has no username/password')
     }

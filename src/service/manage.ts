@@ -3,6 +3,7 @@ import { clean, normalizeDomain, type AllowlistStore } from '../core/allowlist.j
 import { bounded, safeVersion, SERVICE_DIAGNOSTIC_TIMEOUT_MS, type ServiceDiagnostic } from '../core/doctor.js'
 import type { AuditLog, ManagementAction, PromptRequest, ToolResult, VaultClient } from '../core/types.js'
 import type { GrantCoordinator } from './grants.js'
+import type { DiscordStore } from '../discord/store.js'
 interface Deps {
   store: AllowlistStore
   grants: GrantCoordinator
@@ -14,6 +15,8 @@ interface Deps {
   lock: () => Promise<ToolResult>
   unlock: () => Promise<ToolResult>
   revoke: (domain: string) => Promise<ToolResult>
+  discordStore?: DiscordStore
+  discordRevoke?: (alias: string) => Promise<ToolResult>
 }
 export class ManagementService {
   private opened = false
@@ -31,32 +34,34 @@ export class ManagementService {
             this.d.store.list(), bounded(() => this.d.vault.status(), 'unavailable' as const),
             bounded(() => this.d.audit.readTail(10), []), bounded(this.d.diagnose, null, SERVICE_DIAGNOSTIC_TIMEOUT_MS),
           ])
-          const all = entries.filter(e => e.domain === normalizeDomain(e.domain))
+          const website = entries.filter(e => e.domain === normalizeDomain(e.domain)).map(e => {
+            let label = e.expiresAt ? 'until ' + e.expiresAt : e.remainingUses !== undefined ? e.remainingUses + ' attempts remaining' : 'permanent'
+            try { this.d.grants.check(e) } catch { label = e.remainingUses === 0 ? 'exhausted' : 'expired' }
+            return { target: e.domain, line: clean(e.domain) + ' — ' + label }
+          })
+          const discord = (await this.d.discordStore?.list() ?? []).map(e => ({ target: 'discord:' + e.alias, line: `Discord: ${e.alias} — server ${e.guildId} — metadata reads; protected approval for every write` }))
+          const all = [...website, ...discord]
           page = Math.min(page, Math.max(0, Math.ceil(all.length / 20) - 1))
           const grants = all.slice(page * 20, page * 20 + 20)
-          const lines = ['Vault: ' + status, lastAction, 'Grant page ' + (page + 1) + ': ' + grants.length + ' of ' + entries.length + ' shown. Use Previous/Next for more.']
+          const lines = ['Vault: ' + status, lastAction, 'Grant page ' + (page + 1) + ': ' + grants.length + ' of ' + all.length + ' shown. Use Previous/Next for more.']
           lines.push('Service version: ' + (safeVersion(checks?.serviceVersion) ?? 'unknown'),
             'Service browser: ' + (['pass', 'fail'].includes(checks?.browser ?? '') ? checks?.browser : 'unknown'))
           lines.push('Observed desktop browser: ' + (checks?.browserKind === 'edge' ? 'Edge' : checks?.browserKind === 'chrome' ? 'Chrome' : 'unknown'))
           if (status === 'locked') lines.push('Next step: use Unlock to approve a protected vault unlock.')
           if (checks?.assets !== 'pass' || checks?.permissions !== 'pass') lines.push('Next step: run u-chan doctor; repair from a trusted administrator terminal.')
           if (checks?.browser !== 'pass') lines.push('Next step: start the selected dedicated browser and run u-chan setup.')
-          for (const e of grants) {
-            let label = e.expiresAt ? 'until ' + e.expiresAt : e.remainingUses !== undefined ? e.remainingUses + ' attempts remaining' : 'permanent'
-            try { this.d.grants.check(e) } catch { label = e.remainingUses === 0 ? 'exhausted' : 'expired' }
-            lines.push(clean(e.domain) + ' — ' + label)
-          }
+          for (const e of grants) lines.push(e.line)
           lines.push('Revocation stops future logins. It does not log out existing browser sessions.',
             'Revocation waits for any earlier login to finish.',
             'Diagnostics: assets ' + (checks?.assets ?? 'unknown') + '; permissions ' + (checks?.permissions ?? 'unknown'),
             'Recent activity:')
           for (const e of events.slice(-10)) {
             const ts = Number.isFinite(Date.parse(e.ts)) ? new Date(e.ts).toISOString() : 'unknown time'
-            const action = ['login','request_allow','revoke','unlock','lock','mode','import','update'].includes(e.action) ? e.action : 'event'
+            const action = ['login','request_allow','revoke','unlock','lock','mode','import','update','discord_allow','discord_read','discord_write','discord_revoke'].includes(e.action) ? e.action : 'event'
             const result = e.result.startsWith('failed') ? 'failed' : e.result === 'denied' ? 'denied' : e.result.startsWith('approved') ? 'approved' : 'recorded'
             lines.push(ts + ' ' + action + ' ' + clean(e.domain).slice(0, 253) + ' ' + result)
           }
-          return { title: 'U-Chan Secrets — Manage', phrase: await this.d.phrase(), lines: lines.filter(Boolean), domains: grants.map(e => e.domain) }
+          return { title: 'U-Chan Secrets — Manage', phrase: await this.d.phrase(), lines: lines.filter(Boolean), domains: grants.map(e => e.target) }
         })
         // Each native window closes before a protected password prompt can open.
         const action = await this.d.show(snapshot)
@@ -67,7 +72,9 @@ export class ManagementService {
         let result: ToolResult
         if (action.action === 'lock') result = await this.d.lock()
         else if (action.action === 'unlock') result = await this.d.unlock()
-        else if (action.action === 'revoke' && typeof action.domain === 'string' && snapshot.domains?.includes(action.domain)) result = await this.d.revoke(action.domain)
+        else if (action.action === 'revoke' && typeof action.domain === 'string' && snapshot.domains?.includes(action.domain)) {
+          result = action.domain.startsWith('discord:') && this.d.discordRevoke ? await this.d.discordRevoke(action.domain.slice(8)) : await this.d.revoke(action.domain)
+        }
         else return { ok: false, message: 'invalid management action or target' }
         lastAction = result.ok ? 'Last action completed.' : 'Last action failed. Run u-chan doctor for guidance.'
       }

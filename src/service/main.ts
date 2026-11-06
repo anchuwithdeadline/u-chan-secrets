@@ -28,6 +28,11 @@ import { privateBrowserPath } from '../platform/runtime-assets.js'
 import { safeVersion } from '../core/doctor.js'
 import { inspectServiceDesktopBrowser } from '../platform/windows/desktop-browser.js'
 import type { BrowserKind } from '../client/browser-choice.js'
+import { DiscordStore } from '../discord/store.js'
+import { DiscordService } from '../discord/service.js'
+import { DiscordHttp } from '../discord/http.js'
+import type { DiscordApi } from '../discord/policy.js'
+import { backupDiscordState } from './state.js'
 
 export function prepareSocketEndpoint(endpoint: string, platform: NodeJS.Platform = process.platform): void {
   if (platform !== 'win32') {
@@ -67,6 +72,9 @@ export async function runService(
     const allowlist = new AllowlistStore(cfg.allowlistPath, () => stateReady ??= ensureV3State(cfg.home).catch(e => { stateReady = undefined; throw e }))
     const grants = new GrantCoordinator(allowlist)
     const audit = new FileAuditLog(cfg.auditPath)
+    let discordStateReady: Promise<void> | undefined
+    const discordStore = new DiscordStore(cfg.discordAllowlistPath, () => discordStateReady ??= backupDiscordState(cfg.home).catch(e => { discordStateReady = undefined; throw e }))
+    const discord = new DiscordService({ platform, store: discordStore, vault, approver, audit, http: new DiscordHttp(), queue: work => grants.run(work) })
     const endpoint = loadConfig(env, platform).cdpEndpoint
     const validateTarget = platform === 'win32' ? async (browser: BrowserKind = 'chrome') => {
       const owner = (await settings.get() as unknown as { authorizedSid?: unknown }).authorizedSid
@@ -97,14 +105,20 @@ export async function runService(
       currentVersion,
     })
 
-    const diagnose = async () => ({ ...await diagnoseService(cfg.home, vault, platform, loadConfig(env, platform).cdpEndpoint), serviceVersion: safeVersion(currentVersion) })
-    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, serviceVersion: safeVersion(currentVersion), manage: () => manager.open() })
+    const diagnose = async () => ({ ...await diagnoseService(cfg.home, vault, platform, loadConfig(env, platform).cdpEndpoint), serviceVersion: safeVersion(currentVersion), discordPolicy: await discordStore.list().then(() => 'pass' as const, () => 'fail' as const), discordBroker: platform === 'win32' ? 'available' as const : 'unsupported' as const })
+    const control: ControlService = new ControlService({ vault, approver, limiter, settings, allowlist, grants, audit, platform, updater, diagnose, serviceVersion: safeVersion(currentVersion), manage: () => manager.open(), discordSupported: platform === 'win32' })
     const manager = new ManagementService({
       store: allowlist, grants, vault, audit, diagnose, phrase: async () => (await settings.get()).phrase,
       show: req => adapters.prompt.manage ? adapters.prompt.manage(req) : Promise.reject(new Error('unsupported')),
       lock: () => control.lock(), unlock: () => control.unlock(), revoke: domain => core.revoke(domain),
+      discordStore, discordRevoke: alias => discord.discordRevoke(alias),
     })
-    const api: CoreApi & ControlApi = {
+    const api: CoreApi & ControlApi & DiscordApi = {
+      discordRequestAllow: proposal => discord.discordRequestAllow(proposal),
+      discordListAllowed: () => discord.discordListAllowed(),
+      discordInspect: (alias, memberId, page) => discord.discordInspect(alias, memberId, page),
+      discordApply: (alias, operations) => discord.discordApply(alias, operations),
+      discordRevoke: alias => discord.discordRevoke(alias),
       capabilities: () => control.capabilities(),
       diagnose: () => control.diagnose(),
       manage: () => control.manage(),

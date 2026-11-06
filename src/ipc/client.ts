@@ -4,11 +4,12 @@ import { FrameReader, encode, type Method } from './protocol.js'
 import { isResultCode, type AllowOptions } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
 import { browserKind, type BrowserKind } from '../client/browser-choice.js'
+import { aliasSchema, batchSchema, connectionSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 
 const DOWN = 'U-Chan service is not running — run u-chan install'
 
 /** One connection per call; the service does all privileged work. */
-export class IpcClient implements CoreApi, ControlApi {
+export class IpcClient implements CoreApi, ControlApi, DiscordApi {
   private nextId = 1
   private timeoutMs: number
   private readonly browser: BrowserKind | (() => BrowserKind)
@@ -72,6 +73,31 @@ export class IpcClient implements CoreApi, ControlApi {
     return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
   }
   capabilities() { return this.call('capabilities') }
+  private async discordCall(method: Method, params: Record<string, unknown> = {}): Promise<ToolResult> {
+    const r = await this.capabilities()
+    try {
+      const c = JSON.parse(r.message)
+      if (r.ok && c.protocol === 3 && Array.isArray(c.features) && c.features.includes('discord_broker')) return this.call(method, params)
+    } catch {}
+    return { ok: false, code: 'unsupported_service', message: 'Discord broker requires an upgraded Windows service and protected review helper; perform a trusted administrator reinstall' }
+  }
+  discordRequestAllow(proposal: unknown) {
+    if (!connectionSchema.safeParse(proposal).success) return Promise.resolve({ ok: false, message: 'invalid Discord connection policy' })
+    return this.discordCall('discord_request_allow', { proposal })
+  }
+  discordListAllowed() { return this.discordCall('discord_list_allowed') }
+  discordInspect(alias: string, memberId?: string, page = 0) {
+    if (!aliasSchema.safeParse(alias).success || (memberId !== undefined && !snowflake.safeParse(memberId).success) || !Number.isInteger(page) || page < 0 || page > 999) return Promise.resolve({ ok: false, message: 'invalid Discord metadata request' })
+    return this.discordCall('discord_inspect', { alias, memberId, page })
+  }
+  discordApply(alias: string, operations: unknown) {
+    if (!aliasSchema.safeParse(alias).success || !batchSchema.safeParse(operations).success) return Promise.resolve({ ok: false, message: 'invalid Discord batch' })
+    return this.discordCall('discord_apply', { alias, operations })
+  }
+  discordRevoke(alias: string) {
+    if (!aliasSchema.safeParse(alias).success) return Promise.resolve({ ok: false, message: 'invalid Discord alias' })
+    return this.discordCall('discord_revoke', { alias })
+  }
   diagnose() { return this.call('diagnose') }
   manage() { return this.call('manage') }
   revoke(domain: string) { return this.call('revoke', { domain }) }

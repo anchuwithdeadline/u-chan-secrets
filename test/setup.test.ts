@@ -2,10 +2,11 @@ import { expect, it, vi } from 'vitest'
 import { runSetup, setupExitCode } from '../src/client/setup.js'
 import { main } from '../src/cli.js'
 import type { DiagnosticReport } from '../src/core/doctor.js'
+import type { CodexSetupResult } from '../src/client/codex-setup.js'
 const options = { apply: false, replaceExisting: false, startBrowser: false }
 const report = (overrides: Record<string, 'pass'|'fail'|'unknown'> = {}): DiagnosticReport => ({ version: 1, checks: ['service','version','browser_target','service_browser','chrome','vault'].map(id => ({ id, state: overrides[id] ?? 'pass', required: true, message: id === 'vault' ? 'Vault is locked.' : 'Checked.', nextAction: id === 'vault' ? 'Run u-chan unlock.' : '' })).concat([{ id: 'playwright', state: overrides.playwright ?? 'unknown', required: false, message: 'Checked.', nextAction: '' }]) })
 function fixture() {
-  return { platform: 'win32' as const, endpoint: 'http://127.0.0.1:9222', elevated: vi.fn(async () => false), doctor: vi.fn(async () => report()), configure: vi.fn(async () => ({ state: 'ready' as const, changed: false, message: 'Checked.' })), startBrowser: vi.fn(async () => true) }
+  return { platform: 'win32' as const, endpoint: 'http://127.0.0.1:9222', elevated: vi.fn(async () => false), doctor: vi.fn(async () => report()), configure: vi.fn(async (): Promise<CodexSetupResult> => ({ state: 'ready', changed: false, message: 'Checked.' })), startBrowser: vi.fn(async () => true) }
 }
 it('keeps default setup read-only and unknown sharing explicit; locked vault is valid', async () => {
   const d = fixture(), r = await runSetup(options, d)

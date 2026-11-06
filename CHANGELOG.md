@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a Windows-only privileged Discord token broker for approved existing servers: metadata inspection, channel/category and role setup, reordering, and member-role assignment.
+- Keep Bitwarden token retrieval inside the service; require protected approval of every exact write batch. Reject administrator grants, unmanaged endpoints, and out-of-server targets. Add separate protected connection state, audit events, CLI/MCP tools, management revocation, and diagnostics.
+- Replace clipped Windows approval details with a wrapped, read-only scrolling review surface. Native helper changes require trusted administrator reinstall; no package publication or installed/native Discord verification is implied.
+- Preserve website-login APIs, protocol 3, website state schema 3, and runtime dependencies. Clarify a pre-existing setup-test fixture return type so whole-project type checking can pass.
+
 ## 5.1.0
 
 - Add `u-chan setup --client claude`: inspect Claude Code user-scope `u-chan-secrets` and `playwright` registrations read-only, and apply missing or simple replacements (including a Playwright entry without `--cdp-endpoint`) through the official `claude mcp` CLI after backing up `.claude.json`. Custom registrations and conflicting target environment are preserved.

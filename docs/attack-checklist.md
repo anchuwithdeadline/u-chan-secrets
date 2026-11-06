@@ -4,6 +4,19 @@ V3 release status: source tests and native compilation are separate from these i
 
 ## Additional V3 checks
 
+### Discord broker release gates
+
+Use only disposable credentials and a disposable Discord server after separate user authorization. Record PASS / FAIL / UNAVAILABLE for each platform and installed revision.
+
+1. Verify the installed Windows helper displays the complete maximum-sized Unicode batch, named permission changes, and `@everyone`/overwrite replacement warnings without clipping. Test scrolling, cancel, timeout, master-password mode, separate desktop, input hooks, and synthetic input resistance.
+2. Try direct IPC malformed/unknown operations, foreign channels/roles/parents/members/overwrite targets, administrator-role assignment, bot/managed role edits, stale state after approval, and oversized payloads. Observe zero unapproved writes.
+3. Deny connection and batch prompts. Verify no connection credential is fetched before initial approval and no write follows denial. Lock/revoke while work is queued; distinguish already-dispatched requests from future access.
+4. Simulate redirect, slow/oversized response, 429, network failure after write dispatch, malformed create result, and audit failure before/after dispatch. Verify no unsafe replay, no rollback, accurate completed/unknown results, and documented retry intervals.
+5. Scan scoped MCP/IPC outputs, logs, audit, policy/backup files, and native command-line observations using generated dummy secrets, including JSON-escaped token echoes. Do not print real tokens or claim a whole-machine leak scan.
+6. Verify private ownership/ACLs, metadata-only pre-mutation backup, link/reparse refusal, state-preserving trusted reinstall, old-service capability refusal, compatible downgrade behavior, and Discord connection management/revocation.
+
+These are required observations, not recorded passes. See [Discord validation status](superpowers/research/2026-11-06-discord-broker-validation.md).
+
 Record OS/version, installed service version, caller identity, date, and PASS / FAIL / UNAVAILABLE for each check. Use disposable credentials and a test site. Never record real passwords, seeds, codes, cookies, session keys, or the anti-phishing phrase.
 
 1. **Protected identity and input:** inspect the actual Windows prompt process token: SYSTEM must own it in the intended interactive session. Verify it uses a separate desktop; try standard-user keyboard hooks, synthetic input, and screen capture. The main user desktop must return after cancellation, timeout, and failure. On macOS verify secure-input activation and cleanup, including failure paths. Synthetic management clicks must never bypass the hardcore password flow.

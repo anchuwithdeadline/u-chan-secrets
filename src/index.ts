@@ -15,4 +15,4 @@ try {
 } catch {}
 
 const client = new IpcClient(defaultEndpoint(process.env, process.platform), { browser: () => resolveLoginBrowser(process.env, process.platform) })
-await createMcpServer(withPlaywrightStatus(client, () => checkPlaywrightNow(process.pid, loadConfig(process.env, process.platform).cdpEndpoint)), version).connect(new StdioServerTransport())
+await createMcpServer(withPlaywrightStatus(client, () => checkPlaywrightNow(process.pid, loadConfig(process.env, process.platform).cdpEndpoint)), version, client).connect(new StdioServerTransport())

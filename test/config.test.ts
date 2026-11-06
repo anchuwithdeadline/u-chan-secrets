@@ -6,6 +6,7 @@ describe('serviceConfig', () => {
     expect(serviceConfig({ ProgramData: 'C:\\ProgramData' }, 'win32')).toEqual({
       home: 'C:\\ProgramData\\u-chan-secrets',
       allowlistPath: 'C:\\ProgramData\\u-chan-secrets\\allowlist.json',
+      discordAllowlistPath: 'C:\\ProgramData\\u-chan-secrets\\discord-allowlist.json',
       auditPath: 'C:\\ProgramData\\u-chan-secrets\\audit.log',
       settingsPath: 'C:\\ProgramData\\u-chan-secrets\\settings.json',
       bwDataDir: 'C:\\ProgramData\\u-chan-secrets\\bw-data',
