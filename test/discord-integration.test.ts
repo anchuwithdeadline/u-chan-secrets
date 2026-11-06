@@ -22,13 +22,14 @@ describe('Discord agent surface', () => {
     expect((await client.listTools()).tools).toHaveLength(10)
     expect((await client.callTool({ name: 'discord_apply', arguments: { alias: 'vdn', operations: [{ type: 'delete' }] } })).isError).toBe(true)
     expect((await client.callTool({ name: 'discord_list_allowed', arguments: {} })).isError).toBe(false)
+    expect((await client.callTool({ name: 'discord_request_allow', arguments: { proposal: { alias: 'vdn', item: 'VDN Discord Bot' } } })).isError).toBe(false)
     await client.close()
     await server.close()
   })
   it('checks service capability before forwarding Discord methods over IPC', async () => {
     const path = process.platform === 'win32' ? `\\\\.\\pipe\\ucs-discord-${randomUUID()}` : join(tmpdir(), `ud-${randomUUID().slice(0, 8)}.sock`)
-    let enabled = false, forwarded = 0
-    const api = { ...core, ...discord, capabilities: async () => ({ ok: true, message: JSON.stringify({ protocol: 3, features: enabled ? ['discord_broker'] : [] }) }), discordListAllowed: async () => { forwarded++; return result } }
+    let enabled = false, discovery = false, forwarded = 0
+    const api = { ...core, ...discord, capabilities: async () => ({ ok: true, message: JSON.stringify({ protocol: 3, features: enabled ? ['discord_broker', ...(discovery ? ['discord_discovery'] : [])] : [] }) }), discordListAllowed: async () => { forwarded++; return result } }
     const server = await startIpcServer(path, api as never)
     try {
       const client = new IpcClient(path)
@@ -37,6 +38,9 @@ describe('Discord agent surface', () => {
       enabled = true
       expect(await client.discordListAllowed()).toEqual(result)
       expect(forwarded).toBe(1)
+      expect((await client.discordRequestAllow({ alias: 'vdn', item: 'VDN Discord Bot' })).ok).toBe(false)
+      discovery = true
+      expect(await client.discordRequestAllow({ alias: 'vdn', item: 'VDN Discord Bot' })).toEqual(result)
     } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
   })
   it('CLI validates JSON shape, size, and extra arguments without returning file contents', async () => {
@@ -45,5 +49,6 @@ describe('Discord agent surface', () => {
     expect((await runDiscordCli(['apply', 'vdn', 'ops.json', 'extra'], discord, read)).ok).toBe(false)
     expect((await runDiscordCli(['allow', 'policy.json'], discord, async () => 'SECRET')).message).not.toContain('SECRET')
     expect((await runDiscordCli(['apply', 'vdn', 'ops.json'], discord, async () => 'x'.repeat(100000))).ok).toBe(false)
+    expect(await runDiscordCli(['allow', 'policy.json'], discord, async () => JSON.stringify({ alias: 'vdn', item: 'VDN Discord Bot' }))).toEqual(result)
   })
 })

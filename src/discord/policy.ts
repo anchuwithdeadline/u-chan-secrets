@@ -6,6 +6,8 @@ const text = (max: number) => z.string().min(1).max(max).refine(v => !/[\p{Cc}\p
 export const aliasSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/)
 export const tokenFieldSchema = z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('password') }), z.strictObject({ kind: z.literal('hidden'), name: text(100) })])
 export const connectionSchema = z.strictObject({ alias: aliasSchema, item: text(200).refine(v => !v.startsWith('-') && v.trim() === v), field: tokenFieldSchema, guildId: snowflake })
+/** Discovery requests omit both unknown fields; persisted connections always require exact resolved values. */
+export const connectionRequestSchema = z.union([connectionSchema, connectionSchema.omit({ field: true, guildId: true })])
 export type TokenField = z.infer<typeof tokenFieldSchema>
 export type DiscordConnection = z.infer<typeof connectionSchema>
 

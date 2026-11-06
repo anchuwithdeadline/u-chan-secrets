@@ -38,6 +38,8 @@ The bot must already belong to the target server and have the needed Discord per
 
 For a custom field, replace `field` with `{ "kind": "hidden", "name": "Bot token" }`. Missing, visible, or duplicate matching custom fields fail without fallback.
 
+If the item already contains the setup information, use just `{ "alias": "vdn", "item": "VDN Discord Bot" }`. U-Chan first requests protected permission to discover metadata, then separately requests approval of the exact server ID, resolved item UUID, and token-field selector. No token value or raw note content is returned. Discovery accepts one server ID labeled `Guild ID`, `Server ID`, `Discord Guild ID`, or `Discord Server ID` in custom fields, note lines, or a top-level JSON note object. Application/client IDs are not server IDs. A single password or hidden field named `Token`, `Bot token`, `Discord token`, or `Discord bot token` supplies the selector. Ambiguous IDs/fields fail; provide both explicit `guildId` and `field` to resolve ambiguity. Protected state always stores the complete exact connection, never an unresolved discovery request.
+
 3. After the trusted service reinstall, run from a normal terminal:
 
 ```powershell

@@ -4,7 +4,7 @@ import { FrameReader, encode, type Method } from './protocol.js'
 import { isResultCode, type AllowOptions } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
 import { browserKind, type BrowserKind } from '../client/browser-choice.js'
-import { aliasSchema, batchSchema, connectionSchema, snowflake, type DiscordApi } from '../discord/policy.js'
+import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 
 const DOWN = 'U-Chan service is not running — run u-chan install'
 
@@ -18,7 +18,7 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi {
     this.browser = opts.browser ?? 'chrome'
   }
 
-  private call(method: Method, params: Record<string, unknown> = {}): Promise<ToolResult> {
+  private call(method: Method, params: Record<string, unknown> = {}, timeoutMs = this.timeoutMs): Promise<ToolResult> {
     const id = this.nextId++
     return new Promise(resolve => {
       const reader = new FrameReader()
@@ -31,7 +31,7 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi {
         socket.destroy()
         resolve(r)
       }
-      const timer = setTimeout(() => finish({ ok: false, message: 'U-Chan service timed out' }), this.timeoutMs)
+      const timer = setTimeout(() => finish({ ok: false, message: method === 'discord_apply' ? 'Discord write request timed out; it may have executed; inspect before retrying' : 'U-Chan service timed out' }), timeoutMs)
       socket.on('connect', () => socket.write(encode({ id, method, params })))
       socket.on('data', chunk => {
         try {
@@ -73,17 +73,18 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi {
     return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
   }
   capabilities() { return this.call('capabilities') }
-  private async discordCall(method: Method, params: Record<string, unknown> = {}): Promise<ToolResult> {
+  private async discordCall(method: Method, params: Record<string, unknown> = {}, discovery = false): Promise<ToolResult> {
     const r = await this.capabilities()
     try {
       const c = JSON.parse(r.message)
-      if (r.ok && c.protocol === 3 && Array.isArray(c.features) && c.features.includes('discord_broker')) return this.call(method, params)
+      if (r.ok && c.protocol === 3 && Array.isArray(c.features) && c.features.includes('discord_broker') && (!discovery || c.features.includes('discord_discovery'))) return this.call(method, params, discovery ? Math.max(this.timeoutMs, 420000) : this.timeoutMs)
     } catch {}
     return { ok: false, code: 'unsupported_service', message: 'Discord broker requires an upgraded Windows service and protected review helper; perform a trusted administrator reinstall' }
   }
   discordRequestAllow(proposal: unknown) {
-    if (!connectionSchema.safeParse(proposal).success) return Promise.resolve({ ok: false, message: 'invalid Discord connection policy' })
-    return this.discordCall('discord_request_allow', { proposal })
+    const parsed = connectionRequestSchema.safeParse(proposal)
+    if (!parsed.success) return Promise.resolve({ ok: false, message: 'invalid Discord connection policy' })
+    return this.discordCall('discord_request_allow', { proposal: parsed.data }, !('guildId' in parsed.data))
   }
   discordListAllowed() { return this.discordCall('discord_list_allowed') }
   discordInspect(alias: string, memberId?: string, page = 0) {

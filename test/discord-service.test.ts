@@ -37,6 +37,33 @@ describe('Discord broker service', () => {
     expect((await f.service.discordRevoke('vdn')).ok).toBe(true)
     expect((await f.service.discordInspect('vdn')).ok).toBe(false)
   })
+  it('protects item discovery, then requires a second exact server/field approval', async () => {
+    const store = new DiscordStore(join(await realpath(await mkdtemp(join(tmpdir(), 'ucs-discovery-'))), 'discord.json'))
+    let discoveries = 0, prompts = 0, tokenReads = 0
+    const service = new DiscordService({ store, http: new DiscordHttp(), platform: 'win32', queue: work => work(), approver: { ask: async () => { prompts++; return true } }, audit: { record: async () => {} }, vault: { status: async () => 'unlocked', getToken: async () => { tokenReads++; return 'SECRET' }, getDiscordSetup: async () => { expect(prompts).toBe(1); discoveries++; return { ...connection, item: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' } } } })
+    expect((await service.discordRequestAllow({ alias: 'vdn', item: 'VDN Discord Bot' })).ok).toBe(true)
+    expect(prompts).toBe(2)
+    expect(discoveries).toBe(1)
+    expect(tokenReads).toBe(0)
+    expect((await store.get('vdn'))?.guildId).toBe(guild)
+  })
+  it('never reads vault metadata when protected discovery is denied', async () => {
+    const store = new DiscordStore(join(await realpath(await mkdtemp(join(tmpdir(), 'ucs-discovery-'))), 'discord.json'))
+    let reads = 0
+    const service = new DiscordService({ store, http: new DiscordHttp(), platform: 'win32', queue: work => work(), approver: { ask: async () => false }, audit: { record: async () => {} }, vault: { status: async () => 'unlocked', getToken: async () => 'SECRET', getDiscordSetup: async () => { reads++; throw new Error('must not read') } } })
+    expect((await service.discordRequestAllow({ alias: 'vdn', item: 'VDN Discord Bot' })).ok).toBe(false)
+    expect(reads).toBe(0)
+    expect(await store.list()).toEqual([])
+  })
+  it('does not persist or contact Discord when the second approval is denied', async () => {
+    const store = new DiscordStore(join(await realpath(await mkdtemp(join(tmpdir(), 'ucs-discovery-'))), 'discord.json'))
+    let prompts = 0, network = 0
+    const service = new DiscordService({ store, http: new DiscordHttp(async () => { network++; throw new Error('no network') }), platform: 'win32', queue: work => work(), approver: { ask: async () => ++prompts === 1 }, audit: { record: async () => {} }, vault: { status: async () => 'unlocked', getToken: async () => { throw new Error('must not fetch token') }, getDiscordSetup: async () => ({ item: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', guildId: guild, field: { kind: 'password' } }) } })
+    expect((await service.discordRequestAllow({ alias: 'vdn', item: 'VDN Discord Bot' })).ok).toBe(false)
+    expect(prompts).toBe(2)
+    expect(await store.list()).toEqual([])
+    expect(network).toBe(0)
+  })
   it('requires exact protected approval for writes and redacts echoed token', async () => {
     const f = await fixture()
     await f.store.upsert(connection)

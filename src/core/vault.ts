@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { UserFacingError, type Credentials, type MasterPasswordChecker, type VaultClient, type VaultStatus } from './types.js'
 import { redact } from './redact.js'
-import { tokenFieldSchema, type TokenField } from '../discord/policy.js'
+import { snowflake, tokenFieldSchema, type TokenField } from '../discord/policy.js'
 
 export type Exec = (args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>
 
@@ -148,6 +148,45 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
       return value
     } catch { throw new UserFacingError('unexpected bw output') }
+  }
+
+  /** Protected discovery only: return scoped setup metadata, never note contents or token values. */
+  async getDiscordSetup(item: string, signal?: AbortSignal): Promise<{ item: string; guildId: string; field: TokenField }> {
+    const data = await this.getItem(item, signal, true)
+    if (typeof data.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id)) throw new UserFacingError('vault item has no stable item ID')
+    const normalize = (value: string) => value.toLowerCase().replace(/[ _-]/g, '')
+    const guildKeys = new Set(['guildid', 'serverid', 'discordguildid', 'discordserverid'])
+    const tokenKeys = new Set(['token', 'bottoken', 'discordtoken', 'discordbottoken'])
+    const guildIds = new Set<string>(), fields: TokenField[] = []
+    const addGuild = (value: unknown) => {
+      if (typeof value !== 'string') throw new UserFacingError('vault item has invalid Discord server metadata')
+      const id = value.trim().replace(/^[`"']|[`"']$/g, '')
+      if (!snowflake.safeParse(id).success) throw new UserFacingError('vault item has invalid Discord server metadata')
+      guildIds.add(id)
+    }
+    const password = (data.login as { password?: unknown } | undefined)?.password
+    if (typeof password === 'string' && password) fields.push({ kind: 'password' })
+    for (const field of Array.isArray(data.fields) ? data.fields : []) {
+      if (!field || typeof field !== 'object' || typeof field.name !== 'string') continue
+      const key = normalize(field.name)
+      if (guildKeys.has(key)) addGuild(field.value)
+      if (tokenKeys.has(key) && field.type === 1 && typeof field.value === 'string' && field.value) fields.push(tokenFieldSchema.parse({ kind: 'hidden', name: field.name }))
+    }
+    if (typeof data.notes === 'string') {
+      for (const line of data.notes.split(/\r?\n/)) {
+        const match = /^\s*(?:[-*#]\s*)?([a-z _-]+)\s*[:=]\s*(.*?)\s*$/i.exec(line)
+        if (match && guildKeys.has(normalize(match[1].trim()))) addGuild(match[2])
+      }
+      try {
+        const object: unknown = JSON.parse(data.notes)
+        if (object && typeof object === 'object' && !Array.isArray(object)) for (const [key, value] of Object.entries(object)) if (guildKeys.has(normalize(key))) addGuild(value)
+      } catch (e) { if (e instanceof UserFacingError) throw e }
+    }
+    if (guildIds.size !== 1) throw new UserFacingError('vault item does not contain one unambiguous labeled Discord server ID')
+    if (fields.length !== 1) throw new UserFacingError('vault item does not contain one unambiguous password or named hidden bot-token field')
+    signal?.throwIfAborted()
+    this.lastUse = this.now()
+    return { item: data.id, guildId: [...guildIds][0], field: fields[0] }
   }
 
   /** Privileged service only. Never expose this method through IPC or MCP. */

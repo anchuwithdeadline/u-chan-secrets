@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { abortable } from '../core/abort.js'
 import type { Approver, AuditEvent, AuditLog, ToolResult, VaultStatus } from '../core/types.js'
+import { UserFacingError } from '../core/types.js'
 import { DiscordHttp, DiscordHttpError } from './http.js'
-import { aliasSchema, batchSchema, connectionSchema, permissionNames, snowflake, SUPPORTED_PERMISSION_MASK, type DiscordApi, type DiscordConnection, type DiscordOperation, type TokenField } from './policy.js'
+import { aliasSchema, batchSchema, connectionSchema, connectionRequestSchema, permissionNames, snowflake, SUPPORTED_PERMISSION_MASK, type DiscordApi, type DiscordConnection, type DiscordOperation, type TokenField } from './policy.js'
 import type { DiscordStore } from './store.js'
 
 const bits = z.string().regex(/^(0|[1-9][0-9]{0,19})$/)
@@ -19,6 +20,7 @@ interface Deps {
   store: DiscordStore
   http: DiscordHttp
   vault: { status(signal?: AbortSignal): Promise<VaultStatus>; getToken(item: string, field: TokenField, signal?: AbortSignal): Promise<string> }
+    & { getDiscordSetup?(item: string, signal?: AbortSignal): Promise<{ item: string; guildId: string; field: TokenField }> }
   approver: Approver
   audit: Pick<AuditLog, 'record'>
   queue: <T>(work: () => Promise<T>) => Promise<T>
@@ -52,10 +54,29 @@ export class DiscordService implements DiscordApi {
     await this.d.audit.record({ action, domain: `discord:${connection.alias}:${connection.guildId}`, result })
   }
   discordRequestAllow(proposal: unknown): Promise<ToolResult> {
-    const parsed = connectionSchema.safeParse(proposal)
+    const parsed = connectionRequestSchema.safeParse(proposal)
     if (!parsed.success) return Promise.resolve({ ok: false, message: 'invalid Discord connection policy' })
-    const c = parsed.data
+    const request = parsed.data
     return this.run(async () => {
+      let c: DiscordConnection
+      if ('guildId' in request) c = request
+      else {
+        const target = { alias: request.alias, guildId: 'pending' }
+        const approved = await this.d.approver.ask('U-Chan Secrets - Discord vault discovery', [
+          'Read setup metadata from this exact Bitwarden item?', `Connection: ${safeJson(request.alias)}`, `Bitwarden item: ${safeJson(request.item)}`,
+          'Extract only a labeled server ID and a password/hidden-token field selector. Token values and raw notes stay inside the service.',
+          'This does not create a Discord grant or send a Discord request. A second protected prompt must approve the exact server and token field.',
+        ])
+        await this.audit('discord_allow', target, approved ? 'discovery approved' : 'discovery denied')
+        if (!approved) return { ok: false, message: 'denied' }
+        if (!this.d.vault.getDiscordSetup) return refuse('service does not support protected Discord metadata discovery')
+        const signal = AbortSignal.timeout(30000)
+        if (await abortable(this.d.vault.status(signal), signal) !== 'unlocked') return refuse('vault locked or unavailable; run u-chan unlock')
+        try {
+          const setup = await abortable(this.d.vault.getDiscordSetup(request.item, signal), signal)
+          c = connectionSchema.parse({ alias: request.alias, item: setup.item, guildId: setup.guildId, field: setup.field })
+        } catch (e) { return refuse(e instanceof UserFacingError ? e.message : 'Discord setup metadata is unavailable or ambiguous') }
+      }
       const approved = await this.d.approver.ask('U-Chan Secrets - Discord connection', [
         'Allow server metadata reads? Writes always require a separate exact-batch approval.',
         `Connection: ${safeJson(c.alias)}`, `Bitwarden item: ${safeJson(c.item)}`,

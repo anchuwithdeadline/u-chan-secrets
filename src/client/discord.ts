@@ -1,5 +1,5 @@
 import type { ToolResult } from '../core/types.js'
-import { aliasSchema, batchSchema, connectionSchema, snowflake, type DiscordApi } from '../discord/policy.js'
+import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 
 export const DISCORD_USAGE = 'usage: u-chan discord allow <connection.json> | list | inspect <alias> [member-id] [--page <0..999>] | apply <alias> <operations.json> | revoke <alias>'
 export async function runDiscordCli(args: string[], client: Partial<DiscordApi>, read: (path: string) => Promise<string>): Promise<ToolResult> {
@@ -22,7 +22,7 @@ export async function runDiscordCli(args: string[], client: Partial<DiscordApi>,
       const raw = await read(cmd === 'allow' ? arg : third)
       if (Buffer.byteLength(raw) > 16384) return { ok: false, message: 'Discord input file is too large' }
       const data: unknown = JSON.parse(raw)
-      if (cmd === 'allow') return connectionSchema.safeParse(data).success ? await client.discordRequestAllow?.(data) ?? invalid : invalid
+      if (cmd === 'allow') return connectionRequestSchema.safeParse(data).success ? await client.discordRequestAllow?.(data) ?? invalid : invalid
       return batchSchema.safeParse(data).success ? await client.discordApply?.(arg, data) ?? invalid : invalid
     }
     return invalid

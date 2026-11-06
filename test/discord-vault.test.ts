@@ -7,6 +7,21 @@ async function vault(item: object, code = 0, stderr = '') {
   return v
 }
 describe('Discord service token retrieval', () => {
+  it('discovers setup from named metadata without returning password or note content', async () => {
+    const v = await vault({ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', login: { password: 'BOT_SECRET' }, notes: 'Server ID: 123456789012345678\nToken: NEVER_RETURN_THIS' })
+    const setup = await v.getDiscordSetup('VDN Discord Bot')
+    expect(setup).toEqual({ item: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', field: { kind: 'password' }, guildId: '123456789012345678' })
+    expect(JSON.stringify(setup)).not.toMatch(/BOT_SECRET|NEVER_RETURN_THIS/)
+    const hidden = await vault({ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', fields: [{ name: 'Guild ID', type: 0, value: '123456789012345678' }, { name: 'Bot token', type: 1, value: 'SECRET' }] })
+    expect((await hidden.getDiscordSetup('item')).field).toEqual({ kind: 'hidden', name: 'Bot token' })
+  })
+  it('does not confuse application IDs with server IDs or silently choose ambiguous fields', async () => {
+    for (const data of [
+      { fields: [{ name: 'Application ID', type: 0, value: '123456789012345678' }] },
+      { fields: [{ name: 'Guild ID', type: 0, value: '123' }, { name: 'Server ID', type: 0, value: '456' }] },
+      { fields: [{ name: 'Guild ID', type: 0, value: '123' }, { name: 'Bot token', type: 1, value: 'A' }, { name: 'Token', type: 1, value: 'B' }] },
+    ]) await expect((await vault({ id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', ...data })).getDiscordSetup('item')).rejects.toThrow()
+  })
   it('supports password-only and one exact hidden custom field without fallback', async () => {
     const v = await vault({ login: { password: 'BOT_SECRET' }, fields: [{ name: 'Bot token', type: 1, value: 'HIDDEN_SECRET' }] })
     expect(await v.getToken('VDN Discord Bot', { kind: 'password' })).toBe('BOT_SECRET')

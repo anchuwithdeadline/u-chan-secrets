@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow Discord setup discovery from the user-supplied Bitwarden item when server/field metadata is already stored there. Require protected approval before lookup and another approval before saving the exact UUID-bound connection; never return token values or raw notes.
+
 - Add a Windows-only privileged Discord token broker for approved existing servers: metadata inspection, channel/category and role setup, reordering, and member-role assignment.
 - Keep Bitwarden token retrieval inside the service; require protected approval of every exact write batch. Reject administrator grants, unmanaged endpoints, and out-of-server targets. Add separate protected connection state, audit events, CLI/MCP tools, management revocation, and diagnostics.
 - Replace clipped Windows approval details with a wrapped, read-only scrolling review surface. Native helper changes require trusted administrator reinstall; no package publication or installed/native Discord verification is implied.

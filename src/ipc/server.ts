@@ -3,7 +3,7 @@ import type { ApprovalMode, ControlApi, CoreApi, Selectors, ToolResult } from '.
 import { FrameReader, FrameTooLarge, encode, type Method, type Response } from './protocol.js'
 import { isResultCode } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
-import { aliasSchema, batchSchema, connectionSchema, snowflake, type DiscordApi } from '../discord/policy.js'
+import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 
 type Api = CoreApi & ControlApi & Partial<DiscordApi>
 type Params = Record<string, unknown>
@@ -20,7 +20,7 @@ const selectorsOf = (v: unknown): Selectors | undefined | typeof BAD => {
 }
 
 const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | typeof BAD> = {
-  discord_request_allow: (api, p) => connectionSchema.safeParse(p.proposal).success ? api.discordRequestAllow?.(p.proposal) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,
+  discord_request_allow: (api, p) => connectionRequestSchema.safeParse(p.proposal).success ? api.discordRequestAllow?.(p.proposal) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,
   discord_list_allowed: api => api.discordListAllowed?.() ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }),
   discord_inspect: (api, p) => aliasSchema.safeParse(p.alias).success && (p.memberId === undefined || snowflake.safeParse(p.memberId).success) && (p.page === undefined || (Number.isInteger(p.page) && (p.page as number) >= 0 && (p.page as number) <= 999)) ? api.discordInspect?.(p.alias as string, p.memberId as string | undefined, p.page as number | undefined) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,
   discord_apply: (api, p) => aliasSchema.safeParse(p.alias).success && batchSchema.safeParse(p.operations).success ? api.discordApply?.(p.alias as string, p.operations) ?? Promise.resolve({ ok: false, message: 'Discord broker unavailable' }) : BAD,

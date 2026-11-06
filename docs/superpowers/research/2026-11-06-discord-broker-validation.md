@@ -45,3 +45,9 @@ The final spec check also reproduced assignment of an existing role with unsuppo
 - macOS native broker runtime: unsupported in this release.
 
 Native-helper source changes require trusted reinstall. Existing updater code refuses differing native helper source; desktop-package update alone is insufficient.
+
+## Protected vault setup discovery follow-up
+
+The user clarified that the server ID and token-field information already exist in the exact item `VDN Discord Bot`. Setup now accepts `{ "alias": "vdn", "item": "VDN Discord Bot" }`: a protected discovery approval permits service-internal item lookup; a second protected approval permits the exact resolved UUID/server/field connection. No raw notes, field values, or token values cross IPC/MCP. Unknown/ambiguous metadata fails without choosing a candidate. Full explicit connection proposals remain compatible; partially specified proposals fail.
+
+Regressions cover labeled note/custom-field extraction, application-ID rejection, ambiguous fields/IDs, denial of either prompt, no token reads or network before connection approval, capability refusal against older services, and CLI/MCP/IPC forwarding. Independent security review found no Important findings; second-prompt denial coverage and timeout margin were added from its feedback. Full suite: **464 tests across 66 files passed**; whole-project type checks, build, and diff checks passed. This source follow-up is separate from the earlier push and native installation; live verification is recorded separately after execution.
