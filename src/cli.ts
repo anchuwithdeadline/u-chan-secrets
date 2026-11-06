@@ -23,6 +23,8 @@ import type { DiscordApi } from './discord/policy.js'
 import type { CoordinatedUpdateApi } from './service/update/protocol.js'
 import { runCoordinatedUpdate } from './client/update.js'
 import { desktopUpdateAdapter } from './client/update-package.js'
+import { runGithubCli } from './client/github.js'
+import type { GithubApi } from './github/policy.js'
 
 const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
@@ -31,7 +33,7 @@ export interface CliDeps {
   clientVersion?: string
   setup?: (options: SetupOptions, client: 'codex' | 'claude') => Promise<SetupReport>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
-  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'> & Partial<DiscordApi & CoordinatedUpdateApi>
+  connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'> & Partial<DiscordApi & CoordinatedUpdateApi & GithubApi>
   update?: (checkOnly: boolean) => Promise<ToolResult>
   env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
@@ -57,6 +59,11 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
 
 /** Returns the process exit code: 0 on success, 1 on failure or bad usage. */
 export async function main(argv: string[], d: CliDeps): Promise<number> {
+  if(argv[0]==='github'){
+    const result=await runGithubCli(argv.slice(1),d.connect({timeoutMs:240000}),d.readFile)
+    if(result.ok)d.out(result.message);else d.err(result.message)
+    return result.ok?0:1
+  }
   if(argv[0]==='update'){
     if(argv.length>2||(argv.length===2&&argv[1]!=='--check')){d.err('usage: u-chan update [--check]');return 1}
     const checkOnly=argv[1]==='--check'

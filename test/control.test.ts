@@ -16,10 +16,10 @@ let limiter: AttemptLimiter
 let settings: SettingsStore
 let allowlist: AllowlistStore
 
-const make = (platform: NodeJS.Platform = 'win32') =>
+const make = (platform: NodeJS.Platform = 'win32', now?: () => number) =>
   new ControlService({
     vault: vault as never, approver: approver as never, limiter, settings, allowlist,
-    audit: { record: async (e) => void events.push(e), readTail: async () => [] }, platform,
+    audit: { record: async (e) => void events.push(e), readTail: async () => [] }, platform, now,
   })
 
 beforeEach(async () => {
@@ -34,6 +34,33 @@ beforeEach(async () => {
 afterEach(() => rm(dir, { recursive: true, force: true }))
 
 describe('control: unlock', () => {
+  it('starts the agent cooldown after a slow prompt closes, and permits a later request', async () => {
+    let clock = 0
+    approver.askPassword.mockImplementation(async () => { clock += 120000; return null })
+    const control = make('win32', () => clock)
+    expect((await control.requestUnlock()).message).toBe('cancelled')
+    expect((await control.requestUnlock()).message).toContain('cooldown')
+    clock += 30000
+    expect((await control.requestUnlock()).message).toBe('cancelled')
+    expect(approver.askPassword).toHaveBeenCalledTimes(2)
+  })
+  it('rate limits agent prompt requests after cancellation, while allowing manual unlock', async () => {
+    approver.askPassword.mockResolvedValue(null)
+    const control = make()
+    expect((await control.requestUnlock()).message).toBe('cancelled')
+    expect((await control.requestUnlock()).message).toContain('cooldown')
+    expect(approver.askPassword).toHaveBeenCalledTimes(1)
+    await control.unlock()
+    expect(approver.askPassword).toHaveBeenCalledTimes(2)
+  })
+  it('shares concurrent agent requests and skips the cooldown for an unlocked vault', async () => {
+    const control = make()
+    const results = await Promise.all([control.requestUnlock(), control.requestUnlock()])
+    expect(results.every(r => r.ok)).toBe(true)
+    expect(approver.askPassword).toHaveBeenCalledTimes(1)
+    vault.status.mockResolvedValue('unlocked')
+    expect(await control.requestUnlock()).toEqual({ ok: true, message: 'already unlocked' })
+  })
   it('does not prompt again while the vault is already unlocked', async () => {
     vault.status.mockResolvedValue('unlocked')
     expect(await make().unlock()).toEqual({ ok: true, message: 'already unlocked' })

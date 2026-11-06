@@ -14,6 +14,21 @@ const unlocked = async (exec: Exec) => {
 }
 const ok = (stdout: string): Exec => async () => ({ code: 0, stdout, stderr: '' })
 const fail = (stderr: string, stdout = ''): Exec => async () => ({ code: 1, stdout, stderr })
+it('invalidates in-process authorization epochs on unlock, lock, and idle expiry without exposing a key', async () => {
+  let clock = 0
+  const vault = new BitwardenVault({ dataDir, idleLockMs: 1000, now: () => clock, exec: ok('SESSION_KEY') })
+  const before = vault.authorizationEpoch()
+  await vault.unlock('pw')
+  const unlockedEpoch = vault.authorizationEpoch()
+  expect(unlockedEpoch).toBeGreaterThan(before)
+  await vault.lock()
+  expect(vault.authorizationEpoch()).toBeGreaterThan(unlockedEpoch)
+  await vault.unlock('pw')
+  const activeEpoch = vault.authorizationEpoch()
+  clock = 1001
+  expect(vault.authorizationEpoch()).toBeGreaterThan(activeEpoch)
+  expect(typeof vault.authorizationEpoch()).toBe('number')
+})
 const msg = async (p: Promise<unknown>) => {
   try { await p } catch (e) { expect(e).toBeInstanceOf(UserFacingError); return (e as Error).message }
   throw new Error('did not throw')

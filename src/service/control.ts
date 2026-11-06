@@ -7,12 +7,15 @@ import type { AttemptLimiter } from './attempts.js'
 import type { PolicyApprover } from './policy-approver.js'
 import type { SettingsStore } from './settings.js'
 import { GrantCoordinator } from './grants.js'
+import { performance } from 'node:perf_hooks'
 
 const BLOCKED = 'too many wrong passwords — try again in 15 minutes'
 const TITLE = 'U-Chan Secrets'
 
 interface Deps {
   updateBoot?: import('./update/protocol.js').ObservedIdentity
+  now?: () => number
+  githubSupported?: boolean
   discordSupported?: boolean
   serviceVersion?: string
   manage?: () => Promise<ToolResult>
@@ -33,9 +36,10 @@ export class ControlService implements ControlApi {
   private readonly grants: GrantCoordinator
   private unlockPending?: Promise<ToolResult>
   private lockEpoch = 0
+  private agentUnlockAfter = -Infinity
   constructor(private readonly d: Deps) { this.grants = d.grants ?? new GrantCoordinator(d.allowlist) }
   async capabilities(): Promise<ToolResult> {
-    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer', ...(this.d.discordSupported ? ['discord_broker', 'discord_discovery'] : []), ...(this.d.updateBoot?['coordinated_update']:[])], serviceVersion: this.d.serviceVersion, ...(this.d.updateBoot?{release:this.d.updateBoot}:{}) }) }
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer', 'agent_unlock', ...(this.d.githubSupported ? ['github_broker'] : []), ...(this.d.discordSupported ? ['discord_broker', 'discord_discovery'] : []), ...(this.d.updateBoot?['coordinated_update']:[])], serviceVersion: this.d.serviceVersion, ...(this.d.updateBoot?{release:this.d.updateBoot}:{}) }) }
   }
   async diagnose(): Promise<ToolResult> {
     try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }
@@ -78,15 +82,25 @@ export class ControlService implements ControlApi {
     return { ok: false, message: 'wrong password' }
   }
 
-  unlock(): Promise<ToolResult> {
+  requestUnlock(): Promise<ToolResult> { return this.unlock(true) }
+
+  unlock(agentRequested = false): Promise<ToolResult> {
     if (this.unlockPending) return this.unlockPending
     const epoch = this.lockEpoch
+    let prompted = false
     const pending = this.guarded('unlock', async () => {
       const status = await this.d.vault.status()
       if (epoch !== this.lockEpoch) return { ok: false, message: 'unlock cancelled by lock' }
       if (status === 'unauthenticated') return { ok: false, message: LOGIN_MSG }
       if (status === 'unlocked') return { ok: true, message: 'already unlocked' }
       if (status !== 'locked') return { ok: false, message: 'vault unavailable; run u-chan doctor' }
+      if (agentRequested) {
+        if (this.d.limiter.blocked()) return { ok: false, message: BLOCKED }
+        const now = this.d.now?.() ?? performance.now()
+        if (now < this.agentUnlockAfter) return { ok: false, message: 'unlock prompt cooldown; wait 30 seconds or use u-chan unlock manually' }
+        this.agentUnlockAfter = now + 30000
+      }
+      prompted = !this.d.limiter.blocked()
       const refused = await this.checkedPassword(['Unlock the vault'], async pw => {
         if (epoch !== this.lockEpoch) throw new UserFacingError('unlock cancelled by lock')
         const unlocked = await this.d.vault.unlock(pw)
@@ -97,7 +111,10 @@ export class ControlService implements ControlApi {
         return unlocked
       })
       return refused ?? { ok: true, message: 'unlocked' }
-    }).finally(() => { if (this.unlockPending === pending) this.unlockPending = undefined })
+    }).finally(() => {
+      if (prompted) this.agentUnlockAfter = (this.d.now?.() ?? performance.now()) + 30000
+      if (this.unlockPending === pending) this.unlockPending = undefined
+    })
     this.unlockPending = pending
     return pending
   }

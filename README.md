@@ -1,5 +1,7 @@
 # U-Chan Secrets V5
 
+Unreleased source also supports agent-triggered protected unlock and a repository-scoped GitHub connector. A matching installed service and fresh AI session are required. See [setup, supported actions, and boundaries](docs/github-connector.md) and [validation scope](docs/superpowers/research/2026-11-06-agent-unlock-github-validation.md).
+
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated Chrome or Edge profile.
 
 Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.

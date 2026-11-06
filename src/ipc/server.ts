@@ -5,8 +5,10 @@ import { isResultCode } from '../core/types.js'
 import { validOptions } from '../core/policy.js'
 import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
 import { identitySchema, idSchema, type CoordinatedUpdateApi } from '../service/update/protocol.js'
+import { githubProposalSchema, githubReadSchema, githubCreateSchema, type GithubApi } from '../github/policy.js'
+import type { AgentUnlockApi } from '../core/types.js'
 
-type Api = CoreApi & ControlApi & Partial<DiscordApi> & Partial<CoordinatedUpdateApi>
+type Api = CoreApi & ControlApi & Partial<DiscordApi & CoordinatedUpdateApi & GithubApi & AgentUnlockApi>
 type Params = Record<string, unknown>
 const BAD = Symbol('bad')
 
@@ -21,6 +23,12 @@ const selectorsOf = (v: unknown): Selectors | undefined | typeof BAD => {
 }
 
 const handlers: Record<Method, (api: Api, p: Params) => Promise<ToolResult> | typeof BAD> = {
+  request_unlock:(api,p)=>Object.keys(p).length===0?api.requestUnlock?.()??Promise.resolve({ok:false,message:'agent unlock unavailable; update the service'}):BAD,
+  github_request_allow:(api,p)=>Object.keys(p).length===1&&githubProposalSchema.safeParse(p.proposal).success?api.githubRequestAllow?.(p.proposal)??Promise.resolve({ok:false,message:'GitHub broker unavailable'}):BAD,
+  github_list_allowed:(api,p)=>Object.keys(p).length===0?api.githubListAllowed?.()??Promise.resolve({ok:false,message:'GitHub broker unavailable'}):BAD,
+  github_read:(api,p)=>Object.keys(p).length===2&&aliasSchema.safeParse(p.alias).success&&githubReadSchema.safeParse(p.request).success?api.githubRead?.(p.alias as string,p.request)??Promise.resolve({ok:false,message:'GitHub broker unavailable'}):BAD,
+  github_create:(api,p)=>Object.keys(p).length===2&&aliasSchema.safeParse(p.alias).success&&githubCreateSchema.safeParse(p.operation).success?api.githubCreate?.(p.alias as string,p.operation)??Promise.resolve({ok:false,message:'GitHub broker unavailable'}):BAD,
+  github_revoke:(api,p)=>Object.keys(p).length===1&&aliasSchema.safeParse(p.alias).success?api.githubRevoke?.(p.alias as string)??Promise.resolve({ok:false,message:'GitHub broker unavailable'}):BAD,
   plan_update:api=>api.planUpdate?.()??Promise.resolve({ok:false,message:'coordinated updater unavailable'}),
   begin_update:(api,p)=>identitySchema.safeParse(p.target).success?api.beginUpdate?.(p.target as import('../service/update/protocol.js').ReleaseIdentity)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,
   update_status:(api,p)=>idSchema.safeParse(p.id).success?api.updateStatus?.(p.id as string)??Promise.resolve({ok:false,message:'coordinated updater unavailable'}):BAD,

@@ -86,10 +86,9 @@ describe('mcp server', () => {
 
   it('instructions point to the U-Chan window and u-chan unlock', async () => {
     const lines = ((await connect({})).getInstructions() ?? '').split('\n')
-    expect(lines.slice(-2)).toEqual([
-      'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a U-Chan window.',
-      'If login fails, call status: a locked vault means the user must run u-chan unlock themselves. If login says "needs you", ask the user to sign in by hand.',
-    ])
+    expect(lines.join('\n')).toContain('call request_unlock once when available')
+    expect(lines.join('\n')).toContain('Stop after cancellation, failure, or cooldown')
+    expect(lines.join('\n')).toContain('Older services require the user to run u-chan unlock')
     expect(lines.join('\n')).not.toMatch(/Windows dialog|unlock\.ps1/)
   })
 })

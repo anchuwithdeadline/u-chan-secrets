@@ -40,6 +40,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
   private idleLockMs: number
   private now: () => number
   private sessionKey = ''
+  private authorizationVersion = 0
   private lastUse = 0
 
   constructor(opts: { dataDir: string; exec?: Exec; idleLockMs: number; now?: () => number }) {
@@ -51,9 +52,12 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
 
   /** Returns the in-memory session, dropping it if the idle timeout elapsed. */
   private session(): string {
-    if (this.sessionKey && this.now() - this.lastUse > this.idleLockMs) this.sessionKey = ''
+    if (this.sessionKey && this.now() - this.lastUse > this.idleLockMs) { this.sessionKey = ''; this.authorizationVersion++ }
     return this.sessionKey
   }
+
+  /** In-process authorization generation; never a credential or an IPC capability. */
+  authorizationEpoch(): number { this.session(); return this.authorizationVersion }
 
   private run(args: string[], session: string, extra: NodeJS.ProcessEnv = {}, signal?: AbortSignal): Promise<ExecResult> {
     const env: NodeJS.ProcessEnv = { ...process.env, BW_NOINTERACTION: 'true', BITWARDENCLI_APPDATA_DIR: this.dataDir, ...extra }
@@ -84,6 +88,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     const key = await this.tryUnlock(password)
     if (!key) return false // keep any previous session until a new one succeeds
     this.sessionKey = key
+    this.authorizationVersion++
     this.lastUse = this.now()
     return true
   }
@@ -93,6 +98,7 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
   }
 
   async lock(): Promise<void> {
+    this.authorizationVersion++
     const session = this.sessionKey
     this.sessionKey = ''
     try {

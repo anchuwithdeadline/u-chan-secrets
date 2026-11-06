@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — agent unlock and GitHub
+
+- Add `request_unlock` through MCP and authenticated IPC, reusing the native prompt, shared unlock attempt, failed-password limiter, and a cooldown after prompt dismissal.
+- Add repository-bound GitHub connections with bounded metadata, issue/PR, and CI-status reads, plus individually approved issue and draft-PR creation.
+- Keep credentials inside the service; pin the API origin, refuse redirects and arbitrary routes, preserve uncertain write outcomes, and recheck authorization generation before dispatch.
+- Add GitHub CLI setup/read/create/revoke commands. Source support requires a matching service upgrade; no live enrollment or rollout is implied.
+
 ## Unreleased — unlock prompt improvements
 
 - Skip the master-password prompt when the service vault is already unlocked, and share concurrent unlock requests as one attempt.

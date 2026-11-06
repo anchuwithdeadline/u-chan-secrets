@@ -6,11 +6,13 @@ import { validOptions } from '../core/policy.js'
 import { browserKind, type BrowserKind } from '../client/browser-choice.js'
 import { identitySchema, idSchema, type CoordinatedUpdateApi, type ReleaseIdentity } from '../service/update/protocol.js'
 import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type DiscordApi } from '../discord/policy.js'
+import { githubProposalSchema, githubReadSchema, githubCreateSchema, type GithubApi } from '../github/policy.js'
+import type { AgentUnlockApi } from '../core/types.js'
 
 const DOWN = 'U-Chan service is not running — run u-chan install'
 
 /** One connection per call; the service does all privileged work. */
-export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUpdateApi {
+export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUpdateApi, GithubApi, AgentUnlockApi {
   private nextId = 1
   private timeoutMs: number
   private readonly browser: BrowserKind | (() => BrowserKind)
@@ -25,6 +27,8 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUp
       const reader = new FrameReader()
       const socket = net.connect(this.path)
       let done = false
+      let dispatched = false
+      const transportFailure = (message: string): ToolResult => ({ ok: false, message: method === 'github_create' && dispatched ? 'GitHub create outcome unknown; inspect before retrying (' + message + ')' : message })
       const finish = (r: ToolResult) => {
         if (done) return
         done = true
@@ -32,8 +36,8 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUp
         socket.destroy()
         resolve(r)
       }
-      const timer = setTimeout(() => finish({ ok: false, message: method === 'discord_apply' ? 'Discord write request timed out; it may have executed; inspect before retrying' : 'U-Chan service timed out' }), timeoutMs)
-      socket.on('connect', () => socket.write(encode({ id, method, params })))
+      const timer = setTimeout(() => finish({ ok: false, message: method === 'github_create' ? 'GitHub create timed out; it may have executed; inspect before retrying' : method === 'discord_apply' ? 'Discord write request timed out; it may have executed; inspect before retrying' : 'U-Chan service timed out' }), timeoutMs)
+      socket.on('connect', () => { dispatched = true; socket.write(encode({ id, method, params })) })
       socket.on('data', chunk => {
         try {
           for (const f of reader.push(chunk as Buffer)) {
@@ -42,11 +46,11 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUp
               return finish({ ok: r.ok, message: r.message, ...(isResultCode(r.code) ? { code: r.code } : {}) })
             }
           }
-        } catch { finish({ ok: false, message: 'U-Chan service sent a bad response' }) }
+        } catch { finish(transportFailure('U-Chan service sent a bad response')) }
       })
       socket.on('error', (e: NodeJS.ErrnoException) =>
-        finish({ ok: false, message: e.code === 'ECONNREFUSED' || e.code === 'ENOENT' ? DOWN : 'U-Chan service connection failed' }))
-      socket.on('close', () => finish({ ok: false, message: 'U-Chan service closed the connection' }))
+        finish(transportFailure(e.code === 'ECONNREFUSED' || e.code === 'ENOENT' ? DOWN : 'U-Chan service connection failed')))
+      socket.on('close', () => finish(transportFailure('U-Chan service closed the connection')))
     })
   }
 
@@ -74,6 +78,17 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUp
     return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
   }
   capabilities() { return this.call('capabilities') }
+  private async extensionCall(feature:'agent_unlock'|'github_broker',method:Method,params:Record<string,unknown>={}):Promise<ToolResult>{
+    const response=await this.capabilities()
+    try{const cap=JSON.parse(response.message);if(response.ok&&cap.protocol===3&&Array.isArray(cap.features)&&cap.features.includes(feature))return this.call(method,params,Math.max(this.timeoutMs,240000))}catch{}
+    return {ok:false,code:'unsupported_service',message:feature+' requires a matching installed service upgrade'}
+  }
+  requestUnlock(){return this.extensionCall('agent_unlock','request_unlock')}
+  githubRequestAllow(proposal:unknown){const parsed=githubProposalSchema.safeParse(proposal);return parsed.success?this.extensionCall('github_broker','github_request_allow',{proposal:parsed.data}):Promise.resolve({ok:false,message:'invalid GitHub connection policy'})}
+  githubListAllowed(){return this.extensionCall('github_broker','github_list_allowed')}
+  githubRead(alias:string,request:unknown){const parsed=githubReadSchema.safeParse(request);return aliasSchema.safeParse(alias).success&&parsed.success?this.extensionCall('github_broker','github_read',{alias,request:parsed.data}):Promise.resolve({ok:false,message:'invalid GitHub read request'})}
+  githubCreate(alias:string,operation:unknown){const parsed=githubCreateSchema.safeParse(operation);return aliasSchema.safeParse(alias).success&&parsed.success?this.extensionCall('github_broker','github_create',{alias,operation:parsed.data}):Promise.resolve({ok:false,message:'invalid GitHub create operation'})}
+  githubRevoke(alias:string){return aliasSchema.safeParse(alias).success?this.extensionCall('github_broker','github_revoke',{alias}):Promise.resolve({ok:false,message:'invalid GitHub alias'})}
   private async coordinatedCall(method:Method,params:Record<string,unknown>={}):Promise<ToolResult>{
     const result=await this.capabilities()
     try{const cap=JSON.parse(result.message);if(result.ok&&cap.protocol===3&&Array.isArray(cap.features)&&cap.features.includes('coordinated_update'))return this.call(method,params,Math.max(this.timeoutMs,180000))}catch{}

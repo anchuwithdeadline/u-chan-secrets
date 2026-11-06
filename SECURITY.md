@@ -1,5 +1,15 @@
 # Security Policy
 
+## Agent unlock and GitHub extension
+
+`request_unlock` accepts no caller-controlled password, reason, or prompt text. It uses authenticated owner IPC and the existing native password collection path. Concurrent requests share one attempt, with a cooldown after dismissal and the existing shared failed-password limiter. Explicit lock invalidates pending unlock work. The tool returns status only. Clients must stop after cancellation or failure rather than retrying indefinitely.
+
+GitHub connections require protected review of the exact repository and Bitwarden item/field reference. A numeric repository ID is captured at enrollment and checked on subsequent requests. The service uses `api.github.com` only, rejects redirects, constructs typed routes, bounds response size/time, projects metadata, and treats returned text as untrusted. No token value crosses MCP or IPC. Errors and audit entries exclude remote error bodies and credential values.
+
+Every issue/draft-PR creation requires separate protected review. Exact content and branch tips are reviewed, vault/connection/repository state is checked again, and an audit intent is written before dispatch. An in-process vault authorization generation is captured immediately after approval and checked with unlocked status immediately before POST; lock, re-unlock, or idle expiry during any intervening await invalidates approval. No request is automatically replayed. Post-send transport failures and unverifiable successes report uncertainty. GitHub cannot atomically bind PR creation to the reviewed tips, so a changed returned tip is uncertain rather than success. The initial connector does not expose repository files, logs, workflow execution, pushes, merges, or deletion.
+
+Tests and static review do not establish live token permissions or installed SYSTEM behavior. Live verification must use a user-selected item and repository; test writes require a separate explicit task and protected approval.
+
 U-Chan Secrets handles real credentials, privileged processes, and signed-in browser sessions. Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/anchuwithdeadline/u-chan-secrets/security/advisories/new), not a public issue.
 
 Include the affected version, OS, approval mode, attack steps, expected/observed behavior, and impact. Use disposable test credentials in reproductions. Never include real passwords, TOTP material, cookies, or vault session keys. Initial response target: seven days.
