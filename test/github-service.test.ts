@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { GithubService } from '../src/github/service.js'
@@ -9,7 +9,7 @@ import { githubCreateSchema } from '../src/github/policy.js'
 const connection={alias:'work',item:'GitHub credential',field:{kind:'password' as const},owner:'example',repo:'project',repositoryId:42}
 const token='github_secret_1234567890'
 async function fixture(approved=true){
- const dir=await mkdtemp(join(tmpdir(),'ucs-github-')),store=new GithubStore(join(dir,'connections.json'))
+ const dir=await realpath(await mkdtemp(join(tmpdir(),'ucs-github-'))),store=new GithubStore(join(dir,'connections.json'))
  if(approved)await store.upsert(connection)
  const repository={id:42,full_name:'example/project',private:true,default_branch:'main',archived:false,disabled:false}
  const vault={status:vi.fn(async()=>'unlocked' as 'unlocked'|'locked'),getToken:vi.fn(async()=>token),authorizationEpoch:vi.fn(()=>0)}
