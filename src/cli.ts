@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { configureCodex, isElevated } from './client/codex-setup.js'
 import { configureClaude } from './client/claude-setup.js'
-import { runSetup, setupExitCode, type SetupOptions, type SetupReport } from './client/setup.js'
+import { combineClients, runSetup, setupExitCode, SETUP_CLIENT_NAMES, type SetupClient, type SetupClientChoice, type SetupOptions, type SetupReport } from './client/setup.js'
 import { parseAllowArgs } from './client/allow.js'
 import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
 import { configureWindowsCommand } from './client/windows-command.js'
@@ -28,10 +28,19 @@ import type { GithubApi } from './github/policy.js'
 
 const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
 
+/** AI client CLIs on PATH. Detection only runs `where`/`which`; it never executes the clients themselves. */
+export function detectClients(platform: NodeJS.Platform = process.platform): Promise<SetupClient[]> {
+  const finder = platform === 'win32' ? 'where.exe' : 'which'
+  const found = (name: string) => new Promise<boolean>(resolve => execFile(finder, [name], { timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 }, err => resolve(!err)))
+  return Promise.all((['codex', 'claude'] as const).map(async c => (await found(c)) ? [c] : [])).then(r => r.flat())
+}
+
 export interface CliDeps {
   doctor?: () => Promise<DiagnosticReport>
   clientVersion?: string
-  setup?: (options: SetupOptions, client: 'codex' | 'claude') => Promise<SetupReport>
+  setup?: (options: SetupOptions, client: SetupClientChoice) => Promise<SetupReport>
+  /** AI client CLIs available on PATH, for `setup` without `--client`. */
+  detectClients?: () => Promise<SetupClient[]>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
   connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'> & Partial<DiscordApi & CoordinatedUpdateApi & GithubApi>
   update?: (checkOnly: boolean) => Promise<ToolResult>
@@ -121,32 +130,40 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     const args = argv.slice(1), seen = new Set<string>()
     let valid = true
     let browser: BrowserKind | undefined
-    let client: 'codex' | 'claude' = 'codex'
+    let client: SetupClientChoice = 'auto'
     for (let i = 0; i < args.length; i++) {
       const flag = args[i]
       if (seen.has(flag) || !['--client', '--browser', '--apply', '--replace-existing', '--start-browser', '--json'].includes(flag)) { valid = false; break }
       seen.add(flag)
-      if (flag === '--client') { const value = args[++i]; if (value !== 'codex' && value !== 'claude') { valid = false; break }; client = value }
+      if (flag === '--client') { const value = args[++i]; if (value !== 'codex' && value !== 'claude' && value !== 'all') { valid = false; break }; client = value }
       if (flag === '--browser') { const value = args[++i]; if (value !== 'chrome' && value !== 'edge') { valid = false; break }; browser = value }
     }
     if (!valid || (seen.has('--replace-existing') && !seen.has('--apply'))) {
-      d.err('usage: u-chan setup [--client codex|claude] [--browser chrome|edge] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
+      d.err('usage: u-chan setup [--client codex|claude|all] [--browser chrome|edge] [--apply] [--replace-existing] [--start-browser] [--json]'); return 1
     }
     const options = { apply: seen.has('--apply'), replaceExisting: seen.has('--replace-existing'), startBrowser: seen.has('--start-browser'), ...(browser ? { browser } : {}) }
     if (browser) diagnosticEnv = { ...d.env, U_CHAN_BROWSER: browser }
     const cfg = loadConfig(diagnosticEnv, d.platform), endpoint = cfg.cdpEndpoint
     const entryPath = fileURLToPath(new URL('./index.js', import.meta.url)), claudeDir = d.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
-    const r = d.setup ? await d.setup(options, client) : await runSetup(options, {
-      platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor, clientName: client === 'claude' ? 'Claude Code' : 'Codex',
-      configureShell: apply => configureWindowsCommand(apply, d.env.PATH ?? d.env.Path ?? ''),
-      selectBrowser: choice => saveBrowserChoice(cfg.browserChoicePath, choice),
-      configure: opts => client === 'claude'
-        ? configureClaude({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: claudeDir, configPath: d.env.CLAUDE_CONFIG_DIR ? join(claudeDir, '.claude.json') : join(homedir(), '.claude.json') })
-        : configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') }),
-      startBrowser: () => startBrowser(cfg.browser, diagnosticEnv, true),
-    })
+    const configureFor = (c: SetupClient) => (opts: Pick<SetupOptions, 'apply' | 'replaceExisting' | 'browser'>) => c === 'claude'
+      ? configureClaude({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: claudeDir, configPath: d.env.CLAUDE_CONFIG_DIR ? join(claudeDir, '.claude.json') : join(homedir(), '.claude.json') })
+      : configureCodex({ ...opts, browser: cfg.browser, endpoint, ipcEndpoint: defaultEndpoint(d.env, d.platform), nodePath: process.execPath, entryPath, configDir: d.env.CODEX_HOME ?? join(homedir(), '.codex') })
+    let r: SetupReport
+    if (d.setup) r = await d.setup(options, client)
+    else {
+      const clients: SetupClient[] = client === 'all' ? ['codex', 'claude'] : client === 'auto' ? await (d.detectClients ?? detectClients)() : [client]
+      const combined = combineClients(clients.map(c => ({ client: c, configure: configureFor(c) })))
+      r = await runSetup(options, {
+        platform: d.platform, endpoint, browser: cfg.browser, elevated: isElevated, doctor, clientName: combined.clientName,
+        configureShell: apply => configureWindowsCommand(apply, d.env.PATH ?? d.env.Path ?? ''),
+        selectBrowser: choice => saveBrowserChoice(cfg.browserChoicePath, choice),
+        configure: combined.configure,
+        startBrowser: () => startBrowser(cfg.browser, diagnosticEnv, true),
+      })
+      if (clients.length > 1 && combined.results().length) r.clients = combined.results()
+    }
     if (seen.has('--json')) d.out(JSON.stringify(r))
-    else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : [])].join('\n'))
+    else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...(r.clients ?? []).map(c => `${SETUP_CLIENT_NAMES[c.client]}: ${c.state}. ${c.message}`), ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : [])].join('\n'))
     return setupExitCode(r)
   }
   if (cmd === 'start' && arg === undefined) {

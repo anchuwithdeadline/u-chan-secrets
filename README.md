@@ -98,6 +98,7 @@ Connection metadata resides in protected `discord-allowlist.json`; tokens remain
 ## What 5.1 adds
 
 - **Claude Code setup:** `u-chan setup --client claude [--apply] [--replace-existing]` checks the user-scope `u-chan-secrets` and `playwright` registrations in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and repairs a Playwright entry missing `--cdp-endpoint`. Inspection reads the file without changing it; changes go through `claude mcp remove`/`add-json --scope user` after a backup in `~/.claude/#0 backup`. Custom registrations are preserved and reported for manual configuration.
+- **Multi-client setup:** without `--client`, `u-chan setup` inspects (and with `--apply`, configures) every Codex and Claude Code CLI found on PATH; `--client all` targets both explicitly. Each client is attempted independently, the report lists per-client results, and the overall state is the least ready one.
 - **Daily start:** `u-chan start` starts the selected dedicated browser when its endpoint is down, opens the protected unlock prompt only when the vault is locked, then prints the doctor report. It needs no administrator rights and changes no configuration. It exits 1 if a required check fails or the vault remains locked. Windows only.
 
 ## What V5 adds
@@ -263,7 +264,7 @@ Start the dedicated Chrome profile from the checkout:
 | Windows | `powershell -File scripts\start-chrome.ps1` |
 | macOS | `bash scripts/start-chrome.sh` |
 
-On Windows, `u-chan setup --client claude --apply` performs this registration instead.
+On Windows, `u-chan setup --apply` performs this registration instead for every Codex and Claude Code CLI found on PATH; pass `--client claude`, `--client codex`, or `--client all` to choose explicitly.
 
 Use a normal user terminal for daily operations:
 
@@ -285,7 +286,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 |---|---|
 | `start` | Windows daily start: dedicated browser, protected unlock if locked, doctor report |
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
-| `setup [--client codex\|claude] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex or Claude Code/browser setup |
+| `setup [--client codex\|claude\|all] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex and/or Claude Code/browser setup; without `--client`, configures every client CLI found on PATH |
 | `allow <domain> --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
 | `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
 | `unlock` | Request the protected master-password prompt |
