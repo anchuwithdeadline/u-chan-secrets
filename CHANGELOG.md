@@ -1,24 +1,31 @@
 # Changelog
 
-## Unreleased — multi-client setup
+## 5.1.0
 
+**Upgrade:** 5.1.0 changes native helpers (unlock dialog, Discord review surface), so upgrading from 5.0.x requires a trusted administrator reinstall; `u-chan update` alone is not enough. Protocol 3, website state schema 3, runtime dependencies, and existing grants are unchanged.
+
+### Setup and daily use
+
+- Add `u-chan setup --client claude`: inspect Claude Code user-scope `u-chan-secrets` and `playwright` registrations read-only, and apply missing or simple replacements (including a Playwright entry without `--cdp-endpoint`) through the official `claude mcp` CLI after backing up `.claude.json`. Custom registrations and conflicting target environment are preserved.
+- Add `u-chan start` (Windows): start the selected dedicated browser when its endpoint is down, open the protected unlock prompt only for a locked vault, then print doctor.
+- Point the doctor Playwright hint at the setup command.
 - `u-chan setup` without `--client` now detects Codex and Claude Code CLIs on PATH and inspects/configures each one, instead of assuming Codex. Add `--client all`. Per-client results appear in text and `--json` (`clients`) output; the overall client state is the least ready one, and a failure in one client does not skip the other. Explicit `--client codex|claude` is unchanged.
 
-## Unreleased — agent unlock and GitHub
+### Agent unlock and GitHub
 
 - Add `request_unlock` through MCP and authenticated IPC, reusing the native prompt, shared unlock attempt, failed-password limiter, and a cooldown after prompt dismissal.
 - Add repository-bound GitHub connections with bounded metadata, issue/PR, and CI-status reads, plus individually approved issue and draft-PR creation.
 - Keep credentials inside the service; pin the API origin, refuse redirects and arbitrary routes, preserve uncertain write outcomes, and recheck authorization generation before dispatch.
 - Add GitHub CLI setup/read/create/revoke commands. Source support requires a matching service upgrade; no live enrollment or rollout is implied.
 
-## Unreleased — unlock prompt improvements
+### Unlock prompt
 
 - Skip the master-password prompt when the service vault is already unlocked, and share concurrent unlock requests as one attempt.
 - Prevent a pending unlock from reopening the vault after an explicit lock. Existing approval and failed-password limits remain in place.
 - Replace the oversized Windows password dialog with a compact, DPI-aware layout, visible verification phrase, masked field, action-specific button, and keyboard controls. Long approval context remains scrollable.
 - This changes the native helper and requires a trusted service reinstall; no installed rollout is implied by the source change.
 
-## Unreleased — coordinated updates
+### Coordinated updates
 
 - Add read-only `u-chan update --check` and coordinated Windows desktop/service updates with capability-gated trusted bootstrap.
 - Stage independently verified signed artifacts, report phase/elapsed time, reconnect through protected jobs, and verify immutable target boot readiness.
@@ -27,22 +34,14 @@
 - Recover completed desktop installations with missing receipts only after exact artifact verification; repair recognized launchers and report AI-session restart requirements.
 - Avoid recursive permission scans of retained update runtimes. macOS application and installed rollout remain separate work.
 
-## Unreleased
+### Discord broker
 
 - Add `u-chan discord test <alias>` and `discord_test_connection`: reuse approved read-only metadata inspection to report connection status, server ID, and channel/role counts without raw metadata. No service, native-helper, permission, or dependency change is required.
-
 - Allow Discord setup discovery from the user-supplied Bitwarden item when server/field metadata is already stored there. Require protected approval before lookup and another approval before saving the exact UUID-bound connection; never return token values or raw notes.
-
 - Add a Windows-only privileged Discord token broker for approved existing servers: metadata inspection, channel/category and role setup, reordering, and member-role assignment.
 - Keep Bitwarden token retrieval inside the service; require protected approval of every exact write batch. Reject administrator grants, unmanaged endpoints, and out-of-server targets. Add separate protected connection state, audit events, CLI/MCP tools, management revocation, and diagnostics.
 - Replace clipped Windows approval details with a wrapped, read-only scrolling review surface. Native helper changes require trusted administrator reinstall; no package publication or installed/native Discord verification is implied.
 - Preserve website-login APIs, protocol 3, website state schema 3, and runtime dependencies. Clarify a pre-existing setup-test fixture return type so whole-project type checking can pass.
-
-## 5.1.0
-
-- Add `u-chan setup --client claude`: inspect Claude Code user-scope `u-chan-secrets` and `playwright` registrations read-only, and apply missing or simple replacements (including a Playwright entry without `--cdp-endpoint`) through the official `claude mcp` CLI after backing up `.claude.json`. Custom registrations and conflicting target environment are preserved.
-- Add `u-chan start` (Windows): start the selected dedicated browser when its endpoint is down, open the protected unlock prompt only for a locked vault, then print doctor.
-- Point the doctor Playwright hint at the setup command. Protocol 3, protected-state schema 3, native helpers, dependencies, and grants are unchanged.
 
 ## 5.0.1
 
