@@ -81,3 +81,14 @@ it('treats a missing config file as no registrations and retains completed chang
   expect(r.backupPath).toBeUndefined()
   expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
 })
+it('replaces a legacy V1 U_CHAN_BW environment only with explicit replacement, without exposing its value', async () => {
+  for (const command of ['node', 'C:\\Node\\node.exe']) {
+    const f = await fixture({ playwright: pw(), 'u-chan-secrets': { type: 'stdio', command, args: ['C:\\U Chan\\dist\\index.js'], env: { U_CHAN_BW: 'C:\\SECRET_SENTINEL\\bw.exe' } } })
+    expect(await configureClaude({ ...f.options, apply: true }, f.deps)).toMatchObject({ state: 'needs_update', changed: false })
+    expect(f.calls).toEqual([])
+    const r = await configureClaude({ ...f.options, apply: true, replaceExisting: true }, f.deps)
+    expect(r).toMatchObject({ state: 'ready', changed: true })
+    expect(f.calls).toEqual([['mcp', 'remove', '--scope', 'user', 'u-chan-secrets'], ['mcp', 'add-json', '--scope', 'user', 'u-chan-secrets', JSON.stringify({ type: 'stdio', command: f.options.nodePath, args: [f.options.entryPath], env: {} })]])
+    expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
+  }
+})

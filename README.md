@@ -414,6 +414,10 @@ npm run build
 
 Before release or reliance on the security boundary, perform the [manual attack checklist](docs/attack-checklist.md). See [validation and remaining native checks](docs/superpowers/research/2026-10-29-v3-validation.md), [security policy](SECURITY.md), and [V3 change notes](CHANGELOG.md).
 
+## Releasing
+
+Push a `vX.Y.Z` tag matching `package.json` to run the [release workflow](.github/workflows/release.yml): it reruns the Windows/macOS tests, then publishes to npm with provenance. Configure npm trusted publishing for this repository and workflow on npmjs.com, or add an automation token as the `NPM_TOKEN` secret of the `npm` environment. A version already on npm is skipped, so rerunning a tag is safe.
+
 ## License
 
 [MIT](LICENSE)

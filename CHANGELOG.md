@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `u-chan setup --apply --replace-existing` now replaces Codex and Claude Code registrations that still carry the V1 `U_CHAN_BW` desktop environment, which the thin client ignores, instead of reporting them as custom (`manual`). Its value is never reported.
+- Add a tag-triggered release workflow that tests on Windows/macOS and publishes to npm with provenance (trusted publishing or `NPM_TOKEN`).
+
 ## 5.1.0
 
 **Upgrade:** 5.1.0 changes native helpers (unlock dialog, Discord review surface), so upgrading from 5.0.x requires a trusted administrator reinstall; `u-chan update` alone is not enough. Protocol 3, website state schema 3, runtime dependencies, and existing grants are unchanged.

@@ -4,7 +4,7 @@ import { basename, join } from 'node:path'
 import { safeCdpOrigin } from '../core/doctor.js'
 import { defaultEndpoint } from '../ipc/endpoint.js'
 import { browserKind, type BrowserKind } from './browser-choice.js'
-import { backupFile, isElevated, type CodexSetupResult, type CodexSetupState } from './codex-setup.js'
+import { backupFile, hasLegacyEnv, isElevated, LEGACY_ENV, type CodexSetupResult, type CodexSetupState } from './codex-setup.js'
 
 export interface ClaudeSetupOptions {
   apply: boolean; replaceExisting: boolean; endpoint: string; nodePath: string; entryPath: string
@@ -24,7 +24,7 @@ function simple(entry: any, name: string): boolean {
   if (Object.keys(entry).some(k => !['type', 'command', 'args', 'env'].includes(k)) || (entry.type ?? 'stdio') !== 'stdio') return false
   if (typeof entry.command !== 'string' || !Array.isArray(entry.args) || !entry.args.every((a: unknown) => typeof a === 'string')) return false
   if (entry.env != null && (typeof entry.env !== 'object' || Array.isArray(entry.env) || Object.entries(entry.env).some(([key, value]) =>
-    name !== 'u-chan-secrets' || (key === 'U_CHAN_BROWSER' ? value !== 'chrome' && value !== 'edge' : key === 'U_CHAN_CDP' ? !safeCdpOrigin(value) : true)))) return false
+    name !== 'u-chan-secrets' || (LEGACY_ENV.includes(key) ? false : key === 'U_CHAN_BROWSER' ? value !== 'chrome' && value !== 'edge' : key === 'U_CHAN_CDP' ? !safeCdpOrigin(value) : true)))) return false
   const command = basename(entry.command.replaceAll('\\', '/')).toLowerCase()
   if (name === 'u-chan-secrets') return ['node', 'node.exe'].includes(command) && entry.args.length === 1 && /(?:^|[\\/])index\.js$/.test(entry.args[0])
   return ['npx', 'npx.cmd', 'npx.exe'].includes(command) && /^@playwright\/mcp(?:@[^\s]+)?$/.test(entry.args[0] ?? '')
@@ -68,7 +68,7 @@ export async function configureClaude(o: ClaudeSetupOptions, injected?: ClaudeSe
         const k = key.toUpperCase()
         return k === 'U_CHAN_CDP' ? safeCdpOrigin(curEnv[key]) !== origin : k === 'U_CHAN_IPC' && curEnv[key] !== ipc
       })) return result('manual', 'Custom target environment preserved; align browser and service targets manually.')
-      if ((current?.type ?? 'stdio') === 'stdio' && current?.command === server.command && JSON.stringify(current.args) === JSON.stringify(server.args)
+      if ((current?.type ?? 'stdio') === 'stdio' && current?.command === server.command && JSON.stringify(current.args) === JSON.stringify(server.args) && !hasLegacyEnv(curEnv)
         && (name !== 'u-chan-secrets' || o.browser === undefined || (curEnv.U_CHAN_BROWSER === o.browser && safeCdpOrigin(curEnv.U_CHAN_CDP) === origin))) continue
       if (!simple(current, name)) return result('manual', 'Custom Claude Code settings preserved; configure this registration manually.')
       pending.push({ name, server, replace: true })
