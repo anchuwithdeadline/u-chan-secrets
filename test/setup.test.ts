@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { runSetup, setupExitCode } from '../src/client/setup.js'
+import { combineClients, runSetup, setupExitCode } from '../src/client/setup.js'
 import { main } from '../src/cli.js'
 import type { DiagnosticReport } from '../src/core/doctor.js'
 import type { CodexSetupResult } from '../src/client/codex-setup.js'
@@ -66,7 +66,7 @@ it('forwards valid setup options and prints a machine-readable report with its e
 it('forwards an explicit Edge choice and refuses malformed browser flags without side effects', async () => {
   const setup = vi.fn(async () => ({ ...(await runSetup(options, fixture())) })), out = vi.fn()
   await main(['setup','--browser','edge','--apply','--json'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })
-  expect(setup).toHaveBeenCalledWith({ ...options, apply: true, browser: 'edge' }, 'codex')
+  expect(setup).toHaveBeenCalledWith({ ...options, apply: true, browser: 'edge' }, 'auto')
   for (const flags of [['--browser'],['--browser','firefox'],['--browser','edge','--browser','chrome']]) {
     setup.mockClear()
     expect(await main(['setup',...flags], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out, err: vi.fn() })).toBe(1)
@@ -108,4 +108,29 @@ it('forwards --client claude and names Claude Code in client guidance', async ()
   expect(setup).toHaveBeenCalledWith({ ...options, apply: true }, 'claude')
   const d = fixture(); d.configure.mockResolvedValue({ state: 'missing', changed: false, message: 'Checked.' })
   expect((await runSetup(options, { ...d, clientName: 'Claude Code' })).actions.some(a => a.message.startsWith('Inspect Claude Code configuration'))).toBe(true)
+})
+
+it('forwards --client all and refuses other client names', async () => {
+  const setup = vi.fn(async () => runSetup(options, fixture()))
+  expect(await main(['setup', '--client', 'all'], { setup, connect: vi.fn(), env: {}, platform: 'win32', readFile: vi.fn(), out: vi.fn(), err: vi.fn() })).toBe(0)
+  expect(setup).toHaveBeenCalledWith(options, 'all')
+})
+it('configures every client, reports the least ready state, and keeps going after one fails', async () => {
+  const codex = vi.fn(async (): Promise<CodexSetupResult> => ({ state: 'unavailable', changed: false, message: 'No codex.' }))
+  const claude = vi.fn(async (): Promise<CodexSetupResult> => ({ state: 'ready', changed: true, backupPath: 'claude-backup', message: 'Saved.' }))
+  const combined = combineClients([{ client: 'codex', configure: codex }, { client: 'claude', configure: claude }])
+  expect(combined.clientName).toBe('Codex and Claude Code')
+  const r = await runSetup({ ...options, apply: true }, { ...fixture(), clientName: combined.clientName, configure: combined.configure })
+  expect(codex).toHaveBeenCalledWith({ apply: true, replaceExisting: false }); expect(claude).toHaveBeenCalledWith({ apply: true, replaceExisting: false })
+  expect(r).toMatchObject({ state: 'needs_attention', client: 'unavailable', changed: true, restartRequired: true, backupPath: 'claude-backup' })
+  expect(r.actions.some(a => a.message.startsWith('Inspect Codex and Claude Code configuration'))).toBe(true)
+  expect(combined.results().map(x => [x.client, x.state])).toEqual([['codex', 'unavailable'], ['claude', 'ready']])
+  const ready = combineClients([{ client: 'claude', configure: claude }])
+  expect((await runSetup(options, { ...fixture(), configure: ready.configure })).state).toBe('configured')
+})
+it('reports a clear action when no AI client CLI is detected', async () => {
+  const none = combineClients([])
+  const r = await runSetup({ ...options, apply: true }, { ...fixture(), clientName: none.clientName, configure: none.configure })
+  expect(r).toMatchObject({ state: 'needs_attention', client: 'unavailable', changed: false })
+  expect((await none.configure({ apply: true, replaceExisting: false })).message).toContain('No Codex or Claude Code CLI found')
 })

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — multi-client setup
+
+- `u-chan setup` without `--client` now detects Codex and Claude Code CLIs on PATH and inspects/configures each one, instead of assuming Codex. Add `--client all`. Per-client results appear in text and `--json` (`clients`) output; the overall client state is the least ready one, and a failure in one client does not skip the other. Explicit `--client codex|claude` is unchanged.
+
 ## Unreleased — agent unlock and GitHub
 
 - Add `request_unlock` through MCP and authenticated IPC, reusing the native prompt, shared unlock attempt, failed-password limiter, and a cooldown after prompt dismissal.

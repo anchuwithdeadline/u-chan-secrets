@@ -155,7 +155,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DiagnosticReport> {
   add('chrome', chrome, `Dedicated ${label} CDP endpoint checked.`, 'Start the selected dedicated browser with the provided platform launcher.')
   const kindMismatch = d.browser && (service?.browserKind === 'chrome' || service?.browserKind === 'edge') && service.browserKind !== d.browser
   if (d.browserIdentity) add('browser_identity', kindMismatch ? 'fail' : identity, `Dedicated ${label} process, owner and profile checked.`, 'Check the selected browser, dedicated profile and occupied endpoint; close only the previous dedicated U-Chan instance before switching.')
-  add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint (u-chan setup --client claude|codex --apply --replace-existing) and restart the AI session.', playwright !== 'unknown')
+  add('playwright', playwright, 'Playwright shared-browser configuration checked.', 'Configure Playwright MCP with --cdp-endpoint (u-chan setup --apply --replace-existing) and restart the AI session.', playwright !== 'unknown')
   return { version: 1, checks, ...(d.browser ? { browser: d.browser, observedBrowser: service?.browserKind === 'edge' || service?.browserKind === 'chrome' ? service.browserKind : 'unknown' as const } : {}) }
 }
 export async function observeCdpBrowser(endpoint: string): Promise<BrowserKind | 'unknown'> {

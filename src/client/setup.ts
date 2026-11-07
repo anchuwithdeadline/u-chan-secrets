@@ -9,6 +9,8 @@ export interface SetupReport {
   client: CodexSetupState; changed: boolean; backupPath?: string
   browser?: BrowserKind; browserChanged?: boolean; browserBackupPath?: string
   shell?: WindowsCommandResult
+  /** Per-client outcome when setup configured more than one AI client. */
+  clients?: { client: SetupClient; state: CodexSetupState; changed: boolean; backupPath?: string; message: string }[]
 }
 export interface SetupDeps {
   platform: NodeJS.Platform; endpoint: string; elevated: () => Promise<boolean>
@@ -75,4 +77,29 @@ export async function runSetup(o: SetupOptions, d: SetupDeps): Promise<SetupRepo
 }
 export function setupExitCode(r: SetupReport): 0 | 1 | 2 {
   return r.state === 'needs_attention' ? 1 : r.restartRequired ? 2 : 0
+}
+export type SetupClient = 'codex' | 'claude'
+export type SetupClientChoice = SetupClient | 'all' | 'auto'
+export const SETUP_CLIENT_NAMES: Record<SetupClient, string> = { codex: 'Codex', claude: 'Claude Code' }
+export interface ClientSetupEntry { client: SetupClient; configure: SetupDeps['configure'] }
+const STATE_RANK: CodexSetupState[] = ['ready', 'missing', 'needs_update', 'manual', 'unavailable']
+/** Configure several AI clients in order; the combined state is the least ready one, and every client is attempted. */
+export function combineClients(entries: ClientSetupEntry[]): { clientName: string; configure: SetupDeps['configure']; results: () => ({ client: SetupClient } & CodexSetupResult)[] } {
+  let last: ({ client: SetupClient } & CodexSetupResult)[] = []
+  return {
+    clientName: entries.length ? entries.map(e => SETUP_CLIENT_NAMES[e.client]).join(' and ') : 'Codex or Claude Code',
+    results: () => last,
+    configure: async options => {
+      last = []
+      if (entries.length === 0) return { state: 'unavailable', changed: false, message: 'No Codex or Claude Code CLI found on PATH; install one or pass --client.' }
+      for (const e of entries) {
+        let r: CodexSetupResult
+        try { r = await e.configure(options) } catch { r = { state: 'unavailable', changed: false, message: `${SETUP_CLIENT_NAMES[e.client]} setup unavailable.` } }
+        last.push({ client: e.client, ...r })
+      }
+      const state = last.reduce<CodexSetupState>((w, r) => STATE_RANK.indexOf(r.state) > STATE_RANK.indexOf(w) ? r.state : w, 'ready')
+      const backups = last.flatMap(r => r.backupPath ? [r.backupPath] : [])
+      return { state, changed: last.some(r => r.changed), ...(backups.length ? { backupPath: backups.join('; ') } : {}), message: last.map(r => `${SETUP_CLIENT_NAMES[r.client]}: ${r.message}`).join(' ') }
+    },
+  }
 }
