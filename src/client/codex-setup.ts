@@ -7,6 +7,10 @@ import { safeCdpOrigin } from '../core/doctor.js'
 import { defaultEndpoint } from '../ipc/endpoint.js'
 import { browserKind, type BrowserKind } from './browser-choice.js'
 
+/** Desktop environment keys left by V1, when Bitwarden ran in the user session. The thin client ignores them; replacement drops them. */
+export const LEGACY_ENV = ['U_CHAN_BW']
+export const hasLegacyEnv = (env: unknown) => !!env && typeof env === 'object' && Object.keys(env).some(k => LEGACY_ENV.includes(k.toUpperCase()))
+
 export type CodexSetupState = 'ready' | 'missing' | 'needs_update' | 'manual' | 'unavailable'
 export interface CodexSetupOptions {
   apply: boolean; replaceExisting: boolean; endpoint: string; nodePath: string; entryPath: string; configDir: string
@@ -37,7 +41,7 @@ function simple(entry: any, name: string): boolean {
   if (t.type !== 'stdio' || typeof t.command !== 'string' || !Array.isArray(t.args) || !t.args.every((a: unknown) => typeof a === 'string')) return false
   if (t.cwd != null || (t.env_vars != null && (!Array.isArray(t.env_vars) || t.env_vars.length > 0))) return false
   if (t.env != null && (typeof t.env !== 'object' || Array.isArray(t.env) || Object.entries(t.env).some(([key, value]) =>
-    name !== 'u_chan_secrets' || (key === 'U_CHAN_BROWSER' ? value !== 'chrome' && value !== 'edge' : key === 'U_CHAN_CDP' ? !safeCdpOrigin(value) : true)))) return false
+    name !== 'u_chan_secrets' || (LEGACY_ENV.includes(key) ? false : key === 'U_CHAN_BROWSER' ? value !== 'chrome' && value !== 'edge' : key === 'U_CHAN_CDP' ? !safeCdpOrigin(value) : true)))) return false
   const command = basename(t.command.replaceAll('\\', '/')).toLowerCase()
   if (name === 'u_chan_secrets') return ['node', 'node.exe'].includes(command) && t.args.length === 1 && /(?:^|[\\/])index\.js$/.test(t.args[0])
   return ['npx', 'npx.cmd', 'npx.exe'].includes(command) && /^@playwright\/mcp(?:@[^\s]+)?$/.test(t.args[0] ?? '')
@@ -101,7 +105,7 @@ export async function configureCodex(o: CodexSetupOptions, injected?: CodexSetup
         return result('manual', 'Custom target environment preserved; align browser and service targets manually.')
       }
       if (current?.enabled === true && current.transport?.type === 'stdio'
-        && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args)
+        && current.transport.command === entry.command && JSON.stringify(current.transport.args) === JSON.stringify(entry.args) && !hasLegacyEnv(env)
         && (entry.name !== 'u_chan_secrets' || o.browser === undefined || (env?.U_CHAN_BROWSER === o.browser && safeCdpOrigin(env?.U_CHAN_CDP) === safeCdpOrigin(o.endpoint)))) continue
       if (!simple(current, entry.name)) return result('manual', 'Custom Codex settings preserved; configure this registration manually.')
       pending.push({ entry, replace: true })

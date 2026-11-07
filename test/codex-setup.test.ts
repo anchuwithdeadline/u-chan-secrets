@@ -123,3 +123,14 @@ it('preserves but does not mark ready custom environment that changes browser or
     expect(g.calls.every(c => c[1] === 'get')).toBe(true)
   }
 })
+it('replaces a legacy V1 U_CHAN_BW environment only with explicit replacement, without exposing its value', async () => {
+  const f = await fixture()
+  const playwright = entry('npx', ['@playwright/mcp@latest','--cdp-endpoint',f.options.endpoint])
+  const current = entry(f.options.nodePath, [f.options.entryPath])
+  const g = await fixture({ playwright, u_chan_secrets: { ...current, transport: { ...current.transport, env: { U_CHAN_BW: 'C:\\SECRET_SENTINEL\\bw.exe' } } } })
+  expect(await configureCodex({ ...g.options, apply: true }, g.deps)).toMatchObject({ state: 'needs_update', changed: false })
+  const r = await configureCodex({ ...g.options, apply: true, replaceExisting: true }, g.deps)
+  expect(r).toMatchObject({ state: 'ready', changed: true })
+  expect(g.calls.filter(c => c[1] !== 'get')).toEqual([['mcp', 'remove', 'u_chan_secrets'], ['mcp', 'add', 'u_chan_secrets', '--', g.options.nodePath, g.options.entryPath]])
+  expect(JSON.stringify(r)).not.toContain('SECRET_SENTINEL')
+})

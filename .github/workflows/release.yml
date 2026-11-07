@@ -1,0 +1,62 @@
+name: Release
+
+# Publishes the npm package when a v* tag is pushed. Uses npm trusted publishing (OIDC) when it is
+# configured for this repository on npmjs.com; otherwise falls back to the NPM_TOKEN repository secret.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Check tag matches package version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"; exit 1
+          fi
+          if npm view "u-chan-secrets@$version" version >/dev/null 2>&1; then
+            echo "::notice::u-chan-secrets@$version is already published; skipping."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.version.outputs.published != 'true'
+        run: npm install --global npm@11
+      - if: steps.version.outputs.published != 'true'
+        run: npm ci
+      - if: steps.version.outputs.published != 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
