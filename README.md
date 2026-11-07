@@ -1,171 +1,10 @@
-# U-Chan Secrets V5
-
-Unreleased source also supports agent-triggered protected unlock and a repository-scoped GitHub connector. A matching installed service and fresh AI session are required. See [setup, supported actions, and boundaries](docs/github-connector.md) and [validation scope](docs/superpowers/research/2026-11-06-agent-unlock-github-validation.md).
+# U-Chan Secrets
 
 A local MCP server that signs into approved websites with Bitwarden credentials. A privileged service performs credential entry in an isolated browser and transfers filtered session state into a dedicated Chrome or Edge profile.
 
-Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.
-
 **Verification:** Windows/macOS build and test CI is separate from installed-service security verification. Native process identity, input isolation, permissions, and installation rehearsals remain [release gates](docs/attack-checklist.md). See [V5 validation evidence](docs/superpowers/research/2026-10-30-v5-validation.md) and [SECURITY.md](SECURITY.md).
 
-The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) records matching service/CLI versions, preserved protected state, real setup and fresh MCP/browser checks. It builds on the tightened V3.0.3 [native closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md). macOS runtime remains unverified; source merge, installed verification, and package publication are recorded separately.
-
-## What V3 changes
-
-- **Diagnose:** `u-chan doctor` explains service, vault, permission, Chrome, and browser-sharing problems without fetching credentials or repairing configuration.
-- **Limit approval:** approve one login attempt, a fixed duration, or permanent future logins.
-- **Confirm outcomes:** an approved URL or selector provides authentication evidence; generic form completion remains explicitly unconfirmed.
-- **Manage access:** `u-chan manage` shows grant pages and recent sanitized activity, with lock, unlock, and revoke actions.
-- **Preserve state:** privileged migration backup, schema/downgrade guards, and state-preserving reinstall replace manual editing of protected files.
-
-Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
-
-## Discord broker (unreleased source)
-
-The Windows service can use a Bitwarden bot token to configure **existing approved Discord servers**, without returning the token to the agent. This source upgrade requires a **trusted administrator reinstall** because its protected review helper changes. It is not available merely by updating the desktop MCP package. Existing website tools remain unchanged; macOS Discord requests fail closed.
-
-The bot must already belong to the target server and have the needed Discord permissions and role hierarchy. Approve one connection for server/role/channel metadata. Every write batch then requires a protected prompt displaying its exact changes. The connection never authorizes unattended writes.
-
-1. Keep the token in the login password or an explicitly named **hidden** custom field of your Bitwarden item. A username is not required for password-field token use. Never put the token in the following JSON files, chat, command arguments, or MCP configuration.
-2. Create `discord-connection.json` using the exact server ID and your item reference (prefer its UUID). Example IDs below are placeholders, not a real target:
-
-```json
-{
-  "alias": "vdn",
-  "item": "VDN Discord Bot",
-  "field": { "kind": "password" },
-  "guildId": "123456789012345678"
-}
-```
-
-For a custom field, replace `field` with `{ "kind": "hidden", "name": "Bot token" }`. Missing, visible, or duplicate matching custom fields fail without fallback.
-
-If the item already contains the setup information, use just `{ "alias": "vdn", "item": "VDN Discord Bot" }`. U-Chan first requests protected permission to discover metadata, then separately requests approval of the exact server ID, resolved item UUID, and token-field selector. No token value or raw note content is returned. Discovery accepts one server ID labeled `Guild ID`, `Server ID`, `Discord Guild ID`, or `Discord Server ID` in custom fields, note lines, or a top-level JSON note object. Application/client IDs are not server IDs. A single password or hidden field named `Token`, `Bot token`, `Discord token`, or `Discord bot token` supplies the selector. Ambiguous IDs/fields fail; provide both explicit `guildId` and `field` to resolve ambiguity. Protected state always stores the complete exact connection, never an unresolved discovery request.
-
-3. After the trusted service reinstall, run from a normal terminal:
-
-```powershell
-u-chan doctor
-u-chan unlock
-u-chan discord allow discord-connection.json
-u-chan discord list
-u-chan discord test vdn
-u-chan discord inspect vdn
-u-chan discord inspect vdn --page 1
-```
-
-Enter the master password only in the protected unlock prompt. Confirm the connection's item, field, and exact server ID in the protected approval. Metadata pages return one channel and one role, with `nextPage` and totals. Follow pages for complete results. An optional member ID inspects that member's role IDs: `u-chan discord inspect vdn 223456789012345678`.
-
-`u-chan discord test <alias>` (PowerShell may require `u-chan.cmd`) checks an existing approved connection through read-only metadata inspection. Success reports `status: "connected"`, server ID, channel count, and role count. Failures retain service guidance for locked vaults, missing approval, unavailable services, or Discord rejection. It never grants access, changes resources, returns raw metadata, or proves write permissions. Agents can use the equivalent `discord_test_connection` tool. This desktop-only feature works with an installed service that already supports `discord_broker`; no service reinstall or vault relock is needed.
-
-4. Put a requested tournament setup batch in `discord-operations.json`, then review it through U-Chan:
-
-```json
-[
-  { "type": "role_create", "name": "Debater", "permissions": "1024" },
-  { "type": "role_create", "name": "Adjudicator", "permissions": "1024" },
-  { "type": "channel_create", "kind": "category", "name": "Tournament" }
-]
-```
-
-```powershell
-u-chan discord apply vdn discord-operations.json
-u-chan discord revoke vdn
-```
-
-New resource IDs are returned after creation. Use those IDs in a later approved batch to create child channels, assign roles, or set permissions. Each batch is limited to 10 operations and 8 KiB of canonical JSON; larger review displays must be split further. Overlapping existing targets are rejected before approval; combine fields into one edit or use separate batches. Server state is checked again after approval, so conflicting changes and indirect role-position shifts may stop execution. Revoke also works from `u-chan manage` using the distinctly labeled Discord target.
-
-Supported operations and payload fields:
-
-| `type` | Fields |
-|---|---|
-| `role_create` | `name`; optional `permissions` (decimal string, default `"0"`), `color` (integer), `hoist`, `mentionable` |
-| `role_edit` | `roleId`, nonempty `changes` using the role fields above |
-| `role_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
-| `channel_create` | `kind`: `category`, `text`, or `voice`; `name`; optional `parentId`, `topic` (text only), `overwrites` |
-| `channel_edit` | `channelId`, nonempty `changes`: `name`, `parentId`, `topic`, `overwrites` |
-| `channel_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
-| `member_role_add`, `member_role_remove` | `memberId`, `roleId` |
-
-An overwrite is `{ "id": "...", "type": 0, "allow": "1024", "deny": "2048" }`: type 0 targets a role; type 1 targets a verified server member. **Supplying `overwrites` replaces that channel's overwrite list**, which can expose private channels. The protected review displays numeric bits and known permission names; the server ID denotes `@everyone`. Unknown permission bits and administrator grants, including assignment of an existing administrator role, are refused. Managed roles and the bot's authority roles are protected. Discord itself also enforces permissions and hierarchy.
-
-No deletion, messages, kicks/bans, server creation, webhook access, arbitrary HTTP, or secret-injected shell execution is exposed. A batch stops at its first failure without rollback. Results distinguish completed operations, operations not sent, and unknown write outcomes. **Inspect the server before retrying an unknown outcome**; U-Chan does not replay uncertain writes. Rate-limit results provide `retryAfter` where available.
-
-Agents get six additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_test_connection`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
-
-Connection metadata resides in protected `discord-allowlist.json`; tokens remain in Bitwarden and service memory. The service snapshots protected metadata under protected `#0 backup` before its first broker state mutation per process. Reinstallation preserves connections; a compatible older service leaves the separate file inert. Revocation and vault lock cannot undo completed Discord changes or recall an already dispatched request. See [validation status](docs/superpowers/research/2026-11-06-discord-broker-validation.md) before treating source checks as installed verification.
-
-## What 5.1 adds
-
-- **Claude Code setup:** `u-chan setup --client claude [--apply] [--replace-existing]` checks the user-scope `u-chan-secrets` and `playwright` registrations in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and repairs a Playwright entry missing `--cdp-endpoint`. Inspection reads the file without changing it; changes go through `claude mcp remove`/`add-json --scope user` after a backup in `~/.claude/#0 backup`. Custom registrations are preserved and reported for manual configuration.
-- **Multi-client setup:** without `--client`, `u-chan setup` inspects (and with `--apply`, configures) every Codex and Claude Code CLI found on PATH; `--client all` targets both explicitly. Each client is attempted independently, the report lists per-client results, and the overall state is the least ready one.
-- **Daily start:** `u-chan start` starts the selected dedicated browser when its endpoint is down, opens the protected unlock prompt only when the vault is locked, then prints the doctor report. It needs no administrator rights and changes no configuration. It exits 1 if a required check fails or the vault remains locked. Windows only.
-
-## What V5 adds
-
-### Updating an existing Windows V5 installation to 5.0.1
-
-Run these commands from a normal, non-administrator PowerShell terminal:
-
-```powershell
-npm.cmd install --global u-chan-secrets@5.0.1
-u-chan.cmd update
-u-chan.cmd setup --apply
-u-chan doctor
-```
-
-The signed service update restarts U-Chan and clears its in-memory vault unlock. Run `u-chan unlock` afterward and enter the master password only in the protected prompt. The explicit `.cmd` spelling bootstraps setup when npm's PowerShell launcher is blocked; afterward the short `u-chan` command works. Restart the AI session if setup requests it. Existing browser choice, grants, and vault data remain local; a site's success condition must be approved separately on each installation. Older versions with changed dependencies or native helpers may require the trusted administrator reinstall described below.
-
-Choose your browser from a normal Windows terminal:
-
-```powershell
-u-chan setup --browser edge --json
-u-chan setup --browser edge --apply --replace-existing --start-browser
-u-chan setup --browser chrome --apply --replace-existing --start-browser
-```
-
-The first command inspects the proposed choice. `--apply` saves it in user-side `browser.json` and registers the matching MCP environment through the official Codex CLI. Later commands without `--browser` keep the saved choice; a new installation defaults to Chrome. Browser and Codex configuration backups are retained under their respective `#0 backup` directories. Each user's choice is independent.
-
-Chrome and Edge use separate dedicated profiles. Only one browser owns the configured U-Chan CDP endpoint at a time. When switching, close the previous **dedicated U-Chan instance** and rerun setup; keep your personal browser windows open. U-Chan refuses wrong, unknown, personal-profile, or non-loopback listeners instead of silently attaching, selecting another port/browser, or terminating processes. It does not install browsers or change enterprise debugging policy. The legacy `scripts/start-chrome.ps1` explicitly selects Chrome; `scripts/start-browser.ps1 -Browser edge` selects Edge.
-
-The service independently checks the installed owner's SID and dedicated profile before accessing the Windows destination. It derives that user's AppData paths from the profile registry. Advanced installations with a custom desktop profile root must align the trusted service environment's `U_CHAN_DESKTOP_HOME` with the user-side home; changing only a user-side environment variable does not redirect privileged session transfer.
-
-An approved exact URL or visible selector must match in both the private login context and a new verification tab in the destination browser before `login` returns success. Existing user tabs are left alone. Missing evidence returns `authentication_unconfirmed`; private success with unverified desktop state returns `destination_unconfirmed`. Transfer failure/cancellation can leave partial session state and does not log the browser out. Expired or consumed grants are not refunded.
-
-The private credential-bearing context uses a per-attempt HTTP/CONNECT proxy to block network destinations outside approved hosts, including redirect chains and worker/frame requests. Service workers are disabled. Private Chromium disables HTTP/2 and QUIC so connections cannot coalesce across approved and unapproved origins; HTTP/2-only sites may be unsupported. TLS remains end-to-end with normal browser certificate validation. Some sites requiring third-party resources or external identity providers also remain unsupported; U-Chan does not silently broaden host approval. CAPTCHA, passkey, push approval, or unavailable/rejected TOTP returns `needs_human` with manual sign-in guidance. V5 does not expose or resume the private challenge context, repeat credential submissions, or ask for passwords/codes in AI chat.
-
-A V5 client requires the service's `verified_session_transfer` capability before login and binds the request to its selected browser. Update both CLI and service; an older service is refused before a login attempt is sent. An old client without a browser field retains its legacy Chrome destination. A stale MCP browser environment that conflicts with the saved choice is refused until the AI session restarts. Existing grants and vault data remain compatible. Native macOS runtime and ownership by an already-running AI session remain unverified.
-
-Other MCP clients may set `U_CHAN_BROWSER=edge` (or `chrome`) and the matching loopback `U_CHAN_CDP` in their own registration, then launch the matching dedicated browser. Automatic registration remains Windows/Codex only; setting a desktop environment variable does not change the privileged service's endpoint.
-
-## What V4 adds
-
-Use a normal, non-administrator terminal after installing the matching trusted service:
-
-```powershell
-u-chan setup --json
-u-chan setup --client codex --apply
-u-chan setup --client codex --apply --replace-existing --start-browser
-```
-
-The first command only inspects. `--apply` adds missing Codex MCP registrations through the official Codex CLI. `--replace-existing` also permits replacement of recognized simple registrations. Existing configuration is backed up under the Codex configuration directory's `#0 backup` before mutation. Compatible enabled registrations retain custom environment, working directory, tool filters, timeouts, and other settings. Incompatible custom registrations, conflicting target overrides, disabled entries, and HTTP transports require manual configuration and remain untouched. Partial failures retain completed changes and the backup; setup never restores an obsolete whole configuration over concurrent edits.
-
-`--start-browser` explicitly starts the selected dedicated browser profile in the background when its endpoint is unhealthy. No startup task is added. Setup refuses elevated execution and known service/desktop browser-target mismatches. It never installs the privileged service or changes UAC. Run `u-chan install` separately from a trusted administrator terminal.
-
-Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequired`. `process_configured` means matching process arguments were observed; it does not verify active AI-session ownership. Unobservable sharing remains `unobserved`. Restart the AI session after registration changes. Exit codes: 1 means attention required, 2 means configured with restart required, and 0 means configured without a known restart requirement. A locked vault remains a valid installed state.
-
-Automatic registration supports Codex on Windows only. Configure other clients manually using their documented MCP commands. macOS runtime remains unverified. `doctor` compares the actual CLI and installed service versions, both browser targets, and Windows UAC policy; missing metadata remains unknown. `manage` shows the installed service version and browser status.
-
-On Windows, `setup --apply` also makes the short `u-chan` command work when PowerShell blocks scripts. It moves the recognized npm-generated `u-chan.ps1` launcher into the npm directory's `#0 backup`, leaving `u-chan.cmd` available for PowerShell to resolve automatically. Execution policy and PowerShell profiles are unchanged. Inspection without `--apply` is read-only, and custom launchers are preserved. If the first setup command is blocked, run `u-chan.cmd setup --apply`. Rerun setup after an npm installation or update recreates the PowerShell launcher. Shell results and the backup path appear in the setup JSON report.
-
-Propose a site grant with an explicit success condition:
-
-```sh
-u-chan allow example.com --login-url https://example.com/login --item "Example account" --once --success-url https://example.com/dashboard
-u-chan allow example.com --login-url https://example.com/login --item "Example account" --minutes 30 --success-selector "button[data-action='sign-out']"
-```
-
-The service still requires protected approval. The CLI defaults to one login attempt; timed approvals accept 1–1440 whole minutes, and `--permanent` requests permanent future logins. URL and selector success conditions are mutually exclusive. Without one, login may return `authentication_unconfirmed`; independently verify the signed-in page. Grant expiry does not log out an already transferred browser session.
+**Contents:** [Install](#install) · [Upgrade](#upgrade) · [Daily commands](#daily-commands) · [MCP tools](#mcp-tools-and-approvals) · [Setup reference](#setup-reference) · [Discord broker](#discord-broker) · [Release history](#release-history)
 
 ## Architecture
 
@@ -193,12 +32,16 @@ A Bitwarden session is held in service memory and passed to privileged Bitwarden
 - Windows or macOS.
 - Node.js 24+.
 - A native Bitwarden CLI executable: `bw.exe` on Windows or `bw` on macOS. The Windows npm `.cmd` shim is unsupported.
-- Google Chrome for the user-side dedicated profile.
+- Google Chrome or Microsoft Edge for the user-side dedicated profile.
 - The matching Playwright Chromium installation for service staging.
 
 Install from a trusted shell before granting an AI unrestricted user-account access. On Windows, use UAC **Always notify** or run the AI from a standard user account. Existing administrator/root compromise is outside the threat model.
 
-## Build and install from source
+## Install
+
+A fresh installation has four steps. Steps 1–2 run once from a trusted shell; steps 3–4 run from a normal user terminal.
+
+### 1. Build from a reviewed checkout
 
 Use a reviewed checkout for the desired source version. Unversioned npm installation can select a different published version; the package metadata in this repository is not proof of npm publication.
 
@@ -212,7 +55,9 @@ npx playwright install chromium
 
 The following setup commands use `node dist/cli.js` from that checkout. After a matching package is globally installed, `u-chan` invokes the same CLI. The globally installed MCP command is `u-chan-secrets`.
 
-### Windows
+### 2. Install the privileged service
+
+#### Windows
 
 From a trusted elevated PowerShell terminal in the checkout:
 
@@ -233,7 +78,7 @@ Remove-Item Env:\BITWARDENCLI_APPDATA_DIR
 
 **Do not use `scripts/debug-install.bat` as a V3 setup or upgrade path.** That legacy script invokes uninstall, which deletes service data, and exports protected settings into the checkout. Use the CLI installer above.
 
-### macOS
+#### macOS
 
 From the trusted checkout:
 
@@ -246,35 +91,82 @@ sudo env -u BW_SESSION \
 
 The daemon uses `/Library/Application Support/u-chan-secrets` and `/Library/LaunchDaemons/com.uchan.secrets.plist`. macOS always uses hardcore approval; easy mode is refused.
 
-### Register MCP and shared Chrome
+### 3. Connect AI clients and the browser
 
-For a source checkout, register the absolute path to the thin client:
+**Windows.** From a normal, non-administrator terminal (use `u-chan.cmd` if PowerShell blocks npm's launcher):
+
+```powershell
+u-chan setup --json
+u-chan setup --apply --start-browser
+```
+
+The first command only inspects. The second registers `u-chan-secrets` and a shared-CDP `playwright` server for every Codex and Claude Code CLI found on PATH, saves the browser choice, and starts the dedicated browser. Pass `--client codex`, `--client claude`, or `--client all` to choose clients explicitly, `--browser edge` to use Edge instead of the default Chrome, and `--replace-existing` to replace recognized simple registrations. Restart the AI session when setup reports `restart required: true`. See the [setup reference](#setup-reference) for states, backups, and exit codes.
+
+**macOS and other MCP clients.** Register the absolute path to the thin client manually:
 
 ```sh
 claude mcp add u-chan-secrets -- node "/absolute/path/to/u-chan-secrets/dist/index.js"
 claude mcp add playwright -- npx @playwright/mcp@latest --cdp-endpoint http://127.0.0.1:9222
 ```
 
-If a Playwright MCP registration already exists, replace it with the shared-CDP configuration and restart the AI session. A globally installed matching package can instead register `claude mcp add u-chan-secrets -- u-chan-secrets`.
+If a Playwright MCP registration already exists, replace it with the shared-CDP configuration and restart the AI session. A globally installed matching package can instead register `claude mcp add u-chan-secrets -- u-chan-secrets`. Start the dedicated browser profile with `bash scripts/start-chrome.sh` (macOS) or `powershell -File scripts\start-chrome.ps1` (Windows, manual setup).
 
-Start the dedicated Chrome profile from the checkout:
-
-| Platform | Command |
-|---|---|
-| Windows | `powershell -File scripts\start-chrome.ps1` |
-| macOS | `bash scripts/start-chrome.sh` |
-
-On Windows, `u-chan setup --apply` performs this registration instead for every Codex and Claude Code CLI found on PATH; pass `--client claude`, `--client codex`, or `--client all` to choose explicitly.
-
-Use a normal user terminal for daily operations:
+### 4. Daily start
 
 ```sh
-node dist/cli.js start
+u-chan start
 ```
 
 `start` launches the dedicated browser if needed, unlocks a locked vault through the protected prompt, and prints `doctor`.
 
 Check the phrase in the genuine protected prompt before entering a password. Never send passwords, TOTP seeds/codes, or vault session keys to an AI conversation.
+
+From a source checkout, use `node dist/cli.js` in place of `u-chan`.
+
+## Upgrade
+
+Pick the path for the version you have now (`u-chan doctor` reports both CLI and service versions):
+
+| Installed | Path |
+|---|---|
+| 5.0.x → 5.1.0 | **Trusted reinstall.** 5.1.0 changes native helpers (protected unlock dialog, Discord review). Build the reviewed 5.1.0 checkout ([step 1](#1-build-from-a-reviewed-checkout)), rerun the service install ([step 2](#2-install-the-privileged-service)) from an elevated terminal, then from a normal terminal run `npm.cmd install --global u-chan-secrets@5.1.0`, `u-chan.cmd setup --apply`, and `u-chan unlock`. |
+| 5.1.0 or later with `coordinated_update` | `u-chan update --check`, then `u-chan update` from a normal terminal. See [coordinated updates](#coordinated-updates). |
+| 4.x / 5.0.0 → 5.0.1 | `npm.cmd install --global u-chan-secrets@5.0.1`, `u-chan.cmd update`, `u-chan.cmd setup --apply`, `u-chan doctor`. |
+| 3.0.0–3.0.2 | See [older versions](#older-versions). |
+| V2 data | See [backup and rollback](#backup-and-rollback). |
+| V1 data | See [older versions](#older-versions). |
+
+Reinstall preserves the existing owner, settings, grants, and vault data. Every service restart clears the in-memory vault unlock: enter the master password only in `u-chan unlock`'s protected prompt. **Do not uninstall as an upgrade shortcut: uninstall deletes the data.**
+
+### Coordinated updates
+
+Run `u-chan update --check` for a read-only plan, then `u-chan update` from a normal desktop terminal. The service and desktop independently verify the same signed registry artifact. Compatibility checks run before either installation changes. Windows application supports unchanged native helpers, dependency declarations, and a compatible Node runtime. macOS application is currently unsupported; planning remains available. Services without `coordinated_update` require a matching trusted desktop/service bootstrap; there is no legacy service-only fallback.
+
+The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. A service restart clears its in-memory unlock; enter any subsequent password only through `u-chan unlock`'s protected prompt. Update never unlocks automatically or launches a browser. Restart existing AI sessions when the final result requests it.
+
+Interrupted terminal? Rerun `u-chan update` to observe the protected transaction and resume desktop work. A duplicate desktop invocation reports busy. A 15-minute observation timeout does not cancel an active service transaction. Unknown artifact identity, same-version local changes, and builds ahead of the published release require explicit trusted reconciliation, not an automatic downgrade. A completed npm install with a missing receipt can recover only from its matching desktop checkpoint and a fresh exact artifact verification.
+
+Service rollback copies remain under `%ProgramData%\u-chan-secrets\#0 backup\update-<transaction-id>`. Failed target programs and job status remain under `updates\<transaction-id>`. Desktop rollback tarballs remain under `%APPDATA%\u-chan-secrets\#0 backup\update-<stage-id>\before`; the bounded `desktop-update.json` checkpoint identifies that stage. No automatic cleanup scans historical backups. Target startup failure restores the source program and verifies source readiness. `recovery_required` blocks credential work until trusted recovery. If automatic recovery fails, stop the service in an administrator terminal, preserve both programs, and restore the retained source using the trusted installer procedure. If desktop verification fails, rerun update; if its files are incomplete, reinstall the matching verified desktop release or its retained rollback tarball from a normal terminal using npm with `--ignore-scripts`, then repair managed registrations with `u-chan setup --apply`.
+
+Source validation and native process fixtures do not publish the feature or upgrade an installed service. See the [validation boundaries](docs/superpowers/research/2026-11-06-update-workflow-validation.md).
+
+### Backup and rollback
+
+Use a trusted administrator reinstall for the first V3 installation; the thin client alone does not upgrade native helpers or private executables. Windows reinstall stops the service, waits for shutdown, stages a fresh private program copy, preserves the old program under protected `#0 backup`, and reuses service registration. Existing settings and grants remain.
+
+Before the first grant-state mutation, the service creates a protected `#0 backup/v2-before-v3` snapshot and a `schema.json` marker. The snapshot may contain privileged configuration and encrypted vault data: never copy it into a user-readable checkout. Incomplete backups block mutation rather than being overwritten.
+
+Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
+
+Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
+
+### Older versions
+
+Versions 3.0.0–3.0.2 have an npm signature-verification defect and cannot reliably bootstrap their own update. Install the matching corrected package from a trusted shell, then use the administrator reinstall above. Version 3.0.3 requires SHA-512 integrity and a valid signature from its pinned npm key; unsigned repository-attestation JSON cannot replace that signature. Future signing-key rotation fails closed and requires a trusted verifier upgrade.
+
+For V1 data, use `u-chan import-v1 [path]`: each entry requires protected approval. Retire user-side Bitwarden sessions and the old `bw-session` file through a trusted migration process; never copy them into the service as trusted authorization.
+
+**5.0.1 update notes.** The signed service update restarts U-Chan and clears its in-memory vault unlock. Run `u-chan unlock` afterward and enter the master password only in the protected prompt. The explicit `.cmd` spelling bootstraps setup when npm's PowerShell launcher is blocked; afterward the short `u-chan` command works. Restart the AI session if setup requests it. Existing browser choice, grants, and vault data remain local; a site's success condition must be approved separately on each installation. Older versions with changed dependencies or native helpers may require the trusted administrator reinstall described above.
 
 ## Daily commands
 
@@ -349,31 +241,167 @@ Without approved evidence, a generic completed flow may transfer filtered state 
 
 The service supports Bitwarden TOTP for recognized one-time-code fields. Passwords, TOTP seeds, and generated codes stay inside the privileged login flow. CAPTCHA, device verification, and unsupported challenges require the user; the AI must not request the underlying credentials.
 
-## Upgrade, backup, and rollback
+## Setup reference
 
-Use a trusted administrator reinstall for the first V3 installation; the thin client alone does not upgrade native helpers or private executables. Windows reinstall stops the service, waits for shutdown, stages a fresh private program copy, preserves the old program under protected `#0 backup`, and reuses service registration. Existing settings and grants remain.
+Use a normal, non-administrator terminal after installing the matching trusted service:
 
-Before the first grant-state mutation, the service creates a protected `#0 backup/v2-before-v3` snapshot and a `schema.json` marker. The snapshot may contain privileged configuration and encrypted vault data: never copy it into a user-readable checkout. Incomplete backups block mutation rather than being overwritten.
+```powershell
+u-chan setup --json
+u-chan setup --apply
+u-chan setup --apply --replace-existing --start-browser
+```
 
-Supported V3 tooling refuses V2 downgrade after migration. Historical V2 administrator tools cannot enforce a newer schema guard. A deliberate rollback requires stopping the service, inspecting/restoring the protected pre-V3 state, and acknowledging that old permanent approvals return. Do not uninstall as an upgrade shortcut: uninstall deletes the data.
+The first command only inspects. `--apply` adds missing MCP registrations through the official Codex and Claude Code CLIs (`codex mcp`, `claude mcp --scope user`). `--replace-existing` also permits replacement of recognized simple registrations. Existing configuration is backed up before mutation, under `~/.codex/#0 backup` (or `$CODEX_HOME`) and `~/.claude/#0 backup` (or `$CLAUDE_CONFIG_DIR`). Compatible enabled registrations retain custom environment, working directory, tool filters, timeouts, and other settings. Incompatible custom registrations, conflicting target overrides, disabled entries, and HTTP transports require manual configuration and remain untouched. Partial failures retain completed changes and the backup; setup never restores an obsolete whole configuration over concurrent edits.
 
-Package updates verify registry signatures and integrity and retain private dependencies. Changed dependencies or native helpers require a trusted administrator reinstall. Expired/exhausted grants and already transferred website sessions are separate from vault lock and upgrade state.
+`--start-browser` explicitly starts the selected dedicated browser profile in the background when its endpoint is unhealthy. No startup task is added. Setup refuses elevated execution and known service/desktop browser-target mismatches. It never installs the privileged service or changes UAC. Run `u-chan install` separately from a trusted administrator terminal.
 
-### Coordinated updates (source implementation; trusted bootstrap required)
+Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequired`. `process_configured` means matching process arguments were observed; it does not verify active AI-session ownership. Unobservable sharing remains `unobserved`. Restart the AI session after registration changes. Exit codes: 1 means attention required, 2 means configured with restart required, and 0 means configured without a known restart requirement. A locked vault remains a valid installed state.
 
-Run `u-chan update --check` for a read-only plan, then `u-chan update` from a normal desktop terminal. The service and desktop independently verify the same signed registry artifact. Compatibility checks run before either installation changes. Windows application supports unchanged native helpers, dependency declarations, and a compatible Node runtime. macOS application is currently unsupported; planning remains available. Services without `coordinated_update` require a matching trusted desktop/service bootstrap; there is no legacy service-only fallback.
+Automatic registration supports Codex and Claude Code on Windows only. Configure other clients and platforms manually (see [step 3](#3-connect-ai-clients-and-the-browser)). macOS runtime remains unverified. `doctor` compares the actual CLI and installed service versions, both browser targets, and Windows UAC policy; missing metadata remains unknown. `manage` shows the installed service version and browser status.
 
-The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. A service restart clears its in-memory unlock; enter any subsequent password only through `u-chan unlock`'s protected prompt. Update never unlocks automatically or launches a browser. Restart existing AI sessions when the final result requests it.
+On Windows, `setup --apply` also makes the short `u-chan` command work when PowerShell blocks scripts. It moves the recognized npm-generated `u-chan.ps1` launcher into the npm directory's `#0 backup`, leaving `u-chan.cmd` available for PowerShell to resolve automatically. Execution policy and PowerShell profiles are unchanged. Inspection without `--apply` is read-only, and custom launchers are preserved. If the first setup command is blocked, run `u-chan.cmd setup --apply`. Rerun setup after an npm installation or update recreates the PowerShell launcher. Shell results and the backup path appear in the setup JSON report.
 
-Interrupted terminal? Rerun `u-chan update` to observe the protected transaction and resume desktop work. A duplicate desktop invocation reports busy. A 15-minute observation timeout does not cancel an active service transaction. Unknown artifact identity, same-version local changes, and builds ahead of the published release require explicit trusted reconciliation, not an automatic downgrade. A completed npm install with a missing receipt can recover only from its matching desktop checkpoint and a fresh exact artifact verification.
+### Browser choice and session transfer
 
-Service rollback copies remain under `%ProgramData%\u-chan-secrets\#0 backup\update-<transaction-id>`. Failed target programs and job status remain under `updates\<transaction-id>`. Desktop rollback tarballs remain under `%APPDATA%\u-chan-secrets\#0 backup\update-<stage-id>\before`; the bounded `desktop-update.json` checkpoint identifies that stage. No automatic cleanup scans historical backups. Target startup failure restores the source program and verifies source readiness. `recovery_required` blocks credential work until trusted recovery. If automatic recovery fails, stop the service in an administrator terminal, preserve both programs, and restore the retained source using the trusted installer procedure. If desktop verification fails, rerun update; if its files are incomplete, reinstall the matching verified desktop release or its retained rollback tarball from a normal terminal using npm with `--ignore-scripts`, then repair managed registrations with `u-chan setup --apply`.
+Choose your browser from a normal Windows terminal:
 
-Source validation and native process fixtures do not publish the feature or upgrade an installed service. See the [validation boundaries](docs/superpowers/research/2026-11-06-update-workflow-validation.md).
+```powershell
+u-chan setup --browser edge --json
+u-chan setup --browser edge --apply --replace-existing --start-browser
+u-chan setup --browser chrome --apply --replace-existing --start-browser
+```
 
-Versions 3.0.0–3.0.2 have an npm signature-verification defect and cannot reliably bootstrap their own update. Install the matching corrected package from a trusted shell, then use the administrator reinstall above. Version 3.0.3 requires SHA-512 integrity and a valid signature from its pinned npm key; unsigned repository-attestation JSON cannot replace that signature. Future signing-key rotation fails closed and requires a trusted verifier upgrade.
+The first command inspects the proposed choice. `--apply` saves it in user-side `browser.json` and registers the matching MCP environment through the official Codex CLI. Later commands without `--browser` keep the saved choice; a new installation defaults to Chrome. Browser and Codex configuration backups are retained under their respective `#0 backup` directories. Each user's choice is independent.
 
-For V1 data, use `u-chan import-v1 [path]`: each entry requires protected approval. Retire user-side Bitwarden sessions and the old `bw-session` file through a trusted migration process; never copy them into the service as trusted authorization.
+Chrome and Edge use separate dedicated profiles. Only one browser owns the configured U-Chan CDP endpoint at a time. When switching, close the previous **dedicated U-Chan instance** and rerun setup; keep your personal browser windows open. U-Chan refuses wrong, unknown, personal-profile, or non-loopback listeners instead of silently attaching, selecting another port/browser, or terminating processes. It does not install browsers or change enterprise debugging policy. The legacy `scripts/start-chrome.ps1` explicitly selects Chrome; `scripts/start-browser.ps1 -Browser edge` selects Edge.
+
+The service independently checks the installed owner's SID and dedicated profile before accessing the Windows destination. It derives that user's AppData paths from the profile registry. Advanced installations with a custom desktop profile root must align the trusted service environment's `U_CHAN_DESKTOP_HOME` with the user-side home; changing only a user-side environment variable does not redirect privileged session transfer.
+
+An approved exact URL or visible selector must match in both the private login context and a new verification tab in the destination browser before `login` returns success. Existing user tabs are left alone. Missing evidence returns `authentication_unconfirmed`; private success with unverified desktop state returns `destination_unconfirmed`. Transfer failure/cancellation can leave partial session state and does not log the browser out. Expired or consumed grants are not refunded.
+
+The private credential-bearing context uses a per-attempt HTTP/CONNECT proxy to block network destinations outside approved hosts, including redirect chains and worker/frame requests. Service workers are disabled. Private Chromium disables HTTP/2 and QUIC so connections cannot coalesce across approved and unapproved origins; HTTP/2-only sites may be unsupported. TLS remains end-to-end with normal browser certificate validation. Some sites requiring third-party resources or external identity providers also remain unsupported; U-Chan does not silently broaden host approval. CAPTCHA, passkey, push approval, or unavailable/rejected TOTP returns `needs_human` with manual sign-in guidance. V5 does not expose or resume the private challenge context, repeat credential submissions, or ask for passwords/codes in AI chat.
+
+A V5 client requires the service's `verified_session_transfer` capability before login and binds the request to its selected browser. Update both CLI and service; an older service is refused before a login attempt is sent. An old client without a browser field retains its legacy Chrome destination. A stale MCP browser environment that conflicts with the saved choice is refused until the AI session restarts. Existing grants and vault data remain compatible. Native macOS runtime and ownership by an already-running AI session remain unverified.
+
+Other MCP clients may set `U_CHAN_BROWSER=edge` (or `chrome`) and the matching loopback `U_CHAN_CDP` in their own registration, then launch the matching dedicated browser. Automatic registration remains Windows/Codex only; setting a desktop environment variable does not change the privileged service's endpoint.
+
+### Site grants from the CLI
+
+Propose a site grant with an explicit success condition:
+
+```sh
+u-chan allow example.com --login-url https://example.com/login --item "Example account" --once --success-url https://example.com/dashboard
+u-chan allow example.com --login-url https://example.com/login --item "Example account" --minutes 30 --success-selector "button[data-action='sign-out']"
+```
+
+The service still requires protected approval. The CLI defaults to one login attempt; timed approvals accept 1–1440 whole minutes, and `--permanent` requests permanent future logins. URL and selector success conditions are mutually exclusive. Without one, login may return `authentication_unconfirmed`; independently verify the signed-in page. Grant expiry does not log out an already transferred browser session.
+
+## Discord broker
+
+The Windows service can use a Bitwarden bot token to configure **existing approved Discord servers**, without returning the token to the agent. This source upgrade requires a **trusted administrator reinstall** because its protected review helper changes. It is not available merely by updating the desktop MCP package. Existing website tools remain unchanged; macOS Discord requests fail closed.
+
+The bot must already belong to the target server and have the needed Discord permissions and role hierarchy. Approve one connection for server/role/channel metadata. Every write batch then requires a protected prompt displaying its exact changes. The connection never authorizes unattended writes.
+
+1. Keep the token in the login password or an explicitly named **hidden** custom field of your Bitwarden item. A username is not required for password-field token use. Never put the token in the following JSON files, chat, command arguments, or MCP configuration.
+2. Create `discord-connection.json` using the exact server ID and your item reference (prefer its UUID). Example IDs below are placeholders, not a real target:
+
+```json
+{
+  "alias": "vdn",
+  "item": "VDN Discord Bot",
+  "field": { "kind": "password" },
+  "guildId": "123456789012345678"
+}
+```
+
+For a custom field, replace `field` with `{ "kind": "hidden", "name": "Bot token" }`. Missing, visible, or duplicate matching custom fields fail without fallback.
+
+If the item already contains the setup information, use just `{ "alias": "vdn", "item": "VDN Discord Bot" }`. U-Chan first requests protected permission to discover metadata, then separately requests approval of the exact server ID, resolved item UUID, and token-field selector. No token value or raw note content is returned. Discovery accepts one server ID labeled `Guild ID`, `Server ID`, `Discord Guild ID`, or `Discord Server ID` in custom fields, note lines, or a top-level JSON note object. Application/client IDs are not server IDs. A single password or hidden field named `Token`, `Bot token`, `Discord token`, or `Discord bot token` supplies the selector. Ambiguous IDs/fields fail; provide both explicit `guildId` and `field` to resolve ambiguity. Protected state always stores the complete exact connection, never an unresolved discovery request.
+
+3. After the trusted service reinstall, run from a normal terminal:
+
+```powershell
+u-chan doctor
+u-chan unlock
+u-chan discord allow discord-connection.json
+u-chan discord list
+u-chan discord test vdn
+u-chan discord inspect vdn
+u-chan discord inspect vdn --page 1
+```
+
+Enter the master password only in the protected unlock prompt. Confirm the connection's item, field, and exact server ID in the protected approval. Metadata pages return one channel and one role, with `nextPage` and totals. Follow pages for complete results. An optional member ID inspects that member's role IDs: `u-chan discord inspect vdn 223456789012345678`.
+
+`u-chan discord test <alias>` (PowerShell may require `u-chan.cmd`) checks an existing approved connection through read-only metadata inspection. Success reports `status: "connected"`, server ID, channel count, and role count. Failures retain service guidance for locked vaults, missing approval, unavailable services, or Discord rejection. It never grants access, changes resources, returns raw metadata, or proves write permissions. Agents can use the equivalent `discord_test_connection` tool. This desktop-only feature works with an installed service that already supports `discord_broker`; no service reinstall or vault relock is needed.
+
+4. Put a requested tournament setup batch in `discord-operations.json`, then review it through U-Chan:
+
+```json
+[
+  { "type": "role_create", "name": "Debater", "permissions": "1024" },
+  { "type": "role_create", "name": "Adjudicator", "permissions": "1024" },
+  { "type": "channel_create", "kind": "category", "name": "Tournament" }
+]
+```
+
+```powershell
+u-chan discord apply vdn discord-operations.json
+u-chan discord revoke vdn
+```
+
+New resource IDs are returned after creation. Use those IDs in a later approved batch to create child channels, assign roles, or set permissions. Each batch is limited to 10 operations and 8 KiB of canonical JSON; larger review displays must be split further. Overlapping existing targets are rejected before approval; combine fields into one edit or use separate batches. Server state is checked again after approval, so conflicting changes and indirect role-position shifts may stop execution. Revoke also works from `u-chan manage` using the distinctly labeled Discord target.
+
+Supported operations and payload fields:
+
+| `type` | Fields |
+|---|---|
+| `role_create` | `name`; optional `permissions` (decimal string, default `"0"`), `color` (integer), `hoist`, `mentionable` |
+| `role_edit` | `roleId`, nonempty `changes` using the role fields above |
+| `role_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
+| `channel_create` | `kind`: `category`, `text`, or `voice`; `name`; optional `parentId`, `topic` (text only), `overwrites` |
+| `channel_edit` | `channelId`, nonempty `changes`: `name`, `parentId`, `topic`, `overwrites` |
+| `channel_reorder` | `positions`: array of `{ "id": "...", "position": 1 }` |
+| `member_role_add`, `member_role_remove` | `memberId`, `roleId` |
+
+An overwrite is `{ "id": "...", "type": 0, "allow": "1024", "deny": "2048" }`: type 0 targets a role; type 1 targets a verified server member. **Supplying `overwrites` replaces that channel's overwrite list**, which can expose private channels. The protected review displays numeric bits and known permission names; the server ID denotes `@everyone`. Unknown permission bits and administrator grants, including assignment of an existing administrator role, are refused. Managed roles and the bot's authority roles are protected. Discord itself also enforces permissions and hierarchy.
+
+No deletion, messages, kicks/bans, server creation, webhook access, arbitrary HTTP, or secret-injected shell execution is exposed. A batch stops at its first failure without rollback. Results distinguish completed operations, operations not sent, and unknown write outcomes. **Inspect the server before retrying an unknown outcome**; U-Chan does not replay uncertain writes. Rate-limit results provide `retryAfter` where available.
+
+Agents get six additional tools: `discord_request_allow`, `discord_list_allowed`, `discord_test_connection`, `discord_inspect`, `discord_apply`, and `discord_revoke`. Website login and Discord approval are separate. An old service returns an upgrade-required error. Restart the AI session after configuring the updated desktop package to discover the additional tools.
+
+Connection metadata resides in protected `discord-allowlist.json`; tokens remain in Bitwarden and service memory. The service snapshots protected metadata under protected `#0 backup` before its first broker state mutation per process. Reinstallation preserves connections; a compatible older service leaves the separate file inert. Revocation and vault lock cannot undo completed Discord changes or recall an already dispatched request. See [validation status](docs/superpowers/research/2026-11-06-discord-broker-validation.md) before treating source checks as installed verification.
+
+## GitHub connector and agent unlock
+
+5.1.0 adds agent-triggered protected unlock and a repository-scoped GitHub connector. A matching installed service and fresh AI session are required. See [setup, supported actions, and boundaries](docs/github-connector.md) and [validation scope](docs/superpowers/research/2026-11-06-agent-unlock-github-validation.md).
+
+## Release history
+
+### 5.1
+
+- **Claude Code setup:** `u-chan setup --client claude [--apply] [--replace-existing]` checks the user-scope `u-chan-secrets` and `playwright` registrations in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) and repairs a Playwright entry missing `--cdp-endpoint`. Inspection reads the file without changing it; changes go through `claude mcp remove`/`add-json --scope user` after a backup in `~/.claude/#0 backup`. Custom registrations are preserved and reported for manual configuration.
+- **Multi-client setup:** without `--client`, `u-chan setup` inspects (and with `--apply`, configures) every Codex and Claude Code CLI found on PATH; `--client all` targets both explicitly. Each client is attempted independently, the report lists per-client results, and the overall state is the least ready one.
+- **Daily start:** `u-chan start` starts the selected dedicated browser when its endpoint is down, opens the protected unlock prompt only when the vault is locked, then prints the doctor report. It needs no administrator rights and changes no configuration. It exits 1 if a required check fails or the vault remains locked. Windows only.
+
+### V5
+
+Version `5.0.0` adds selectable Chrome/Edge desktop destinations and checks approved login evidence before and after session transfer. Chrome remains the default when no browser has been selected. Protocol and protected-state schema remain version 3. Source integration, publication, and installed verification are separate events.
+
+### V4
+
+The [Windows V4 rollout](docs/superpowers/research/2026-10-29-v4-rollout.md) records matching service/CLI versions, preserved protected state, real setup and fresh MCP/browser checks. It builds on the tightened V3.0.3 [native closeout](docs/superpowers/research/2026-10-29-v3-windows-closeout.md). macOS runtime remains unverified; source merge, installed verification, and package publication are recorded separately.
+
+### V3
+
+- **Diagnose:** `u-chan doctor` explains service, vault, permission, Chrome, and browser-sharing problems without fetching credentials or repairing configuration.
+- **Limit approval:** approve one login attempt, a fixed duration, or permanent future logins.
+- **Confirm outcomes:** an approved URL or selector provides authentication evidence; generic form completion remains explicitly unconfirmed.
+- **Manage access:** `u-chan manage` shows grant pages and recent sanitized activity, with lock, unlock, and revoke actions.
+- **Preserve state:** privileged migration backup, schema/downgrade guards, and state-preserving reinstall replace manual editing of protected files.
+
+Windows Hello and Touch ID remain [research only](docs/superpowers/research/2026-10-29-native-approval.md). Linux, general SSO/OAuth, passkeys, and automated CAPTCHA solving are outside V3.
+
+See [CHANGELOG.md](CHANGELOG.md) for full notes.
 
 ## Validation and security
 

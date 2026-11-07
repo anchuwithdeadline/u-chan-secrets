@@ -2,4 +2,6 @@ node_modules
 dist
 .superpowers
 .claude
-install-debug.log 
+install-debug.log
+\#0 backup/
+.playwright-mcp/
