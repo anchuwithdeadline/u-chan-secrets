@@ -51,6 +51,9 @@ export async function fillLogin(
   await guard('open approved login page', () => page.goto(entry.loginUrl, { waitUntil: 'domcontentloaded', timeout }))
   const hostFail = badHost()
   if (hostFail) return hostFail
+  // Server-rendered forms are visible before their scripts run; a submit then posts the bare
+  // HTML form and the app never sees it. Give the page's scripts a bounded chance to load.
+  await page.waitForLoadState('load', { timeout: Math.min(timeout, 5000) }).catch(() => {})
 
   const sel = entry.selectors
   const userBox = visible(page.locator(sel?.username ?? USERNAME_CSS))

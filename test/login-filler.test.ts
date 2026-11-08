@@ -52,6 +52,11 @@ describe('fillLogin', () => {
     expect(r.url).toMatch(/\/dash$/)
     expect(r.getCreds).toHaveBeenCalledTimes(1)
   })
+  it('waits for late page scripts before submitting a server-rendered form', async () => {
+    const r = await run('/hydrating')
+    expect(r.outcome).toEqual({ status: 'logged_in' })
+    expect(r.url).toMatch(/\/dash$/)
+  })
   it('waits for an SPA form that hides after the URL changes', async () => {
     const r = await run('/spa-slow')
     expect(r.outcome).toEqual({ status: 'logged_in' })
