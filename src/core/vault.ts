@@ -139,7 +139,12 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     }
     if (r.code !== 0) {
       const err = r.stderr.toLowerCase()
-      if (err.includes('more than one result')) throw new UserFacingError('multiple items match, use the item id')
+      if (err.includes('more than one result')) {
+        // bw matches item names by keyword ("Moji Admin" also finds "MongoDB Moji ... admin"); accept one exact name.
+        const exact = await this.exactName(item, session, signal)
+        if (exact) return exact
+        throw new UserFacingError('multiple items match, use the item id')
+      }
       if (err.includes('not found')) throw new UserFacingError('item not found')
       if (err.includes('vault is locked')) {
         if (this.sessionKey === session) this.sessionKey = ''
@@ -154,6 +159,16 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
       return value
     } catch { throw new UserFacingError('unexpected bw output') }
+  }
+
+  private async exactName(item: string, session: string, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
+    try {
+      const r = await this.run(['list', 'items', '--search', item], session, {}, signal)
+      if (r.code !== 0) return undefined
+      const items: unknown = JSON.parse(r.stdout)
+      const exact = Array.isArray(items) ? items.filter(i => i && typeof i === 'object' && i.name === item && !i.deletedDate) : []
+      return exact.length === 1 ? exact[0] : undefined
+    } catch { return undefined }
   }
 
   /** Protected discovery only: return scoped setup metadata, never note contents or token values. */

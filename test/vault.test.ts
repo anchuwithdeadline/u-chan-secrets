@@ -69,7 +69,13 @@ it('falls back to the cache when sync fails', async () => {
     const v2 = await unlocked(ok(JSON.stringify({ login: { username: 'u', password: 'p', totp: null } })))
     expect(await v2.getLogin('item')).toEqual({ username: 'u', password: 'p' })
   })
-  it('maps multiple results', async () => {
+  it('picks the one item whose name matches exactly when bw search finds several', async () => {
+  const items = [{ name: 'MongoDB Moji - admin', login: { username: 'db', password: 'x' } }, { name: 'Moji Admin', login: { username: 'me@x', password: 'p' } }, { name: 'Moji Admin', deletedDate: '2026-01-01', login: { username: 'old@x', password: 'o' } }]
+  const v = await unlocked(async a => a[0] === 'get' ? { code: 1, stdout: '', stderr: 'More than one result was found.' } : a[0] === 'list' ? { code: 0, stdout: JSON.stringify(items), stderr: '' } : { code: 0, stdout: '', stderr: '' })
+  expect(await v.getLogin('Moji Admin')).toEqual({ username: 'me@x', password: 'p' })
+  expect(await msg(v.getLogin('Moji'))).toBe('multiple items match, use the item id')
+})
+it('maps multiple results', async () => {
     const v = (await unlocked(fail('More than one result was found.')))
     expect(await msg(v.getLogin('i'))).toBe('multiple items match, use the item id')
   })
