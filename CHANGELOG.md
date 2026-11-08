@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 5.1.1
 
+**Upgrade:** `u-chan update` from 5.1.0 (no reinstall: native helpers and dependencies unchanged). The service restart relocks the vault this one time; later updates keep it unlocked.
+
+- A coordinated update no longer relocks an unlocked vault. The old service hands its session to the new boot through a one-shot file in the admin-only transaction directory (expires after two minutes, deleted on read, adopted only inside that transaction). Reinstall, reboot, crash, idle timeout, and explicit lock behave as before. The update to this version still relocks once, because the installed service predates the handoff.
+- `u-chan start` checks for a published update and applies it when it is compatible; one that needs a trusted reinstall is reported and skipped.
 - `u-chan setup --apply --replace-existing` now replaces Codex and Claude Code registrations that still carry the V1 `U_CHAN_BW` desktop environment, which the thin client ignores, instead of reporting them as custom (`manual`). Its value is never reported.
+- Resolve a Bitwarden item by exact name when `bw` search matches several.
+- Sync Bitwarden before reading login credentials, so recently edited items are current.
+- Wait for page scripts before filling a login form, and keep the real failure reason.
+- Find the CDP port owner when Windows omits the listener; accept quoted `--cdp-endpoint` arguments in the Playwright check.
 - Add a tag-triggered release workflow that tests on Windows/macOS and publishes to npm with provenance (trusted publishing or `NPM_TOKEN`).
 
 ## 5.1.0

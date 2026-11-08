@@ -73,10 +73,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     if(result.ok)d.out(result.message);else d.err(result.message)
     return result.ok?0:1
   }
+  const update=(checkOnly:boolean,quiet=false)=>d.update?d.update(checkOnly):runCoordinatedUpdate({checkOnly},{client:d.connect({timeoutMs:180000}),desktop:desktopUpdateAdapter(d.env),progress:(phase,seconds)=>{if(!quiet)d.out(`Update: ${phase} (${seconds}s)`)}})
   if(argv[0]==='update'){
     if(argv.length>2||(argv.length===2&&argv[1]!=='--check')){d.err('usage: u-chan update [--check]');return 1}
-    const checkOnly=argv[1]==='--check'
-    const result=d.update?await d.update(checkOnly):await runCoordinatedUpdate({checkOnly},{client:d.connect({timeoutMs:180000}),desktop:desktopUpdateAdapter(d.env),progress:(phase,seconds)=>d.out(`Update: ${phase} (${seconds}s)`)})
+    const result=await update(argv[1]==='--check')
     if(result.ok)d.out(result.message);else d.err(result.message)
     return result.ok?0:1
   }
@@ -169,6 +169,13 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   if (cmd === 'start' && arg === undefined) {
     // Daily routine: dedicated browser, vault unlock through the protected prompt, then a doctor summary.
     if (d.platform !== 'win32') { d.err('u-chan start supports Windows only; start the browser and run u-chan unlock manually.'); return 1 }
+    // Apply a published compatible update first; an update restart keeps the vault unlocked.
+    let plan: { compatible?: boolean; reason?: string | null; decision?: string; desktopDecision?: string } | undefined
+    try { const r = await update(true, true); plan = r.ok ? JSON.parse(r.message) : undefined } catch { plan = undefined }
+    if (plan && (plan.decision === 'update_required' || plan.desktopDecision === 'update_required')) {
+      if (!plan.compatible) d.err(`Update: available but ${plan.reason ?? 'incompatible'}; a trusted reinstall is required.`)
+      else { const r = await update(false); if (r.ok) d.out('Update: installed.'); else d.err('Update: ' + r.message) }
+    }
     const cfg = loadConfig(d.env, d.platform)
     if (await chromeState(cfg.cdpEndpoint) === 'pass') d.out('Browser: ready.')
     else if (await bounded(() => startBrowser(cfg.browser, d.env, false), false, 25000)) d.out('Browser: started.')

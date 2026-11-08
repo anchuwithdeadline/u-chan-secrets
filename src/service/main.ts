@@ -24,6 +24,7 @@ import { UpdateGate } from './update/gate.js'
 import { readBootIdentity } from './update/files.js'
 import { productionJournal, secureUpdateDirectory, verifyUpdateActive, launchUpdateWorker } from './update/native.js'
 import { boundedRegistryFetch } from './update/network.js'
+import { takeSessionHandoff, writeSessionHandoff } from './update/session-handoff.js'
 import type { CoordinatedUpdateApi } from './update/protocol.js'
 import { diagnoseService } from './doctor.js'
 import { GrantCoordinator } from './grants.js'
@@ -104,9 +105,11 @@ export async function runService(
       currentVersion = safeVersion(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version) ?? 'unknown'
     } catch {}
 
-    const updateBoot=await readBootIdentity(cfg.programDir), updateGate=new UpdateGate()
-    const coordinator=new UpdateCoordinator({home:cfg.home,boot:updateBoot,platform,verifier:new NpmPackageVerifier({fetcher:boundedRegistryFetch}),journal:productionJournal(cfg.home),gate:updateGate,
-      secure:secureUpdateDirectory,verifyActive:path=>verifyUpdateActive(cfg.home,path),launch:job=>launchUpdateWorker(cfg.home,job),audit:result=>audit.record({action:'update',domain:'',result})})
+    const updateBoot=await readBootIdentity(cfg.programDir), updateGate=new UpdateGate(), journal=productionJournal(cfg.home)
+    const handedOff=await takeSessionHandoff(journal)
+    if(handedOff)vault.adoptSession(handedOff)
+    const coordinator=new UpdateCoordinator({home:cfg.home,boot:updateBoot,platform,verifier:new NpmPackageVerifier({fetcher:boundedRegistryFetch}),journal,gate:updateGate,
+      secure:secureUpdateDirectory,verifyActive:path=>verifyUpdateActive(cfg.home,path),launch:job=>launchUpdateWorker(cfg.home,job,()=>{void writeSessionHandoff(journal,job.id,vault.exportSession()).catch(()=>{}).finally(()=>process.exit(0))}),audit:result=>audit.record({action:'update',domain:'',result})})
     await coordinator.refreshGate()
     const updater={update:async()=>({ok:false,message:'Use a coordinated-update desktop client; legacy service-only update is disabled'})}
 

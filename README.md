@@ -136,13 +136,13 @@ Pick the path for the version you have now (`u-chan doctor` reports both CLI and
 | V2 data | See [backup and rollback](#backup-and-rollback). |
 | V1 data | See [older versions](#older-versions). |
 
-Reinstall preserves the existing owner, settings, grants, and vault data. Every service restart clears the in-memory vault unlock: enter the master password only in `u-chan unlock`'s protected prompt. **Do not uninstall as an upgrade shortcut: uninstall deletes the data.**
+Reinstall preserves the existing owner, settings, grants, and vault data. Every service restart except a coordinated update clears the in-memory vault unlock: enter the master password only in `u-chan unlock`'s protected prompt. **Do not uninstall as an upgrade shortcut: uninstall deletes the data.**
 
 ### Coordinated updates
 
 Run `u-chan update --check` for a read-only plan, then `u-chan update` from a normal desktop terminal. The service and desktop independently verify the same signed registry artifact. Compatibility checks run before either installation changes. Windows application supports unchanged native helpers, dependency declarations, and a compatible Node runtime. macOS application is currently unsupported; planning remains available. Services without `coordinated_update` require a matching trusted desktop/service bootstrap; there is no legacy service-only fallback.
 
-The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. A service restart clears its in-memory unlock; enter any subsequent password only through `u-chan unlock`'s protected prompt. Update never unlocks automatically or launches a browser. Restart existing AI sessions when the final result requests it.
+The command reports phases and elapsed time. It stages both components before restarting the service, waits for authenticated readiness from the target boot, then installs the desktop package with npm scripts disabled. A desktop-only change does not restart or relock the service. An unlocked vault stays unlocked across the update restart: the old service leaves its session in the admin-only transaction directory for at most two minutes, and the new boot (or a rollback to the source) reads and deletes it. A locked vault stays locked, an idle timeout still applies, and reinstall, reboot, or crash still locks. Update never prompts for a password or launches a browser. `u-chan start` checks for a published update and applies it when compatible; one that needs a trusted reinstall is only reported. Restart existing AI sessions when the final result requests it.
 
 Interrupted terminal? Rerun `u-chan update` to observe the protected transaction and resume desktop work. A duplicate desktop invocation reports busy. A 15-minute observation timeout does not cancel an active service transaction. Unknown artifact identity, same-version local changes, and builds ahead of the published release require explicit trusted reconciliation, not an automatic downgrade. A completed npm install with a missing receipt can recover only from its matching desktop checkpoint and a fresh exact artifact verification.
 
@@ -176,7 +176,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 
 | Command | Purpose |
 |---|---|
-| `start` | Windows daily start: dedicated browser, protected unlock if locked, doctor report |
+| `start` | Windows daily start: apply a compatible published update, dedicated browser, protected unlock if locked, doctor report |
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
 | `setup [--client codex\|claude\|all] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex and/or Claude Code/browser setup; without `--client`, configures every client CLI found on PATH |
 | `allow <domain> --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
