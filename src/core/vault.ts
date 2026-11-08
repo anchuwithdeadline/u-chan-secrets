@@ -93,6 +93,20 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
     return true
   }
 
+  /** Current session for an update restart handoff; never leaves the service except to its protected update directory. */
+  exportSession(): { key: string; lastUse: number } | null {
+    const key = this.session()
+    return key ? { key, lastUse: this.lastUse } : null
+  }
+
+  /** Adopts a handed-off session; status() drops it if bw no longer accepts it. */
+  adoptSession(s: { key: string; lastUse: number }): void {
+    if (!s.key || this.now() - s.lastUse > this.idleLockMs) return
+    this.sessionKey = s.key
+    this.lastUse = s.lastUse
+    this.authorizationVersion++
+  }
+
   verify(password: string): Promise<boolean> {
     return this.unlock(password)
   }
