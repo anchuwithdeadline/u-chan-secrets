@@ -51,3 +51,12 @@ it('refuses a real unrelated listener without creating a profile or launching an
     expect(server.listening).toBe(true)
   } finally { server.close(); await rm(home, { recursive: true, force: true }) }
 }, 20000)
+
+it('finds the owner through an accepted connection when the TCP table omits the listener', async () => {
+  if (process.platform !== 'win32') return
+  const scriptPath = fileURLToPath(new URL('../../scripts/desktop-browser.ps1', import.meta.url)).replaceAll("'", "''")
+  // The shadow hides every listener, as Windows sometimes does; connection lookups still reach the real cmdlet.
+  const script = `$ErrorActionPreference='Stop';. '${scriptPath}';function Get-NetTCPConnection { if ($PSBoundParameters.ContainsKey('State')) { return }; NetTCPIP\\Get-NetTCPConnection @PSBoundParameters };$server=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$server.Start();$port=$server.LocalEndpoint.Port;$found=@(Get-UChanListeners '127.0.0.1' $port);$server.Stop();$none=@(Get-UChanListeners '127.0.0.1' $port);[pscustomobject]@{found=$found.Count;self=($found[0].OwningProcess -eq $PID);address=[string]$found[0].LocalAddress;none=$none.Count}|ConvertTo-Json -Compress`
+  const result = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 15000, windowsHide: true }).catch(error => { throw new Error(String(error.stderr)) })
+  expect(JSON.parse(result.stdout)).toEqual({ found: 1, self: true, address: '127.0.0.1', none: 0 })
+}, 20000)

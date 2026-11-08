@@ -86,9 +86,22 @@ function Get-UChanOwnerBrowserConfiguration([string]$OwnerSid, [string]$Browser)
     return Get-UChanBrowserConfiguration $Browser $desktopHome $OwnerSid $local
 }
 
+# Windows can leave a live listener out of the TCP table for long stretches (seen on build 26300 while CDP answered).
+# Then connect once and read the server side of that connection: its owner is the process that accepted it.
+function Get-UChanListeners([string]$HostName, [int]$Port) {
+    $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object LocalPort -eq $Port)
+    if ($listeners.Count) { return $listeners }
+    $client = [Net.Sockets.TcpClient]::new()
+    try {
+        try { $client.Connect($HostName, $Port) } catch { return @() }
+        $clientPort = ([Net.IPEndPoint]$client.Client.LocalEndPoint).Port
+        return @(Get-NetTCPConnection -LocalPort $Port -RemotePort $clientPort -ErrorAction SilentlyContinue)
+    } finally { $client.Dispose() }
+}
+
 function Get-UChanBrowserState($Configuration) {
     try {
-        $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object LocalPort -eq $Configuration.Endpoint.Port)
+        $listeners = @(Get-UChanListeners $Configuration.Endpoint.DnsSafeHost $Configuration.Endpoint.Port)
         if ($listeners.Count -eq 0) { return 'missing' }
         $owners = @($listeners.OwningProcess | Select-Object -Unique)
         if ($owners.Count -ne 1) { return 'fail' }
