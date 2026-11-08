@@ -62,7 +62,7 @@ export class IsolatedLogin implements LoginRunner {
       }
       const outcome = await abortable(fillLogin(page, entry, getCreds, { timeoutMs: this.o.timeoutMs, hostCheck }), signal, stop)
       if (outcome.status === 'failed') return network.wasBlocked()
-        ? { status: 'failed', code: 'unsupported_form', reason: 'an unapproved private-browser request was blocked; session was not transferred' }
+        ? { status: 'failed', code: 'unsupported_form', reason: `${outcome.reason}; an unapproved private-browser request was also blocked; session was not transferred` }
         : { ...outcome, code: outcome.code ?? 'unsupported_form' }
       checkHost()
       if (entry.success) {

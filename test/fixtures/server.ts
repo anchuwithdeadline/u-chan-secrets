@@ -13,6 +13,8 @@ const stepEmail = (action: string) => `<form method="post" action="${action}"><i
 const stepPassword = (email: string) =>
   `<form method="post" action="/two-step"><input type="hidden" name="email" value="${esc(email)}"><input type="password" name="password"><button type="submit">Login</button></form>`
 const otpLogin = singleForm.replace('/single', '/otp')
+// Server-rendered form whose app script loads late: a native submit before it runs posts to /hydrating and gets the form back.
+const hydratingForm = singleForm.replace('/single', '/hydrating') + '<script async src="/hydrate.js"></script>'
 // Same shape as authenticationtest.com/totpChallenge: 2FA field inside the password form.
 const otpInline = `<form method="post" action="/otp-inline"><input type="email" name="email"><input type="password" name="password"><input type="text" name="totpmfa"><input type="submit" value="Log In"></form>`
 const otpForm =`<form method="post" action="/otp-verify"><input name="otp" autocomplete="one-time-code" inputmode="numeric"><button type="submit">Verify</button></form>`
@@ -26,6 +28,7 @@ export async function startFixture(): Promise<Fixture> {
   const server = createServer((req, res) => {
     if (req.headers.host?.startsWith('localhost:')) foreignHostHits++
     const url = req.url ?? '/'
+    if (url === '/hydrate.js') { setTimeout(() => { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end("document.querySelector('form').action='/single'") }, 600); return }
     if (url.startsWith('/off-host-canary')) { canaryHits++; res.writeHead(200); res.end('canary'); return }
     const send = (html: string) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(page(html)) }
     const redirect = (to: string) => { res.writeHead(302, { location: to, ...(['/dash','/protected-dash'].includes(to) ? { 'set-cookie': 'sid=1; Path=/' } : {}) }); res.end() }
@@ -38,6 +41,7 @@ export async function startFixture(): Promise<Fixture> {
       req.on('end', () => {
         const form = new URLSearchParams(raw)
         const good = form.get('email') === 'u@x' && form.get('password') === 'pw'
+        if (url === '/hydrating') return send(hydratingForm)
         if (url === '/single') return good ? redirect('/dash') : send(singleForm)
         if (url === '/verified-single') return good ? redirect('/protected-dash') : send(singleForm.replaceAll('/single','/verified-single'))
         if (url === '/two-step') {
@@ -62,6 +66,7 @@ export async function startFixture(): Promise<Fixture> {
     }
     switch (url) {
       case '/single': return send(singleForm)
+      case '/hydrating': return send(hydratingForm)
       case '/verified-single': return send(singleForm.replaceAll('/single','/verified-single'))
       case '/protected-dash': return (req.headers.cookie ?? '').includes('sid=1') ? send('<h1 id="account">Authenticated fixture account</h1>') : redirect('/single')
       case '/off-host-action': return send(singleForm.replace('action="/single"', `action="http://localhost:${port}/single"`))
