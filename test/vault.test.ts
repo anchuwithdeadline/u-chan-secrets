@@ -49,6 +49,16 @@ describe('BitwardenVault.status', () => {
 })
 
 describe('BitwardenVault.getLogin', () => {
+it('syncs before reading so an edited item is not served from the stale cache', async () => {
+  const calls: string[] = []
+  const v = await unlocked(async a => { calls.push(a.join(' ')); return { code: 0, stdout: JSON.stringify({ login: { username: 'new@x', password: 'p' } }), stderr: '' } })
+  expect(await v.getLogin('item')).toEqual({ username: 'new@x', password: 'p' })
+  expect(calls).toEqual(['sync', 'get item item'])
+})
+it('falls back to the cache when sync fails', async () => {
+  const v = await unlocked(async a => a[0] === 'sync' ? { code: 1, stdout: '', stderr: 'offline' } : { code: 0, stdout: JSON.stringify({ login: { username: 'u', password: 'p' } }), stderr: '' })
+  expect(await v.getLogin('item')).toEqual({ username: 'u', password: 'p' })
+})
   it('returns credentials', async () => {
     const v = await unlocked(ok(JSON.stringify({ login: { username: 'u@x', password: 'p' } })))
     expect(await v.getLogin('item')).toEqual({ username: 'u@x', password: 'p' })
@@ -151,7 +161,7 @@ describe('BitwardenVault session', () => {
   it('every bw call uses the service data dir', async () => {
     const { v, calls } = setup()
     await v.unlock('pw'); await v.getLogin('x'); await v.status(); await v.lock()
-    expect(calls.length).toBe(4)
+    expect(calls.length).toBe(5) // unlock, sync, get item, status, lock
     for (const c of calls) expect(c.env.BITWARDENCLI_APPDATA_DIR).toBe(dataDir)
   })
   it('wrong password', async () => {
@@ -232,6 +242,7 @@ describe('BitwardenVault session', () => {
     const sessions: (string | undefined)[] = []
     const exec: Exec = async (args, env) => {
       if (args[0] === 'unlock') return { code: 0, stdout: `K${++n}`, stderr: '' }
+      if (args[0] === 'sync') return { code: 0, stdout: '', stderr: '' }
       sessions.push(env.BW_SESSION)
       if (sessions.length === 1) { await gate; return { code: 1, stdout: '', stderr: 'Vault is locked.' } }
       return { code: 0, stdout: JSON.stringify({ login: { username: 'u', password: 'p' } }), stderr: '' }
