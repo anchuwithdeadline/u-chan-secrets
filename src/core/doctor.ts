@@ -35,9 +35,9 @@ export function checkPlaywrightCdp(procs: Proc[], selfPid: number, expectedEndpo
   if (expectedEndpoint !== undefined) {
     const expected = safeCdpOrigin(expectedEndpoint)
     return expected && ours.every(p => {
-      const matches = [...p.cmd.matchAll(/(?:^|\s)--cdp-endpoint(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s]+))/g)]
-      const match = matches[0]
-      return matches.length === 1 && match && safeCdpOrigin(match[1] ?? match[2] ?? match[3]) === expected
+      // Windows npx chains quote each arg ("--cdp-endpoint" or cmd.exe's ^"--cdp-endpoint^"); strip quotes first.
+      const matches = [...p.cmd.replace(/\^?["']/g, '').matchAll(/(?:^|\s)--cdp-endpoint(?:=|\s+)(\S+)/g)]
+      return matches.length === 1 && safeCdpOrigin(matches[0][1]) === expected
     }) ? 'ok' : 'missing'
   }
   return ours.some((p) => p.cmd.includes('--cdp-endpoint')) ? 'ok' : 'missing'

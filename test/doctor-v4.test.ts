@@ -47,3 +47,12 @@ it('compares the actual process CDP value instead of accepting any endpoint flag
   procs[2].cmd += ' --cdp-endpoint=http://127.0.0.1:9223'
   expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('missing')
 })
+it('accepts the quoted args of a Windows npx process chain', () => {
+  const procs = [{ pid: 1, ppid: 0, name: 'claude.exe', cmd: 'claude' }, { pid: 2, ppid: 1, name: 'node.exe', cmd: 'u-chan' },
+    { pid: 3, ppid: 1, name: 'cmd.exe', cmd: 'C:\\Windows\\system32\\cmd.exe /d /s /c "npx ^"@playwright/mcp@latest^" ^"--cdp-endpoint^" ^"http://127.0.0.1:9222^""' },
+    { pid: 4, ppid: 3, name: 'node.exe', cmd: '"C:\\Program Files\\nodejs\\node.exe" "npx-cli.js" "@playwright/mcp@latest" "--cdp-endpoint" "http://127.0.0.1:9222"' },
+    { pid: 5, ppid: 4, name: 'node.exe', cmd: '"node" "C:\\npx\\node_modules\\@playwright\\mcp\\cli.js" --cdp-endpoint http://127.0.0.1:9222' }]
+  expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('ok')
+  procs[3].cmd = procs[3].cmd.replace('9222', '9223')
+  expect(checkPlaywrightCdp(procs, 2, endpoint)).toBe('missing')
+})
