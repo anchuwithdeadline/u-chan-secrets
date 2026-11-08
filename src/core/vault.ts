@@ -221,6 +221,10 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
   }
 
   async getLogin(item: string, signal?: AbortSignal): Promise<Credentials> {
+    // bw reads its local cache, which keeps an item's old username/password after it is edited
+    // elsewhere. Sync first; when offline or failing, fall back to the cache as before.
+    const session = this.session()
+    if (session) await this.run(['sync'], session, {}, signal).catch(() => undefined)
     const data = await this.getItem(item, signal)
     let login: { username?: unknown; password?: unknown; totp?: unknown } | undefined
     login = data.login as typeof login
