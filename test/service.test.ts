@@ -264,3 +264,12 @@ describe('requestAllow without an item', () => {
     expect((await store.get('moji.example'))?.item).toBe('Moji Admin')
   })
 })
+describe('requestAllow without an item validates first', () => {
+  it('invalid login URL fails before listing the vault', async () => {
+    const listItems = vi.fn(async () => [{ id: 'id-1', label: 'A' }])
+    const s = new CoreService({ vault: { ...vault, listItems }, allowlist: store, approver: { ask: approve, pick: async () => 0 }, audit: { record: async (e) => void events.push(e), readTail: async () => [] }, login: { run: async () => ({ status: 'logged_in' as const }) }, mode: async () => mode })
+    expect((await s.requestAllow('moji.example', 'http://moji.example/admin', '')).message).toBe('loginUrl must use https')
+    expect((await s.requestAllow('moji.example', 'https://moji.example/admin', '', undefined, { success: { url: 'https://evil.example/' } })).message).toBe('success URL must use an approved HTTPS host')
+    expect(listItems).not.toHaveBeenCalled()
+  })
+})

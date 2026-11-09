@@ -66,16 +66,17 @@ export class IpcClient implements CoreApi, ControlApi, DiscordApi, CoordinatedUp
     return { ok: false, code: 'unsupported_service', message: 'verified login requires a reachable V5 service; update the installed service before login' }
   }
   async requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult> {
-    if (options !== undefined) {
-      if (!validOptions(options)) return { ok: false, code: 'invalid_policy', message: 'invalid approval policy or success condition' }
+    if (options !== undefined && !validOptions(options)) return { ok: false, code: 'invalid_policy', message: 'invalid approval policy or success condition' }
+    if (options !== undefined || item === '') {
       const r = await this.capabilities()
       let features: unknown
       try { const cap = JSON.parse(r.message); if (r.ok && cap.protocol === 3) features = cap.features } catch {}
-      if (!Array.isArray(features) || (options.grant && !features.includes('grants')) || (options.success && !features.includes('success_conditions'))) {
+      if (!Array.isArray(features) || (options?.grant && !features.includes('grants')) || (options?.success && !features.includes('success_conditions')) || (item === '' && !features.includes('item_picker'))) {
         return { ok: false, code: 'unsupported_service', message: 'installed service does not support the requested V3 approval; update the service' }
       }
     }
-    return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) })
+    // Item-less requests open the picker and then the approval window (120 s each).
+    return this.call('request_allow', { domain, loginUrl, item, ...(selectors ? { selectors } : {}), ...(options !== undefined ? { options } : {}) }, item === '' ? Math.max(this.timeoutMs, 300000) : this.timeoutMs)
   }
   capabilities() { return this.call('capabilities') }
   private async extensionCall(feature:'agent_unlock'|'github_broker',method:Method,params:Record<string,unknown>={}):Promise<ToolResult>{

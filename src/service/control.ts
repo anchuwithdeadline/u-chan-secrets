@@ -39,7 +39,7 @@ export class ControlService implements ControlApi {
   private agentUnlockAfter = -Infinity
   constructor(private readonly d: Deps) { this.grants = d.grants ?? new GrantCoordinator(d.allowlist) }
   async capabilities(): Promise<ToolResult> {
-    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer', 'agent_unlock', ...(this.d.githubSupported ? ['github_broker'] : []), ...(this.d.discordSupported ? ['discord_broker', 'discord_discovery'] : []), ...(this.d.updateBoot?['coordinated_update']:[])], serviceVersion: this.d.serviceVersion, ...(this.d.updateBoot?{release:this.d.updateBoot}:{}) }) }
+    return { ok: true, message: JSON.stringify({ protocol: 3, features: ['doctor', 'success_conditions', 'grants', 'verified_session_transfer', 'agent_unlock', 'item_picker', ...(this.d.githubSupported ? ['github_broker'] : []), ...(this.d.discordSupported ? ['discord_broker', 'discord_discovery'] : []), ...(this.d.updateBoot?['coordinated_update']:[])], serviceVersion: this.d.serviceVersion, ...(this.d.updateBoot?{release:this.d.updateBoot}:{}) }) }
   }
   async diagnose(): Promise<ToolResult> {
     try { return { ok: true, message: JSON.stringify(await this.d.diagnose?.() ?? { assets: 'unknown', permissions: 'unknown', vault: 'unknown' }) } }

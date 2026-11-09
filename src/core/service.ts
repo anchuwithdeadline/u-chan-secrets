@@ -141,9 +141,9 @@ export class CoreService implements CoreApi {
       if (options !== undefined && !validOptions(options)) throw new UserFacingError('invalid approval policy or success condition', 'invalid_policy')
       const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
-      const chosen = clean(item) ? undefined : await this.pickItem(d, clean(loginUrl))
-      if (chosen === null) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
-      let entry = buildEntry(d, clean(loginUrl), chosen?.id ?? clean(item), existing)
+      const picking = !clean(item)
+      // Validate the URL (and success host below) before any vault listing or picker window.
+      let entry = buildEntry(d, clean(loginUrl), picking ? 'pending-pick' : clean(item), existing)
       const epoch = this.grants.epoch()
       const grant = options?.grant ?? { kind: 'permanent' }
       delete entry.expiresAt
@@ -155,6 +155,9 @@ export class CoreService implements CoreApi {
       if (sel) entry = { ...entry, selectors: sel }
       if (options?.success) entry = { ...entry, success: options.success }
       if (entry.success && 'url' in entry.success && !isHostAllowed(entry, entry.success.url)) throw new UserFacingError('success URL must use an approved HTTPS host', 'invalid_policy')
+      const chosen = picking ? await this.pickItem(d, entry.loginUrl) : undefined
+      if (chosen === null) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
+      if (chosen) entry = { ...entry, item: chosen.id }
       const approved = await this.deps.approver.ask('U-Chan Secrets', [
         'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,

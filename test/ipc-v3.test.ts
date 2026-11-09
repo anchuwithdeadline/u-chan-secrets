@@ -55,3 +55,23 @@ it('binds an Edge login request to Edge across real IPC', async () => {
   expect((await c.login('a.com')).ok).toBe(true)
   expect(received).toBe('edge')
 })
+it('refuses an item-less request when the service lacks the item picker', async () => {
+  let requested = false
+  const c = await client({ capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["grants"]}' }), requestAllow: async () => { requested = true; return { ok: true, message: 'approved' } } })
+  const r = await c.requestAllow('a.com', 'https://a.com/login', '')
+  expect(r.code).toBe('unsupported_service')
+  expect(requested).toBe(false)
+})
+it('gives an item-less request time for the picker and the approval window', async () => {
+  const c = await client({
+    capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["item_picker"]}' }),
+    requestAllow: async () => { await new Promise(r => setTimeout(r, 300)); return { ok: true, message: 'approved' } },
+  }, { timeoutMs: 100 })
+  expect(await c.requestAllow('a.com', 'https://a.com/login', '')).toEqual({ ok: true, message: 'approved' })
+  expect((await c.requestAllow('a.com', 'https://a.com/login', 'item')).ok).toBe(false)
+})
+it('the service advertises the item picker', async () => {
+  const { ControlService } = await import('../src/service/control.js')
+  const cap = JSON.parse((await new ControlService({ platform: 'win32' } as never).capabilities()).message)
+  expect(cap.features).toContain('item_picker')
+})
