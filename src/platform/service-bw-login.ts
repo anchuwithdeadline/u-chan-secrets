@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { defaultProgramData } from './windows/install.js'
 
 export type BwRun = (args: string[], opts: { interactive: boolean }) => Promise<{ code: number; stdout: string }>
-export interface BwLoginDeps { run: BwRun; interactive: boolean; manualCommand: string; out(line: string): void }
+export interface BwLoginDeps { run: BwRun; interactive: boolean; manualCommand: string; lockCommand: string; out(line: string): void }
 export type BwLoginOutcome = 'already' | 'logged_in' | 'skipped' | 'failed'
 
 const MAC_HOME = '/Library/Application Support/u-chan-secrets'
@@ -18,8 +18,8 @@ export async function ensureServiceBitwardenLogin(d: BwLoginDeps): Promise<BwLog
     let locked = false
     try { locked = (await d.run(['lock'], { interactive: false })).code === 0 } catch { /* reported below */ }
     if (!locked) {
-      d.out(`Bitwarden service lock failed; the printed session key may still work. Run the same commands with "lock" instead of "login":
-${d.manualCommand}`)
+      d.out(`Bitwarden service lock failed; the printed session key may still work. From this elevated terminal run:
+${d.lockCommand}`)
       return 'failed'
     }
     return 'logged_in'
@@ -48,25 +48,19 @@ export function serviceBwRunner(bwPath: string, dataDir: string, env: NodeJS.Pro
   })
 }
 
-export function serviceBwPaths(platform: NodeJS.Platform): { bwPath: string; dataDir: string; manualCommand: string } | null {
+export function serviceBwPaths(platform: NodeJS.Platform): { bwPath: string; dataDir: string; manualCommand: string; lockCommand: string } | null {
   if (platform === 'win32') {
     const pd = defaultProgramData()
-    return {
-      bwPath: join(pd, 'bin', 'bw.exe'),
-      dataDir: join(pd, 'bw-data'),
-      manualCommand: [
-        String.raw`$env:BITWARDENCLI_APPDATA_DIR = Join-Path $env:ProgramData 'u-chan-secrets\bw-data'`,
-        String.raw`Remove-Item Env:\BW_SESSION -ErrorAction SilentlyContinue`,
-        String.raw`& (Join-Path $env:ProgramData 'u-chan-secrets\bin\bw.exe') login`,
-      ].join('\n'),
-    }
+    const cmd = (verb: string) => [
+      String.raw`$env:BITWARDENCLI_APPDATA_DIR = Join-Path $env:ProgramData 'u-chan-secrets\bw-data'`,
+      String.raw`Remove-Item Env:\BW_SESSION -ErrorAction SilentlyContinue`,
+      String.raw`& (Join-Path $env:ProgramData 'u-chan-secrets\bin\bw.exe') ` + verb,
+    ].join('\n')
+    return { bwPath: join(pd, 'bin', 'bw.exe'), dataDir: join(pd, 'bw-data'), manualCommand: cmd('login'), lockCommand: cmd('lock') }
   }
   if (platform === 'darwin') {
-    return {
-      bwPath: `${MAC_HOME}/bin/bw`,
-      dataDir: `${MAC_HOME}/bw-data`,
-      manualCommand: `sudo env -u BW_SESSION BITWARDENCLI_APPDATA_DIR="${MAC_HOME}/bw-data" "${MAC_HOME}/bin/bw" login`,
-    }
+    const cmd = (verb: string) => `sudo env -u BW_SESSION BITWARDENCLI_APPDATA_DIR="${MAC_HOME}/bw-data" "${MAC_HOME}/bin/bw" ${verb}`
+    return { bwPath: `${MAC_HOME}/bin/bw`, dataDir: `${MAC_HOME}/bw-data`, manualCommand: cmd('login'), lockCommand: cmd('lock') }
   }
   return null
 }

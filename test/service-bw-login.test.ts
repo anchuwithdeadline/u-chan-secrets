@@ -6,7 +6,7 @@ vi.mock('node:child_process', () => cp)
 import { ensureServiceBitwardenLogin, serviceBwRunner, serviceBwPaths } from '../src/platform/service-bw-login.js'
 
 const status = (s: string) => ({ code: 0, stdout: JSON.stringify({ status: s }) })
-const deps = (run: any, extra: object = {}) => ({ run, interactive: true, manualCommand: 'MANUAL', out: vi.fn(), ...extra })
+const deps = (run: any, extra: object = {}) => ({ run, interactive: true, manualCommand: 'MANUAL', lockCommand: 'LOCKCMD', out: vi.fn(), ...extra })
 
 describe('ensureServiceBitwardenLogin', () => {
   it('does nothing when already logged in', async () => {
@@ -37,7 +37,7 @@ describe('ensureServiceBitwardenLogin', () => {
     expect(await ensureServiceBitwardenLogin(deps(run, { out }))).toBe('failed')
     const text = out.mock.calls.flat().join(' ')
     expect(text).toContain('lock failed')
-    expect(text).toContain('MANUAL')
+    expect(text).toContain('LOCKCMD')
     expect(text).not.toContain('login still needed')
   })
   it('fails with a lock warning when lock throws', async () => {
@@ -45,6 +45,7 @@ describe('ensureServiceBitwardenLogin', () => {
     expect(await ensureServiceBitwardenLogin(deps(run, { out }))).toBe('failed')
     const text = out.mock.calls.flat().join(' ')
     expect(text).toContain('lock failed')
+    expect(text).toContain('LOCKCMD')
     expect(text).not.toContain('login still needed')
   })
   it('fails and prints the manual command when bw is missing', async () => {
@@ -86,6 +87,11 @@ describe('serviceBwPaths', () => {
     expect(serviceBwPaths('darwin')?.bwPath).toBe('/Library/Application Support/u-chan-secrets/bin/bw')
     expect(serviceBwPaths('win32')?.manualCommand).not.toMatch(/[\x00-\x08]/)
     expect(serviceBwPaths('win32')?.manualCommand).toContain(String.raw`u-chan-secrets\bin\bw.exe`)
+    for (const pl of ['win32', 'darwin'] as const) {
+      const lc = serviceBwPaths(pl)!.lockCommand
+      expect(lc).toMatch(/ lock$/)
+      expect(lc).not.toContain(' login')
+    }
     expect(serviceBwPaths('linux')).toBeNull()
   })
 })

@@ -303,7 +303,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   else d.err(r.message)
   if (r.ok && cmd === 'install' && !d.install) {
     const p = serviceBwPaths(d.platform)
-    if (p) await ensureServiceBitwardenLogin({ run: serviceBwRunner(p.bwPath, p.dataDir, d.env), interactive: !!process.stdin.isTTY, manualCommand: p.manualCommand, out: d.out })
+    if (p) await ensureServiceBitwardenLogin({ run: serviceBwRunner(p.bwPath, p.dataDir, d.env), interactive: !!process.stdin.isTTY, manualCommand: p.manualCommand, lockCommand: p.lockCommand, out: d.out })
     printDoctor(await doctor())
   }
   return r.ok ? 0 : 1
