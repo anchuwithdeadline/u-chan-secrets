@@ -3,7 +3,7 @@ import type { AllowlistStore } from './allowlist.js'
 import { redact } from './redact.js'
 import { validOptions } from './policy.js'
 import { isHostAllowed } from './allowlist.js'
-import type { AllowOptions } from './types.js'
+import type { AllowOptions, ItemChoice, VaultStatus } from './types.js'
 import { GrantCoordinator } from '../service/grants.js'
 import { randomUUID } from 'node:crypto'
 import { abortable } from './abort.js'
@@ -37,6 +37,11 @@ function domainOf(input: string): string {
   const d = normalizeDomain(clean(input))
   if (!d) throw new UserFacingError('domain is empty or invalid')
   return d
+}
+
+const ITEM_REQUIRED = 'item is required on this platform; pass the Bitwarden item name or id'
+function requireUnlocked(status: VaultStatus): void {
+  if (status !== 'unlocked') throw new UserFacingError(status === 'locked' ? 'vault locked — run u-chan unlock' : status === 'unauthenticated' ? 'complete Bitwarden service login during setup' : 'Bitwarden is unavailable', status === 'locked' ? 'vault_locked' : status === 'unauthenticated' ? 'vault_unauthenticated' : 'vault_unavailable')
 }
 
 export class CoreService implements CoreApi {
@@ -92,7 +97,7 @@ export class CoreService implements CoreApi {
         catch (e) { if (signal.aborted) throw new UserFacingError('login timed out; retry if needed', 'login_timeout'); throw e }
       }
       const status = await within(this.deps.vault.status(signal))
-      if (status !== 'unlocked') throw new UserFacingError(status === 'locked' ? 'vault locked — run u-chan unlock' : status === 'unauthenticated' ? 'complete Bitwarden service login during setup' : 'Bitwarden is unavailable', status === 'locked' ? 'vault_locked' : status === 'unauthenticated' ? 'vault_unauthenticated' : 'vault_unavailable')
+      requireUnlocked(status)
       if (this.deps.login.preflight) await within(this.deps.login.preflight(signal, browser))
       signal.throwIfAborted()
       const reserved = await this.grants.reserve(entry.domain)
@@ -117,12 +122,28 @@ export class CoreService implements CoreApi {
     })
   }
 
+  /** Resolves an omitted item from the vault: one match is used, several go to the protected picker. Cancel → null. */
+  private async pickItem(domain: string, loginUrl: string): Promise<ItemChoice | null> {
+    const { vault, approver } = this.deps
+    if (!vault.listItems) throw new UserFacingError(ITEM_REQUIRED)
+    requireUnlocked(await vault.status())
+    const choices = await vault.listItems(loginUrl)
+    if (choices.length === 0) throw new UserFacingError(`no Bitwarden login item matches ${domain}; pass the item name or id`)
+    if (choices.length > 20) throw new UserFacingError(`too many Bitwarden items match ${domain}; pass the item id`)
+    if (choices.length === 1) return choices[0]
+    if (!approver.pick) throw new UserFacingError(ITEM_REQUIRED)
+    const index = await approver.pick('U-Chan Secrets', [`Domain: ${domain}`], choices.map(c => c.label))
+    return index === null ? null : choices[index] ?? null
+  }
+
   requestAllow(domain: string, loginUrl: string, item: string, selectors?: Selectors, options?: AllowOptions): Promise<ToolResult> {
     return this.guarded('request_allow', domain, [], async () => {
       if (options !== undefined && !validOptions(options)) throw new UserFacingError('invalid approval policy or success condition', 'invalid_policy')
       const d = domainOf(domain)
       const existing = await this.deps.allowlist.get(d)
-      let entry = buildEntry(d, clean(loginUrl), clean(item), existing)
+      const chosen = clean(item) ? undefined : await this.pickItem(d, clean(loginUrl))
+      if (chosen === null) return { result: { ok: false, message: 'denied' }, audit: 'denied' }
+      let entry = buildEntry(d, clean(loginUrl), chosen?.id ?? clean(item), existing)
       const epoch = this.grants.epoch()
       const grant = options?.grant ?? { kind: 'permanent' }
       delete entry.expiresAt
@@ -138,7 +159,7 @@ export class CoreService implements CoreApi {
         'Allow the AI to sign in?',
         `Domain: ${entry.domain}`,
         `Login URL: ${new URL(entry.loginUrl).href}`,
-        `Bitwarden item: ${entry.item}`,
+        `Bitwarden item: ${chosen?.label ?? entry.item}`,
         `Hosts: ${entry.hosts.join(', ')}`,
         ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
         ...(entry.success ? [`Success condition: ${JSON.stringify(entry.success)}`] : []),

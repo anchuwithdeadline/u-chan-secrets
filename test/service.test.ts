@@ -204,3 +204,63 @@ describe('revoke / list / status', () => {
     expect(await svc.status()).toEqual({ ok: false, message: 'vault: locked; mode: easy' })
   })
 })
+
+describe('requestAllow without an item', () => {
+  const url = 'https://moji.example/admin'
+  const build = (choices: { id: string; label: string }[] | Error, pick?: (t: string, l: string[], c: string[]) => Promise<number | null>) => {
+    const listItems = vi.fn(async () => { if (choices instanceof Error) throw choices; return choices })
+    const v = { ...vault, listItems }
+    const s = new CoreService({ vault: v, allowlist: store, approver: { ask: approve, ...(pick ? { pick } : {}) }, audit: { record: async (e) => void events.push(e), readTail: async () => [] }, login: { run: async () => ({ status: 'logged_in' as const }) }, mode: async () => mode })
+    return { s, listItems }
+  }
+  it('omitted item with one match stores its id', async () => {
+    const pick = vi.fn(async (_t: string, _l: string[], _c: string[]): Promise<number | null> => 0)
+    const { s, listItems } = build([{ id: 'id-1', label: 'Moji Admin — me@x' }], pick)
+    expect(await s.requestAllow('moji.example', url, '')).toEqual({ ok: true, message: 'approved' })
+    expect(listItems).toHaveBeenCalledWith(url)
+    expect(pick).not.toHaveBeenCalled()
+    expect((await store.get('moji.example'))?.item).toBe('id-1')
+    expect(approve.mock.calls[0][1]).toContain('Bitwarden item: Moji Admin — me@x')
+  })
+  it('omitted item with several matches uses the picked id', async () => {
+    const pick = vi.fn(async (_t: string, _l: string[], _c: string[]): Promise<number | null> => 1)
+    const { s } = build([{ id: 'id-1', label: 'A' }, { id: 'id-2', label: 'B' }], pick)
+    expect((await s.requestAllow('moji.example', url, '')).ok).toBe(true)
+    expect((await store.get('moji.example'))?.item).toBe('id-2')
+    expect(pick.mock.calls[0][2]).toEqual(['A', 'B'])
+    expect(pick.mock.calls[0][1].join('\n')).toContain('moji.example')
+  })
+  it('cancelled pick is denied without approval prompt', async () => {
+    const { s } = build([{ id: 'id-1', label: 'A' }, { id: 'id-2', label: 'B' }], async () => null)
+    expect(await s.requestAllow('moji.example', url, '')).toEqual({ ok: false, message: 'denied' })
+    expect(approve).not.toHaveBeenCalled()
+    expect(await store.get('moji.example')).toBeUndefined()
+    expect(events.at(-1)).toEqual({ action: 'request_allow', domain: 'moji.example', result: 'denied' })
+  })
+  it('omitted item with no match', async () => {
+    const { s } = build([], async () => 0)
+    expect(await s.requestAllow('moji.example', url, '')).toEqual({ ok: false, message: 'no Bitwarden login item matches moji.example; pass the item name or id' })
+  })
+  it('omitted item with more than 20 matches', async () => {
+    const many = Array.from({ length: 21 }, (_, i) => ({ id: 'id-' + i, label: 'L' + i }))
+    const { s } = build(many, async () => 0)
+    expect(await s.requestAllow('moji.example', url, '')).toEqual({ ok: false, message: 'too many Bitwarden items match moji.example; pass the item id' })
+  })
+  it('omitted item without pick support', async () => {
+    const { s } = build([{ id: 'id-1', label: 'A' }, { id: 'id-2', label: 'B' }])
+    expect(await s.requestAllow('moji.example', url, '')).toEqual({ ok: false, message: 'item is required on this platform; pass the Bitwarden item name or id' })
+  })
+  it('omitted item with locked vault fails with vault_locked', async () => {
+    vaultStatus = 'locked'
+    const { s, listItems } = build([{ id: 'id-1', label: 'A' }], async () => 0)
+    const r = await s.requestAllow('moji.example', url, '')
+    expect(r.code).toBe('vault_locked')
+    expect(listItems).not.toHaveBeenCalled()
+  })
+  it('explicit item never lists', async () => {
+    const { s, listItems } = build([{ id: 'id-1', label: 'A' }], async () => 0)
+    expect((await s.requestAllow('moji.example', url, 'Moji Admin')).ok).toBe(true)
+    expect(listItems).not.toHaveBeenCalled()
+    expect((await store.get('moji.example'))?.item).toBe('Moji Admin')
+  })
+})
