@@ -278,3 +278,37 @@ describe('BitwardenVault session', () => {
     spy.mockRestore()
   })
 })
+
+describe('BitwardenVault.listItems', () => {
+  const items = [
+    { id: 'a', type: 1, name: 'Moji Admin', login: { username: 'me@x', password: 'S3CRET-PW', totp: 'T0TP-SEED' }, notes: 'N0TES' },
+    { id: 'b', type: 1, name: 'Old', deletedDate: '2026-01-01', login: { username: 'old', password: 'o' } },
+    { id: 'c', type: 2, name: 'Note' },
+  ]
+  it('listItems runs bw list items --url', async () => {
+    const seen: string[][] = []
+    const v = await unlocked(async a => { seen.push(a); return { code: 0, stdout: '[]', stderr: '' } })
+    await v.listItems('https://moji.example/admin')
+    expect(seen.at(-1)).toEqual(['list', 'items', '--url', 'https://moji.example/admin'])
+  })
+  it('listItems skips deleted and non-login items', async () => {
+    const v = await unlocked(ok(JSON.stringify(items)))
+    expect(await v.listItems('https://moji.example/admin')).toEqual([{ id: 'a', label: 'Moji Admin — me@x' }])
+  })
+  it('listItems cleans and caps labels', async () => {
+    const v = await unlocked(ok(JSON.stringify([{ id: 'a', type: 1, name: 'A\nB' + 'x'.repeat(200), login: {} }])))
+    const [choice] = await v.listItems('https://moji.example/admin')
+    expect(choice.label).not.toContain('\n')
+    expect(choice.label.startsWith('ABx')).toBe(true)
+    expect(choice.label.length).toBeLessThanOrEqual(120)
+  })
+  it('listItems never returns secrets', async () => {
+    const v = await unlocked(ok(JSON.stringify(items)))
+    const text = JSON.stringify(await v.listItems('https://moji.example/admin'))
+    for (const secret of ['S3CRET-PW', 'T0TP-SEED', 'N0TES']) expect(text).not.toContain(secret)
+  })
+  it('listItems with locked vault throws the unlock message', async () => {
+    const v = new BitwardenVault({ dataDir, idleLockMs: 1000, exec: ok('{"status":"locked"}') })
+    expect(await msg(v.listItems('https://moji.example/admin'))).toBe('vault locked — run u-chan unlock')
+  })
+})

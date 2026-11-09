@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
-import { UserFacingError, type Credentials, type MasterPasswordChecker, type VaultClient, type VaultStatus } from './types.js'
+import { UserFacingError, type Credentials, type ItemChoice, type MasterPasswordChecker, type VaultClient, type VaultStatus } from './types.js'
 import { redact } from './redact.js'
+import { clean } from './allowlist.js'
 import { snowflake, tokenFieldSchema, type TokenField } from '../discord/policy.js'
 
 export type Exec = (args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>
@@ -173,6 +174,31 @@ export class BitwardenVault implements VaultClient, MasterPasswordChecker {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
       return value
     } catch { throw new UserFacingError('unexpected bw output') }
+  }
+
+  /** Login items whose URIs match `url`, as id plus a display label. Secrets never leave this method. */
+  async listItems(url: string, signal?: AbortSignal): Promise<ItemChoice[]> {
+    const session = this.session()
+    if (!session) throw new UserFacingError((await this.status(signal)) === 'unauthenticated' ? LOGIN_MSG : UNLOCK_MSG)
+    let r: ExecResult
+    try { r = await this.run(['list', 'items', '--url', url], session, {}, signal) } catch { throw new UserFacingError('bw failed') }
+    if (r.code !== 0) {
+      const err = r.stderr.toLowerCase()
+      if (err.includes('vault is locked')) {
+        if (this.sessionKey === session) this.sessionKey = ''
+        throw new UserFacingError(UNLOCK_MSG)
+      }
+      if (err.includes('you are not logged in')) throw new UserFacingError(LOGIN_MSG)
+      throw new UserFacingError(`bw failed (exit ${r.code})`)
+    }
+    let items: unknown
+    try { items = JSON.parse(r.stdout) } catch { throw new UserFacingError('unexpected bw output') }
+    if (!Array.isArray(items)) throw new UserFacingError('unexpected bw output')
+    return items.flatMap(i => {
+      if (!i || typeof i !== 'object' || i.type !== 1 || i.deletedDate || typeof i.id !== 'string' || typeof i.name !== 'string') return []
+      const user = typeof i.login?.username === 'string' ? clean(i.login.username) : ''
+      return [{ id: i.id, label: (clean(i.name) + (user ? ' — ' + user : '')).slice(0, 120) }]
+    })
   }
 
   private async exactName(item: string, session: string, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {

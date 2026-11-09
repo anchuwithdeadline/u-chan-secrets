@@ -15,10 +15,12 @@ export interface AllowEntry {
 }
 /** `totp` is the item's TOTP seed (base32 or otpauth:// URI), if any. */
 export interface Credentials { username: string; password: string; totp?: string }
+export interface ItemChoice { id: string; label: string }
 export type VaultStatus = 'unlocked' | 'locked' | 'unauthenticated' | 'unavailable'
 export interface VaultClient {
   status(signal?: AbortSignal): Promise<VaultStatus>
   getLogin(item: string, signal?: AbortSignal): Promise<Credentials>
+  listItems?(url: string, signal?: AbortSignal): Promise<ItemChoice[]>
   unlock(password: string): Promise<boolean>
   lock(): Promise<void>
 }
