@@ -419,8 +419,18 @@ namespace UChan.Platform.Windows.Assets
             using (Timer timer = new Timer())
             {
                 bool unlock = lines.Count == 1 && lines[0] == "Unlock the vault";
+                bool hc = SystemInformation.HighContrast;
+                Color navy = hc ? SystemColors.Highlight : Color.FromArgb(11, 31, 75);
+                Color onNavy = hc ? SystemColors.HighlightText : Color.White;
+                Color tint = hc ? SystemColors.Info : Color.FromArgb(238, 242, 250);
+                Color onTint = hc ? SystemColors.InfoText : Color.FromArgb(11, 31, 75);
+                Color line = hc ? SystemColors.WindowFrame : Color.FromArgb(201, 209, 227);
+                Color muted = hc ? SystemColors.GrayText : Color.FromArgb(90, 101, 128);
+                int width = unlock ? 380 : 520;
+                int inner = width - 40;
+
                 form.Text = title;
-                form.Font = new Font("Segoe UI", 10f);
+                form.Font = new Font("Segoe UI", 9f);
                 form.AutoScaleDimensions = new SizeF(96f, 96f);
                 form.AutoScaleMode = AutoScaleMode.Dpi;
                 form.StartPosition = FormStartPosition.CenterScreen;
@@ -430,32 +440,42 @@ namespace UChan.Platform.Windows.Assets
                 form.TopMost = true;
                 form.BackColor = SystemColors.Window;
                 form.ForeColor = SystemColors.WindowText;
-                form.ClientSize = new Size(520, 360);
-                form.Padding = new Padding(24);
+                form.ClientSize = new Size(width, 260);
+
+                Panel header = new Panel();
+                header.Dock = DockStyle.Top;
+                header.Height = 52;
+                header.BackColor = navy;
+                Label heading = new Label();
+                heading.Text = unlock ? "Unlock vault" : "Confirm action";
+                heading.Font = new Font("Segoe UI Semibold", 13f);
+                heading.AutoSize = true;
+                heading.ForeColor = onNavy;
+                heading.Location = new Point(18, 13);
+                header.Controls.Add(heading);
+
+                Panel body = new Panel();
+                body.Dock = DockStyle.Fill;
+                body.Padding = new Padding(20, 16, 20, 16);
 
                 TableLayoutPanel layout = new TableLayoutPanel();
                 layout.Dock = DockStyle.Top;
                 layout.AutoSize = true;
                 layout.ColumnCount = 1;
                 layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-                layout.RowCount = 7;
+                layout.RowCount = 6;
                 for (int row = 0; row < layout.RowCount; row++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-                Label heading = new Label();
-                heading.Text = unlock ? "Unlock vault" : "Confirm action";
-                heading.Font = new Font("Segoe UI", 18f, FontStyle.Bold);
-                heading.AutoSize = true;
-                heading.Margin = new Padding(0, 0, 0, 16);
 
                 Label verification = new Label();
                 verification.Text = "Verification phrase: " + phrase;
                 verification.AutoSize = true;
-                verification.MaximumSize = new Size(472, 0);
+                verification.MaximumSize = new Size(inner, 0);
                 verification.Dock = DockStyle.Fill;
-                verification.Padding = new Padding(12);
-                verification.Margin = new Padding(0, 0, 0, 16);
-                verification.BackColor = SystemInformation.HighContrast ? SystemColors.Info : Color.FromArgb(235, 243, 255);
-                verification.ForeColor = SystemInformation.HighContrast ? SystemColors.InfoText : Color.FromArgb(16, 44, 87);
+                verification.Padding = new Padding(10, 8, 10, 8);
+                verification.Margin = new Padding(0, 0, 0, 14);
+                verification.BackColor = tint;
+                verification.ForeColor = onTint;
+                verification.Font = new Font("Segoe UI Semibold", 9f);
 
                 TextBox details = new TextBox();
                 details.Multiline = true;
@@ -468,28 +488,32 @@ namespace UChan.Platform.Windows.Assets
                 details.Text = string.Join(Environment.NewLine, lines.ToArray());
                 details.Height = Math.Min(144, Math.Max(32, lines.Count * 22));
                 details.Dock = DockStyle.Fill;
-                details.Margin = new Padding(0, 0, 0, 16);
+                details.Margin = new Padding(0, 0, 0, 14);
                 details.AccessibleName = "Requested action";
                 details.TabStop = false;
+                details.Visible = !unlock;
 
                 Label passwordLabel = new Label();
                 passwordLabel.Text = "Master password";
                 passwordLabel.AutoSize = true;
-                passwordLabel.Margin = new Padding(0, 0, 0, 8);
+                passwordLabel.Margin = new Padding(0, 0, 0, 4);
 
                 TextBox txtPassword = new TextBox();
                 txtPassword.UseSystemPasswordChar = true;
                 txtPassword.MaxLength = 512;
                 txtPassword.Dock = DockStyle.Fill;
-                txtPassword.Margin = new Padding(0, 0, 0, 12);
+                txtPassword.Font = new Font("Segoe UI", 10.5f);
+                txtPassword.BorderStyle = BorderStyle.FixedSingle;
+                txtPassword.Margin = new Padding(0, 0, 0, 6);
                 txtPassword.AccessibleName = "Master password";
                 txtPassword.TabIndex = 0;
 
                 Label hint = new Label();
-                hint.Text = "Check your verification phrase before entering your password.";
+                hint.Text = "Only type your password if the phrase matches.";
                 hint.AutoSize = true;
-                hint.MaximumSize = new Size(472, 0);
-                hint.Margin = new Padding(0, 0, 0, 24);
+                hint.MaximumSize = new Size(inner, 0);
+                hint.ForeColor = muted;
+                hint.Margin = new Padding(0, 0, 0, 16);
 
                 TableLayoutPanel footer = new TableLayoutPanel();
                 footer.Dock = DockStyle.Fill;
@@ -503,17 +527,24 @@ namespace UChan.Platform.Windows.Assets
                 countdown.AutoSize = true;
                 countdown.Anchor = AnchorStyles.Left;
                 countdown.Margin = new Padding(0, 0, 12, 0);
+                countdown.ForeColor = muted;
                 countdown.Text = "Closes in 2:00";
 
                 Button cancel = new Button();
                 cancel.Text = "Cancel";
-                cancel.Size = new Size(96, 36);
+                cancel.Size = new Size(84, 32);
                 cancel.Margin = new Padding(0, 0, 8, 0);
                 cancel.DialogResult = DialogResult.Cancel;
                 cancel.TabIndex = 2;
+                cancel.FlatStyle = FlatStyle.Flat;
+                cancel.FlatAppearance.BorderColor = line;
+                cancel.UseVisualStyleBackColor = false;
+                cancel.BackColor = SystemColors.Window;
+                cancel.ForeColor = hc ? SystemColors.WindowText : navy;
+                if (!hc) cancel.FlatAppearance.MouseOverBackColor = tint;
                 Button submit = new Button();
                 submit.Text = unlock ? "Unlock" : "Confirm";
-                submit.Size = new Size(104, 36);
+                submit.Size = new Size(92, 32);
                 submit.Margin = new Padding(0);
                 submit.DialogResult = DialogResult.OK;
                 submit.Enabled = false;
@@ -521,29 +552,35 @@ namespace UChan.Platform.Windows.Assets
                 submit.FlatStyle = FlatStyle.Flat;
                 submit.FlatAppearance.BorderSize = 1;
                 submit.UseVisualStyleBackColor = false;
-                submit.BackColor = SystemColors.Control;
+                submit.Font = new Font("Segoe UI Semibold", 9f);
+                Color disabledBack = hc ? SystemColors.Control : Color.FromArgb(230, 234, 242);
+                submit.BackColor = disabledBack;
                 submit.ForeColor = SystemColors.GrayText;
+                submit.FlatAppearance.BorderColor = disabledBack;
+                if (!hc) submit.FlatAppearance.MouseOverBackColor = Color.FromArgb(27, 52, 110);
                 txtPassword.TextChanged += delegate {
                     submit.Enabled = txtPassword.Text.Length > 0;
-                    submit.BackColor = submit.Enabled ? (SystemInformation.HighContrast ? SystemColors.Highlight : Color.FromArgb(29, 78, 216)) : SystemColors.Control;
-                    submit.ForeColor = submit.Enabled ? (SystemInformation.HighContrast ? SystemColors.HighlightText : Color.White) : SystemColors.GrayText;
+                    submit.BackColor = submit.Enabled ? navy : disabledBack;
+                    submit.ForeColor = submit.Enabled ? onNavy : SystemColors.GrayText;
+                    submit.FlatAppearance.BorderColor = submit.Enabled ? navy : disabledBack;
                 };
                 footer.Controls.Add(countdown, 0, 0);
                 footer.Controls.Add(cancel, 1, 0);
                 footer.Controls.Add(submit, 2, 0);
-                layout.Controls.Add(heading, 0, 0);
-                layout.Controls.Add(verification, 0, 1);
-                layout.Controls.Add(details, 0, 2);
-                layout.Controls.Add(passwordLabel, 0, 3);
-                layout.Controls.Add(txtPassword, 0, 4);
-                layout.Controls.Add(hint, 0, 5);
-                layout.Controls.Add(footer, 0, 6);
-                form.Controls.Add(layout);
+                layout.Controls.Add(verification, 0, 0);
+                layout.Controls.Add(details, 0, 1);
+                layout.Controls.Add(passwordLabel, 0, 2);
+                layout.Controls.Add(txtPassword, 0, 3);
+                layout.Controls.Add(hint, 0, 4);
+                layout.Controls.Add(footer, 0, 5);
+                body.Controls.Add(layout);
+                form.Controls.Add(body);
+                form.Controls.Add(header);
                 form.AcceptButton = submit;
                 form.CancelButton = cancel;
                 form.Load += delegate {
                     layout.PerformLayout();
-                    form.ClientSize = new Size(form.ClientSize.Width, layout.GetPreferredSize(new Size(layout.Width, 0)).Height + form.Padding.Vertical);
+                    form.ClientSize = new Size(form.ClientSize.Width, header.Height + layout.GetPreferredSize(new Size(layout.Width, 0)).Height + body.Padding.Vertical);
                 };
                 int remainingSeconds = 120;
                 timer.Interval = 1000;
