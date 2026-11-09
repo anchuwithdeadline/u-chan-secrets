@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.2.1
 
 **Upgrade:** needs a trusted reinstall. The prompt helper changed, so `u-chan update` reports `native_helpers_changed`; follow the reinstall steps it prints. Restart Claude Code and Codex sessions afterwards.
 
