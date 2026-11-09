@@ -227,7 +227,7 @@ Example `request_allow` arguments:
 
 | Grant | Meaning |
 |---|---|
-| `{ "kind": "once" }` | One attempt after vault/Chrome preflight; failure after reservation still consumes it |
+| `{ "kind": "once" }` | One attempt after vault/Chrome preflight; it is consumed once the password is requested, even if sign-in then fails. A failure before the password is requested returns the use |
 | `{ "kind": "timed", "minutes": 30 }` | Future logins until the exact approved UTC expiry; integer range 1–1,440 minutes |
 | `{ "kind": "permanent" }` | Permanent future logins |
 | Omitted | Permanent, preserving existing callers; the protected prompt states this |

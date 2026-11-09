@@ -95,14 +95,21 @@ export class CoreService implements CoreApi {
       if (status !== 'unlocked') throw new UserFacingError(status === 'locked' ? 'vault locked — run u-chan unlock' : status === 'unauthenticated' ? 'complete Bitwarden service login during setup' : 'Bitwarden is unavailable', status === 'locked' ? 'vault_locked' : status === 'unauthenticated' ? 'vault_unauthenticated' : 'vault_unavailable')
       if (this.deps.login.preflight) await within(this.deps.login.preflight(signal, browser))
       signal.throwIfAborted()
-      await this.grants.reserve(entry.domain)
+      const reserved = await this.grants.reserve(entry.domain)
+      let credsRequested = false
       const getCreds = async () => {
+        credsRequested = true
         this.grants.check(entry, true)
         const c = await within(this.deps.vault.getLogin(entry.item, signal))
         secrets.push(c.username, c.password, ...(c.totp ? [c.totp] : []))
         return c
       }
-      const out = await this.deps.login.run(entry, getCreds, { signal, browser, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } })
+      // A once use is refunded unless credentials were requested; runs on the grant queue, and refund() ignores revoked/replaced grants.
+      const refundUnused = async () => { if (!credsRequested && reserved.remainingUses !== undefined) await this.grants.refund(reserved) }
+      let out
+      try { out = await this.deps.login.run(entry, getCreds, { signal, browser, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } }) }
+      catch (e) { await refundUnused(); throw e }
+      if (out.status !== 'logged_in' && out.status !== 'already_logged_in') await refundUnused()
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }
       const message = out.reason ?? 'login failed'
@@ -135,7 +142,7 @@ export class CoreService implements CoreApi {
         `Hosts: ${entry.hosts.join(', ')}`,
         ...(entry.selectors ? [selectorsLine(entry.selectors)] : []),
         ...(entry.success ? [`Success condition: ${JSON.stringify(entry.success)}`] : []),
-        entry.remainingUses !== undefined ? 'Duration: one login attempt; a failed reserved attempt also counts.' : entry.expiresAt ? `Duration: until ${entry.expiresAt}` : 'Duration: permanent future logins.',
+        entry.remainingUses !== undefined ? 'Duration: one login attempt; it is used once the password is requested, even if sign-in then fails.' : entry.expiresAt ? `Duration: until ${entry.expiresAt}` : 'Duration: permanent future logins.',
         'Expiry and revocation do not log out sessions already transferred to the selected browser.',
       ])
       if (!approved) return { result: { ok: false, message: 'denied' }, audit: 'denied' }

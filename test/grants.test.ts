@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -41,8 +41,75 @@ it('rejects an Edge/Chrome binding mismatch before reserving an attempt or fetch
 })
 it('consumes a reserved attempt even when login fails', async () => {
   await store.upsert({ ...entry, remainingUses: 1 })
-  expect((await service({ login: { run: async () => ({ status: 'failed', reason: 'failed' }) } }).login('a.com')).ok).toBe(false)
+  const run = async (_e: unknown, getCreds: () => Promise<unknown>) => { await getCreds(); return { status: 'failed', reason: 'failed' } }
+  expect((await service({ login: { run } }).login('a.com')).ok).toBe(false)
   expect((await store.get('a.com'))?.remainingUses).toBe(0)
+})
+it('refunds an unused once reservation', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const reserved = await grants.reserve('a.com')
+  expect((await store.get('a.com'))?.remainingUses).toBe(0)
+  await grants.refund(reserved)
+  expect((await store.get('a.com'))?.remainingUses).toBe(1)
+})
+it('does not refund a replaced or revoked grant', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const reserved = await grants.reserve('a.com')
+  await store.upsert({ ...entry, grantId: 'g2', remainingUses: 0 })
+  await grants.refund(reserved)
+  expect(await store.get('a.com')).toMatchObject({ grantId: 'g2', remainingUses: 0 })
+  await store.remove('a.com')
+  await grants.refund(reserved)
+  expect(await store.get('a.com')).toBeUndefined()
+})
+it('does not refund twice or over a changed count', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const reserved = await grants.reserve('a.com')
+  await grants.refund(reserved)
+  await grants.refund(reserved)
+  expect((await store.get('a.com'))?.remainingUses).toBe(1)
+})
+it('once grant survives a failure before credentials', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const svc = service({ login: { run: async () => ({ status: 'failed', code: 'needs_human' }) } })
+  expect((await svc.login('a.com')).code).toBe('needs_human')
+  expect((await svc.login('a.com')).code).toBe('needs_human')
+  expect((await store.get('a.com'))?.remainingUses).toBe(1)
+})
+it('once grant is consumed after credentials are requested', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const run = async (_e: unknown, getCreds: () => Promise<unknown>) => { await getCreds(); return { status: 'failed', code: 'needs_human' } }
+  const svc = service({ login: { run } })
+  await svc.login('a.com')
+  expect((await svc.login('a.com')).code).toBe('grant_exhausted')
+})
+it('runner throw before credentials refunds and keeps the error result', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const svc = service({ login: { run: async () => { throw new Error('boom') } } })
+  expect(await svc.login('a.com')).toEqual({ ok: false, message: 'internal error' })
+  expect((await store.get('a.com'))?.remainingUses).toBe(1)
+  err.mockRestore()
+})
+it('runner throw after credentials stays consumed', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const svc = service({ login: { run: async (_e: unknown, g: () => Promise<unknown>) => { await g(); throw new Error('boom') } } })
+  expect((await svc.login('a.com')).ok).toBe(false)
+  expect((await store.get('a.com'))?.remainingUses).toBe(0)
+  err.mockRestore()
+})
+it('does not resurrect a grant revoked and replaced during a credential-free failure', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const run = async () => { await store.upsert({ ...entry, grantId: 'g2', remainingUses: 0 }); return { status: 'failed', code: 'needs_human' } }
+  await service({ login: { run } }).login('a.com')
+  expect(await store.get('a.com')).toMatchObject({ grantId: 'g2', remainingUses: 0 })
+})
+it('approval prompt describes the once rule', async () => {
+  const lines: string[][] = []
+  const svc = service({ approver: { ask: async (_t: string, l: string[]) => { lines.push(l); return true } } })
+  await svc.requestAllow('a.com', entry.loginUrl, 'A', undefined, { grant: { kind: 'once' } })
+  expect(lines[0]).toContain('Duration: one login attempt; it is used once the password is requested, even if sign-in then fails.')
 })
 it('enforces exact expiry and rechecks before transferring', async () => {
   await store.upsert({ ...entry, expiresAt: new Date(clock + 60_000).toISOString() })

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A once grant is no longer spent when login fails before the password is requested (for example a CAPTCHA page); it is consumed once credentials are requested. A revoked or replaced grant is never restored.
 - u-chan install now runs the service Bitwarden login itself when needed and locks it right after, so the printed session key is unusable.
 - Update failures that need a trusted reinstall now print the exact commands, with the version, instead of a generic message.
 - u-chan update and u-chan setup print readable summaries and an explicit restart line for Claude Code and Codex sessions; --json keeps the raw output.

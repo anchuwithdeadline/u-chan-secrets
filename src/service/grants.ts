@@ -71,4 +71,11 @@ export class GrantCoordinator {
     if (entry.remainingUses !== undefined) await this.store.upsert({ ...entry, remainingUses: entry.remainingUses - 1 })
     return entry
   }
+  /** Restores a once use taken by reserve() only if that exact grant is still stored with the decremented count. */
+  async refund(reserved: AllowEntry): Promise<void> {
+    if (reserved.remainingUses === undefined) return
+    const current = await this.store.get(reserved.domain)
+    if (!current || current.grantId !== reserved.grantId || current.remainingUses !== reserved.remainingUses - 1) return
+    await this.store.upsert({ ...current, remainingUses: reserved.remainingUses })
+  }
 }
