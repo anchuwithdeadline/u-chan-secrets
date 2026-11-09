@@ -15,7 +15,13 @@ export async function ensureServiceBitwardenLogin(d: BwLoginDeps): Promise<BwLog
     if (JSON.parse(st.stdout).status !== 'unauthenticated') return 'already'
     if (!d.interactive) { manual(); return 'skipped' }
     if ((await d.run(['login'], { interactive: true })).code !== 0) { manual(); return 'failed' }
-    await d.run(['lock'], { interactive: false })
+    let locked = false
+    try { locked = (await d.run(['lock'], { interactive: false })).code === 0 } catch { /* reported below */ }
+    if (!locked) {
+      d.out(`Bitwarden service lock failed; the printed session key may still work. Run the same commands with "lock" instead of "login":
+${d.manualCommand}`)
+      return 'failed'
+    }
     return 'logged_in'
   } catch {
     manual()

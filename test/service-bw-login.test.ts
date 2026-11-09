@@ -32,6 +32,23 @@ describe('ensureServiceBitwardenLogin', () => {
     expect(run.mock.calls.map(c => c[0][0])).toEqual(['status', 'login'])
     expect(out.mock.calls.flat().join('\n')).toContain('MANUAL')
   })
+  it('fails with a lock warning when lock exits non-zero', async () => {
+    const run = vi.fn(async (a: string[]) => a[0] === 'status' ? status('unauthenticated') : { code: a[0] === 'lock' ? 1 : 0, stdout: '' }), out = vi.fn()
+    expect(await ensureServiceBitwardenLogin(deps(run, { out }))).toBe('failed')
+    const text = out.mock.calls.flat().join('
+')
+    expect(text).toContain('lock failed')
+    expect(text).toContain('MANUAL')
+    expect(text).not.toContain('login still needed')
+  })
+  it('fails with a lock warning when lock throws', async () => {
+    const run = vi.fn(async (a: string[]) => { if (a[0] === 'lock') throw new Error('timeout'); return a[0] === 'status' ? status('unauthenticated') : { code: 0, stdout: '' } }), out = vi.fn()
+    expect(await ensureServiceBitwardenLogin(deps(run, { out }))).toBe('failed')
+    const text = out.mock.calls.flat().join('
+')
+    expect(text).toContain('lock failed')
+    expect(text).not.toContain('login still needed')
+  })
   it('fails and prints the manual command when bw is missing', async () => {
     const run = vi.fn(async () => { throw new Error('ENOENT') }), out = vi.fn()
     expect(await ensureServiceBitwardenLogin(deps(run, { out }))).toBe('failed')
