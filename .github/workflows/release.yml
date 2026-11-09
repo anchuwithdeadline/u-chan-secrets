@@ -1,7 +1,7 @@
 name: Release
 
-# Publishes the npm package when a v* tag is pushed. Uses npm trusted publishing (OIDC) when it is
-# configured for this repository on npmjs.com; otherwise falls back to the NPM_TOKEN repository secret.
+# Publishes the npm package when a v* tag is pushed, via npm trusted publishing (OIDC): no token.
+# The trusted publisher on npmjs.com is bound to this file and the `npm` environment.
 on:
   push:
     tags: ['v*']
@@ -58,5 +58,3 @@ jobs:
         run: npm ci
       - if: steps.version.outputs.published != 'true'
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
