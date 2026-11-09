@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { gzipSync } from 'node:zlib'
 import { defaultExec, type ExecFn } from '../acl.js'
 import { UserFacingError } from '../../../core/types.js'
 
@@ -23,10 +24,11 @@ export async function compileCsharp(
 
   const escapedOut = outputPath.replace(/'/g, "''")
 
+  // Source travels gzip+base64 inside the command line: Windows caps it at 32767 chars and a temp file could be swapped before compile.
+  const packed = gzipSync(Buffer.from(source, 'utf8')).toString('base64')
   const script = `$ErrorActionPreference = 'Stop'
-$source = @'
-${source}
-'@
+$zip = New-Object IO.Compression.GZipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('${packed}'))), [IO.Compression.CompressionMode]::Decompress)
+$source = (New-Object IO.StreamReader($zip, [Text.Encoding]::UTF8)).ReadToEnd()
 Add-Type -TypeDefinition $source -OutputAssembly '${escapedOut}' -OutputType ${outputType}${refs}`
 
   try {

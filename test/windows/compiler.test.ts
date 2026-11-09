@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { gunzipSync } from 'node:zlib'
 import { compileCsharp, type CompileOptions } from '../../src/platform/windows/assets/compiler.js'
 import { AUTH_HELPER_CSHARP } from '../../src/platform/windows/assets/auth-src.js'
 import { PROMPT_HELPER_CSHARP } from '../../src/platform/windows/assets/prompt-src.js'
@@ -34,7 +35,9 @@ describe('compileCsharp', () => {
 
     const command = capturedArgs[capturedArgs.indexOf('-Command') + 1]
     expect(command).toContain('Add-Type')
-    expect(command).toContain(source)
+    const packed = /FromBase64String\('([^']+)'\)/.exec(command)![1]
+    expect(gunzipSync(Buffer.from(packed, 'base64')).toString('utf8')).toBe(source)
+    expect(command.length).toBeLessThan(32767)
     expect(command).toContain('C:\\ProgramData\\u-chan-secrets\\bin\\prompt.exe')
     expect(command).toContain('WindowsApplication')
     expect(command).toContain('System.Windows.Forms.dll')
