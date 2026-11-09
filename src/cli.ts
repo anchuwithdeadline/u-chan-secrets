@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { configureCodex, isElevated } from './client/codex-setup.js'
 import { configureClaude } from './client/claude-setup.js'
-import { combineClients, runSetup, setupExitCode, SETUP_CLIENT_NAMES, type SetupClient, type SetupClientChoice, type SetupOptions, type SetupReport } from './client/setup.js'
+import { combineClients, runSetup, setupExitCode, SETUP_CLIENT_NAMES, RESTART_LINE, type SetupClient, type SetupClientChoice, type SetupOptions, type SetupReport } from './client/setup.js'
 import { parseAllowArgs } from './client/allow.js'
 import { saveBrowserChoice, type BrowserKind } from './client/browser-choice.js'
 import { configureWindowsCommand } from './client/windows-command.js'
@@ -27,7 +27,7 @@ import { runGithubCli } from './client/github.js'
 import { ensureServiceBitwardenLogin, serviceBwPaths, serviceBwRunner } from './platform/service-bw-login.js'
 import type { GithubApi } from './github/policy.js'
 
-const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
+const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update [--check] [--json] | doctor [--json] | manage'
 
 /** AI client CLIs on PATH. Detection only runs `where`/`which`; it never executes the clients themselves. */
 export function detectClients(platform: NodeJS.Platform = process.platform): Promise<SetupClient[]> {
@@ -67,6 +67,23 @@ function defaultV1Path(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): strin
   return path.join(env.APPDATA ?? path.join(homedir(), 'AppData', 'Roaming'), 'u-chan-secrets', 'allowlist.json')
 }
 
+/** Human-readable form of the coordinated update JSON; non-JSON messages pass through. */
+export function formatUpdate(message: string, checkOnly: boolean): string {
+  let j: any
+  try { j = JSON.parse(message) } catch { return message }
+  if (!j || typeof j !== 'object') return message
+  const NL = String.fromCharCode(10)
+  if (checkOnly) {
+    const t = j.target?.version
+    const lines = [`Service: ${j.service?.version} -> ${t} (${j.decision})`, `Desktop: ${j.desktop?.version} -> ${t} (${j.desktopDecision})`]
+    if (j.compatible === false) lines.push(trustedReinstallSteps(String(t)))
+    else lines.push(j.decision === 'up_to_date' && j.desktopDecision === 'up_to_date' ? 'Up to date.' : 'Run u-chan update to apply.')
+    return lines.join(NL)
+  }
+  if (j.status !== 'complete') return message
+  return [`Update complete: ${j.service?.version}. Vault: ${j.vault}.`, ...(j.agentSessionRestartRequired ? [RESTART_LINE] : []), ...(j.manualSetupRequired ? ['Run u-chan setup --apply to repair AI client registrations.'] : [])].join(NL)
+}
+
 /** Returns the process exit code: 0 on success, 1 on failure or bad usage. */
 export async function main(argv: string[], d: CliDeps): Promise<number> {
   if(argv[0]==='github'){
@@ -76,9 +93,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   }
   const update=(checkOnly:boolean,quiet=false)=>d.update?d.update(checkOnly):runCoordinatedUpdate({checkOnly},{client:d.connect({timeoutMs:180000}),desktop:desktopUpdateAdapter(d.env),progress:(phase,seconds)=>{if(!quiet)d.out(`Update: ${phase} (${seconds}s)`)}})
   if(argv[0]==='update'){
-    if(argv.length>2||(argv.length===2&&argv[1]!=='--check')){d.err('usage: u-chan update [--check]');return 1}
-    const result=await update(argv[1]==='--check')
-    if(result.ok)d.out(result.message);else d.err(result.message)
+    const flags=argv.slice(1),check=flags.includes('--check'),json=flags.includes('--json')
+    if(flags.length!==new Set(flags).size||flags.some(f=>f!=='--check'&&f!=='--json')){d.err('usage: u-chan update [--check] [--json]');return 1}
+    const result=await update(check)
+    if(result.ok)d.out(json?result.message:formatUpdate(result.message,check));else d.err(result.message)
     return result.ok?0:1
   }
   if (argv[0] === 'discord') {
@@ -164,7 +182,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
       if (clients.length > 1 && combined.results().length) r.clients = combined.results()
     }
     if (seen.has('--json')) d.out(JSON.stringify(r))
-    else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...(r.clients ?? []).map(c => `${SETUP_CLIENT_NAMES[c.client]}: ${c.state}. ${c.message}`), ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : [])].join('\n'))
+    else d.out([`Setup: ${r.state}; sharing: ${r.sharing}; restart required: ${r.restartRequired}`, ...(r.clients ?? []).map(c => `${SETUP_CLIENT_NAMES[c.client]}: ${c.state}. ${c.message}`), ...r.actions.map(a => a.message), ...(r.backupPath ? ['Configuration backup: ' + r.backupPath] : []), ...(r.restartRequired ? [RESTART_LINE] : [])].join('\n'))
     return setupExitCode(r)
   }
   if (cmd === 'start' && arg === undefined) {

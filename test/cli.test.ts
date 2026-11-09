@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { importTimeoutMs, main } from '../src/cli.js'
+import { RESTART_LINE } from '../src/client/setup.js'
+import { trustedReinstallSteps } from '../src/client/update.js'
 import { MAX_FRAME } from '../src/ipc/protocol.js'
 import type { ToolResult } from '../src/core/types.js'
 
@@ -225,4 +227,53 @@ describe('cli', () => {
     expect(r.code).toBe(1)
     expect(r.err.join('\n')).toMatch(/usage: u-chan/)
   })
+})
+
+describe('cli update output', () => {
+  const NL = String.fromCharCode(10)
+  const lines = (out: string[]) => out.join(NL).split(NL)
+  const check = (o: Record<string, unknown> = {}) => JSON.stringify({ service: { version: '5.1.1', integrity: null }, target: { version: '5.1.2' }, decision: 'update_required', compatible: true, reason: null, desktop: { version: '5.1.1', integrity: null }, desktopDecision: 'update_required', readOnly: true, ...o })
+  const stub = (message: string) => async () => ({ ok: true, message })
+  it('update --check prints a plan summary', async () => {
+    const r = await run(['update', '--check'], { update: stub(check()) })
+    expect(lines(r.out)).toEqual(['Service: 5.1.1 -> 5.1.2 (update_required)', 'Desktop: 5.1.1 -> 5.1.2 (update_required)', 'Run u-chan update to apply.'])
+  })
+  it('update --check says up to date', async () => {
+    const r = await run(['update', '--check'], { update: stub(check({ decision: 'up_to_date', desktopDecision: 'up_to_date' })) })
+    expect(lines(r.out).at(-1)).toBe('Up to date.')
+  })
+  it('update --check prints trusted reinstall steps when incompatible', async () => {
+    const r = await run(['update', '--check'], { update: stub(check({ compatible: false, reason: 'native helper changed' })) })
+    const steps = trustedReinstallSteps('5.1.2').split(NL)
+    expect(lines(r.out).slice(-steps.length)).toEqual(steps)
+  })
+  it('update prints completion and restart line', async () => {
+    const m = JSON.stringify({ status: 'complete', desktop: { version: '5.1.2', integrity: null }, service: { version: '5.1.2', integrity: null }, vault: 'unlocked', agentSessionRestartRequired: true, manualSetupRequired: true })
+    const r = await run(['update'], { update: stub(m) })
+    expect(lines(r.out)).toEqual(['Update complete: 5.1.2. Vault: unlocked.', RESTART_LINE, 'Run u-chan setup --apply to repair AI client registrations.'])
+  })
+  it('--json prints raw output', async () => {
+    const m = check()
+    expect((await run(['update', '--check', '--json'], { update: stub(m) })).out).toEqual([m])
+    expect((await run(['update', '--json'], { update: stub(m) })).out).toEqual([m])
+  })
+  it('rejects other argument combinations', async () => {
+    for (const a of [['update', 'x'], ['update', '--check', '--check'], ['update', '--json', '--json'], ['update', '--check', '--json', 'x']]) {
+      const r = await run(a, { update: stub('{}') })
+      expect(r.code).toBe(1); expect(r.err).toEqual(['usage: u-chan update [--check] [--json]'])
+    }
+  })
+})
+
+describe('cli setup restart line', () => {
+  const NL = String.fromCharCode(10)
+  const rep = (restartRequired: boolean) => ({ version: 1, state: 'ready', sharing: 'unobserved', restartRequired, checks: [], actions: [], client: 'unavailable', changed: false })
+  const go = async (restartRequired: boolean, extra: string[] = []) => {
+    const out: string[] = []
+    await main(['setup', ...extra], { connect: vi.fn() as any, env: {}, platform: 'win32', readFile: async () => '', out: (s: string) => void out.push(s), err: () => {}, setup: async () => rep(restartRequired) as any } as any)
+    return out.join(NL).split(NL)
+  }
+  it('prints when required', async () => { expect((await go(true)).at(-1)).toBe(RESTART_LINE) })
+  it('absent when not required', async () => { expect(await go(false)).not.toContain(RESTART_LINE) })
+  it('absent with --json', async () => { expect((await go(true, ['--json'])).join(NL)).not.toContain(RESTART_LINE) })
 })

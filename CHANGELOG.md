@@ -4,6 +4,7 @@
 
 - u-chan install now runs the service Bitwarden login itself when needed and locks it right after, so the printed session key is unusable.
 - Update failures that need a trusted reinstall now print the exact commands, with the version, instead of a generic message.
+- u-chan update and u-chan setup print readable summaries and an explicit restart line for Claude Code and Codex sessions; --json keeps the raw output.
 
 ## 5.1.2
 

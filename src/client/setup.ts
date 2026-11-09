@@ -80,6 +80,7 @@ export function setupExitCode(r: SetupReport): 0 | 1 | 2 {
 }
 export type SetupClient = 'codex' | 'claude'
 export type SetupClientChoice = SetupClient | 'all' | 'auto'
+export const RESTART_LINE = 'Restart your Claude Code and Codex sessions now so they load the updated U-Chan MCP server.'
 export const SETUP_CLIENT_NAMES: Record<SetupClient, string> = { codex: 'Codex', claude: 'Claude Code' }
 export interface ClientSetupEntry { client: SetupClient; configure: SetupDeps['configure'] }
 const STATE_RANK: CodexSetupState[] = ['ready', 'missing', 'needs_update', 'manual', 'unavailable']

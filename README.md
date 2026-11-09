@@ -191,7 +191,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 | `mode <easy\|hardcore>` | Change approval mode; lowering protection requires a protected password check |
 | `audit [limit]` | Read recent service audit records |
 | `import-v1 [path]` | Approve each imported entry in a protected window; imported grants are permanent |
-| `update [--check]` | Plan or apply a coordinated compatible desktop/service update; some changes require trusted reinstall |
+| `update [--check] [--json]` | Plan or apply a coordinated compatible desktop/service update, printed as a short summary (`--json` prints the raw result); some changes require trusted reinstall |
 | `install [--mode <easy\|hardcore>] [--phrase <phrase>]` | Privileged install/reinstall; existing settings are preserved |
 | `uninstall` | Privileged removal of the service **and all its data** |
 
@@ -264,7 +264,7 @@ Setup reports `configured` or `needs_attention`, plus `sharing` and `restartRequ
 
 Automatic registration supports Codex and Claude Code on Windows only. Configure other clients and platforms manually (see [step 3](#3-connect-ai-clients-and-the-browser)). macOS runtime remains unverified. `doctor` compares the actual CLI and installed service versions, both browser targets, and Windows UAC policy; missing metadata remains unknown. `manage` shows the installed service version and browser status.
 
-On Windows, `setup --apply` also makes the short `u-chan` command work when PowerShell blocks scripts. It moves the recognized npm-generated `u-chan.ps1` launcher into the npm directory's `#0 backup`, leaving `u-chan.cmd` available for PowerShell to resolve automatically. Execution policy and PowerShell profiles are unchanged. Inspection without `--apply` is read-only, and custom launchers are preserved. If the first setup command is blocked, run `u-chan.cmd setup --apply`. Rerun setup after an npm installation or update recreates the PowerShell launcher. Shell results and the backup path appear in the setup JSON report.
+On Windows, `setup --apply` also makes the short `u-chan` command work when PowerShell blocks scripts. It moves the recognized npm-generated `u-chan.ps1` launcher into the npm directory's `#0 backup`, leaving `u-chan.cmd` available for PowerShell to resolve automatically. Execution policy and PowerShell profiles are unchanged. Inspection without `--apply` is read-only, and custom launchers are preserved. If the first setup command is blocked, run `u-chan.cmd setup --apply`. Rerun setup after a manual npm installation recreates the PowerShell launcher; `u-chan update` does not need it. Shell results and the backup path appear in the setup JSON report.
 
 ### Browser choice and session transfer
 
