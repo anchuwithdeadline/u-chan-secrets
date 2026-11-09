@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 5.2.2
+
+**Upgrade:** `u-chan update` from 5.2.1 (no reinstall: native helpers and dependencies unchanged).
 
 - Trusted-reinstall steps use `npm.cmd` in the elevated step too, so they run in PowerShell with script execution disabled.
 - `u-chan update` says the service is not running (or unreachable) instead of `update check or preparation failed; inspect transaction status before retrying`.
