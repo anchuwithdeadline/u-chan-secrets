@@ -3,6 +3,10 @@
   "version": "5.1.1",
   "description": "U-Chan Secrets: local MCP server for Bitwarden-backed logins",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anchuwithdeadline/u-chan-secrets.git"
+  },
   "type": "module",
   "bin": {
     "u-chan-secrets": "dist/index.js",
