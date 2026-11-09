@@ -273,3 +273,31 @@ describe('requestAllow without an item validates first', () => {
     expect(listItems).not.toHaveBeenCalled()
   })
 })
+describe('requestAllow without an item never answers without a window', () => {
+  const url = 'https://moji.example/admin'
+  const make = (choices: { id: string; label: string }[], pick?: (t: string, l: string[], c: string[]) => Promise<number | null>) => {
+    const listItems = vi.fn(async () => choices)
+    const s = new CoreService({ vault: { ...vault, listItems }, allowlist: store, approver: { ask: approve, ...(pick ? { pick } : {}) }, audit: { record: async (e) => void events.push(e), readTail: async () => [] }, login: { run: async () => ({ status: 'logged_in' as const }) }, mode: async () => mode })
+    return { s, listItems }
+  }
+  it('no match shows the protected notice before failing', async () => {
+    const pick = vi.fn(async (_t: string, _l: string[], _c: string[]): Promise<number | null> => null)
+    const { s } = make([], pick)
+    expect((await s.requestAllow('moji.example', url, '')).message).toBe('no Bitwarden login item matches moji.example; pass the item name or id')
+    expect(pick).toHaveBeenCalledTimes(1)
+    expect(pick.mock.calls[0][2]).toEqual([])
+    expect(pick.mock.calls[0][1].join('\n')).toContain('No matching Bitwarden login item')
+  })
+  it('too many matches shows the protected notice before failing', async () => {
+    const pick = vi.fn(async (_t: string, _l: string[], _c: string[]): Promise<number | null> => 0)
+    const { s } = make(Array.from({ length: 21 }, (_, i) => ({ id: 'id-' + i, label: 'L' + i })), pick)
+    expect((await s.requestAllow('moji.example', url, '')).message).toBe('too many Bitwarden items match moji.example; pass the item id')
+    expect(pick.mock.calls[0][2]).toEqual([])
+  })
+  it('without picker support the vault is never listed', async () => {
+    const { s, listItems } = make([{ id: 'id-1', label: 'A' }])
+    expect((await s.requestAllow('moji.example', url, '')).message).toBe('item is required on this platform; pass the Bitwarden item name or id')
+    expect(listItems).not.toHaveBeenCalled()
+    expect(approve).not.toHaveBeenCalled()
+  })
+})

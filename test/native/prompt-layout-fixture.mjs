@@ -38,6 +38,11 @@ public static class PromptLayoutFixture
                         preview.Save(output, System.Drawing.Imaging.ImageFormat.Png);
                     }
                     Check(form);
+                    if (scenario == "notice") {
+                        var close = (System.Windows.Forms.Button)form.CancelButton;
+                        if (!close.Focused || close.Text != "Close" || FindList(form).Visible) throw new System.Exception("Notice close button changed");
+                        return;
+                    }
                     if (scenario == "pick") {
                         var picker = FindList(form);
                         if (picker == null || !picker.Focused || picker.SelectedIndex != 0 || picker.Items.Count != 3) throw new System.Exception("Picker list changed");
@@ -58,7 +63,8 @@ public static class PromptLayoutFixture
             var type = System.Reflection.Assembly.LoadFrom(helper).GetType("UChan.Platform.Windows.Assets.PromptHelper");
             var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
             var choices = new System.Collections.Generic.List<string> { "Moji Admin — me@example.com", "Moji Admin — ops@example.com", "MongoDB Moji - admin — db" };
-            int result = scenario == "pick"
+            if (scenario == "notice") choices.Clear();
+            int result = scenario == "pick" || scenario == "notice"
                 ? (int)type.GetMethod("RunPickDialog", flags).Invoke(null, new object[] { "U-Chan Secrets - fixture", phrase, new System.Collections.Generic.List<string> { "Domain: moji.example" }, choices })
                 : (int)type.GetMethod("RunPasswordDialog", flags).Invoke(null, new object[] { "U-Chan Secrets - fixture", phrase, lines });
             if (failure != null) throw failure;
@@ -100,10 +106,10 @@ const executable=join(directory,'prompt-fixture.exe')
 await compileCsharp(PROMPT_HELPER_CSHARP,executable,{outputType:'WindowsApplication',referencedAssemblies:['System.Windows.Forms.dll','System.Drawing.dll']})
 const renderer=join(directory,'render-fixture.exe')
 await compileCsharp(fixture,renderer,{outputType:'WindowsApplication',referencedAssemblies:['System.Windows.Forms.dll','System.Drawing.dll']})
-for(const scenario of ['unlock','long','scaled','pick']){
+for(const scenario of ['unlock','long','scaled','pick','notice']){
   const image=join(directory,scenario+'.png'),script=join(directory,scenario+'.ps1')
   const quote=value=>"'"+value.replaceAll("'","''")+"'"
   await writeFile(script,`$ErrorActionPreference = 'Stop'\n[Reflection.Assembly]::LoadFrom(${quote(renderer)}) | Out-Null\n[PromptLayoutFixture]::Render(${quote(image)},${quote(scenario)},${quote(executable)})\n`)
   await exec('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',script],{windowsHide:true,timeout:15000,maxBuffer:16384})
 }
-console.log(JSON.stringify({directory,scenarios:['unlock','long','scaled','pick'],scope:'native WinForms layout, fake input, cancellation; excludes protected desktop/SYSTEM verification'}))
+console.log(JSON.stringify({directory,scenarios:['unlock','long','scaled','pick','notice'],scope:'native WinForms layout, fake input, cancellation; excludes protected desktop/SYSTEM verification'}))

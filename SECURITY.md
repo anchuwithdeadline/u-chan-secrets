@@ -1,5 +1,9 @@
 # Security Policy
 
+## Item picker
+
+`request_allow` without an item lists the vault login items matching the login URL inside the service. Only item ids and display labels (name and username) leave the vault, and labels are shown only in the protected window; the AI receives the chosen id through `list_allowed` and nothing else. Every outcome opens a protected window before the AI gets an answer (no match and too many matches show a Close-only notice), so the AI cannot probe which sites the vault holds without the user seeing it. Platforms without a protected picker (macOS) require an explicit item and never list the vault.
+
 ## Agent unlock and GitHub extension
 
 `request_unlock` accepts no caller-controlled password, reason, or prompt text. It uses authenticated owner IPC and the existing native password collection path. Concurrent requests share one attempt, with a cooldown after dismissal and the existing shared failed-password limiter. Explicit lock invalidates pending unlock work. The tool returns status only. Clients must stop after cancellation or failure rather than retrying indefinitely.

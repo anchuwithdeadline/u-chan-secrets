@@ -635,7 +635,8 @@ namespace UChan.Platform.Windows.Assets
                 header.Height = 52;
                 header.BackColor = navy;
                 Label heading = new Label();
-                heading.Text = "Choose Bitwarden item";
+                bool notice = choices.Count == 0;
+                heading.Text = notice ? "No item to choose" : "Choose Bitwarden item";
                 heading.Font = new Font("Segoe UI Semibold", 13f);
                 heading.AutoSize = true;
                 heading.ForeColor = onNavy;
@@ -679,6 +680,7 @@ namespace UChan.Platform.Windows.Assets
                 list.Margin = new Padding(0, 0, 0, 16);
                 list.AccessibleName = "Bitwarden item";
                 foreach (string choice in choices) list.Items.Add(choice);
+                list.Visible = !notice;
                 if (list.Items.Count > 0) list.SelectedIndex = 0;
                 list.TabIndex = 0;
 
@@ -711,6 +713,8 @@ namespace UChan.Platform.Windows.Assets
                 submit.Margin = new Padding(0);
                 submit.DialogResult = DialogResult.OK;
                 submit.Enabled = list.Items.Count > 0;
+                submit.Visible = !notice;
+                if (notice) cancel.Text = "Close";
                 submit.FlatStyle = FlatStyle.Flat;
                 submit.UseVisualStyleBackColor = false;
                 submit.BackColor = navy;
@@ -743,7 +747,7 @@ namespace UChan.Platform.Windows.Assets
                     countdown.Text = "Closes in " + (remainingSeconds / 60).ToString() + ":" + (remainingSeconds % 60).ToString("00");
                     if (remainingSeconds <= 0) { form.DialogResult = DialogResult.Cancel; form.Close(); }
                 };
-                form.Shown += delegate { list.Focus(); timer.Start(); };
+                form.Shown += delegate { if (notice) cancel.Focus(); else list.Focus(); timer.Start(); };
                 DialogResult result = form.ShowDialog();
                 timer.Stop();
                 if (result != DialogResult.OK || list.SelectedIndex < 0) return 1;

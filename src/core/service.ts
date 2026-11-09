@@ -122,16 +122,22 @@ export class CoreService implements CoreApi {
     })
   }
 
-  /** Resolves an omitted item from the vault: one match is used, several go to the protected picker. Cancel → null. */
+  /**
+   * Resolves an omitted item from the vault: one match is used, several go to the protected picker. Cancel → null.
+   * Every outcome opens a protected window first, so the AI cannot probe vault contents silently.
+   */
   private async pickItem(domain: string, loginUrl: string): Promise<ItemChoice | null> {
     const { vault, approver } = this.deps
-    if (!vault.listItems) throw new UserFacingError(ITEM_REQUIRED)
+    if (!vault.listItems || !approver.pick) throw new UserFacingError(ITEM_REQUIRED)
     requireUnlocked(await vault.status())
     const choices = await vault.listItems(loginUrl)
-    if (choices.length === 0) throw new UserFacingError(`no Bitwarden login item matches ${domain}; pass the item name or id`)
-    if (choices.length > 20) throw new UserFacingError(`too many Bitwarden items match ${domain}; pass the item id`)
     if (choices.length === 1) return choices[0]
-    if (!approver.pick) throw new UserFacingError(ITEM_REQUIRED)
+    const notice = async (line: string, message: string): Promise<never> => {
+      await approver.pick!('U-Chan Secrets', [`Domain: ${domain}`, line], [])
+      throw new UserFacingError(message)
+    }
+    if (choices.length === 0) return notice('No matching Bitwarden login item. Close this window; the AI will ask you for the item.', `no Bitwarden login item matches ${domain}; pass the item name or id`)
+    if (choices.length > 20) return notice('Too many matching Bitwarden items to list. Close this window; the AI will ask you for the item.', `too many Bitwarden items match ${domain}; pass the item id`)
     const index = await approver.pick('U-Chan Secrets', [`Domain: ${domain}`], choices.map(c => c.label))
     return index === null ? null : choices[index] ?? null
   }

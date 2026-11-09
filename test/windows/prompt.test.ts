@@ -306,3 +306,9 @@ describe('WindowsProtectedPrompt.pick', () => {
     expect(await broken.pick(req)).toBeNull()
   })
 })
+it('pick with no choices is a notice and never returns an index', async () => {
+  const seen: string[][] = []
+  const p = new WindowsProtectedPrompt({ phrase: 'p', promptExePath: 'test.exe', execFile: (_f, a, _o, cb) => { seen.push([...a]); cb(null, '0', '') } })
+  expect(await p.pick({ title: 't', phrase: 'p', lines: ['No matching Bitwarden login item'], choices: [] })).toBeNull()
+  expect(seen).toHaveLength(1)
+})
