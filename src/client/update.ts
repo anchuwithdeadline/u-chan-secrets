@@ -25,6 +25,11 @@ export function trustedReinstallSteps(version:string):string{
     `2. Normal terminal: npm.cmd install --global u-chan-secrets@${version}; u-chan.cmd setup --apply; u-chan unlock`,
   ].join('\n')
 }
+/** Reinstall steps apply only to an incompatible Windows update; local_ahead/identity_unknown must never be told to downgrade. */
+export function needsTrustedReinstall(plan:{compatible?:boolean;platform?:string;decision?:string;desktopDecision?:string}):boolean{
+  const ahead=(d?:string)=>d==='local_ahead'||d==='identity_unknown'
+  return plan.compatible===false&&plan.platform==='win32'&&!ahead(plan.decision)&&!ahead(plan.desktopDecision)&&(plan.decision==='update_required'||plan.desktopDecision==='update_required')
+}
 export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Dependencies):Promise<ToolResult>{
   const now=d.now??(()=>performance.now()),sleep=d.sleep??(ms=>new Promise(r=>setTimeout(r,ms))),start=now()
   let release:(()=>Promise<void>)|null=null,serviceChanged=false,lastPhase='',lastPrinted=-1
@@ -45,8 +50,8 @@ export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Depende
     let desktop=observedIdentitySchema.parse(await d.desktop.identity()),desktopDecision=planDecision(desktop,plan.target)
     if(options.checkOnly)return {ok:true,message:JSON.stringify({...plan,desktop,desktopDecision,readOnly:true})}
     if(plan.platform!=='win32')return failure('coordinated application requires Windows; no components changed')
-    if(!plan.compatible)return failure((plan.reason??'incompatible update')+'; no components changed\n'+trustedReinstallSteps(plan.target.version))
-    if(['local_ahead','identity_unknown'].includes(plan.decision)||desktopDecision==='local_ahead'||(desktopDecision==='identity_unknown'&&!d.desktop.recover))return failure((plan.reason??'local build identity is unknown or ahead')+'; no components changed')
+    if(needsTrustedReinstall({...plan,desktopDecision}))return failure((plan.reason??'incompatible update')+'; no components changed\n'+trustedReinstallSteps(plan.target.version))
+    if(!plan.compatible||['local_ahead','identity_unknown'].includes(plan.decision)||desktopDecision==='local_ahead'||(desktopDecision==='identity_unknown'&&!d.desktop.recover))return failure((plan.reason??'local build identity is unknown or ahead')+'; no components changed')
     release=await d.desktop.acquire()
     if(!release)return failure('another desktop update is running; reconnect after it finishes')
     let desktopRecovered=false

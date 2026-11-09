@@ -55,6 +55,7 @@ export function serviceBwPaths(platform: NodeJS.Platform): { bwPath: string; dat
       String.raw`$env:BITWARDENCLI_APPDATA_DIR = Join-Path $env:ProgramData 'u-chan-secrets\bw-data'`,
       String.raw`Remove-Item Env:\BW_SESSION -ErrorAction SilentlyContinue`,
       String.raw`& (Join-Path $env:ProgramData 'u-chan-secrets\bin\bw.exe') ` + verb,
+      String.raw`Remove-Item Env:\BITWARDENCLI_APPDATA_DIR`,
     ].join('\n')
     return { bwPath: join(pd, 'bin', 'bw.exe'), dataDir: join(pd, 'bw-data'), manualCommand: cmd('login'), lockCommand: cmd('lock') }
   }

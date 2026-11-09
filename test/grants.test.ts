@@ -99,6 +99,13 @@ it('runner throw after credentials stays consumed', async () => {
   expect((await store.get('a.com'))?.remainingUses).toBe(0)
   err.mockRestore()
 })
+it('a refund store failure never replaces the original login error', async () => {
+  await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
+  const { UserFacingError } = await import('../src/core/types.js')
+  const run = async () => { vi.spyOn(store, 'upsert').mockRejectedValue(new Error('disk full')); throw new UserFacingError('browser went away', 'chrome_unavailable') }
+  expect(await service({ login: { run } }).login('a.com')).toMatchObject({ ok: false, code: 'chrome_unavailable', message: 'browser went away' })
+  vi.restoreAllMocks()
+})
 it('does not resurrect a grant revoked and replaced during a credential-free failure', async () => {
   await store.upsert({ ...entry, grantId: 'g1', remainingUses: 1 })
   const run = async () => { await store.upsert({ ...entry, grantId: 'g2', remainingUses: 0 }); return { status: 'failed', code: 'needs_human' } }

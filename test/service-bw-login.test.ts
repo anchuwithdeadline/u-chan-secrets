@@ -89,9 +89,10 @@ describe('serviceBwPaths', () => {
     expect(serviceBwPaths('win32')?.manualCommand).toContain(String.raw`u-chan-secrets\bin\bw.exe`)
     for (const pl of ['win32', 'darwin'] as const) {
       const lc = serviceBwPaths(pl)!.lockCommand
-      expect(lc).toMatch(/ lock$/)
+      expect(lc.split('\n').find(l => l.includes(`bw.exe') `) || l.includes('/bin/bw" '))).toMatch(/ lock$/)
       expect(lc).not.toContain(' login')
     }
+    for (const k of ['manualCommand', 'lockCommand'] as const) expect(serviceBwPaths('win32')![k].split('\n').at(-1)).toBe(String.raw`Remove-Item Env:\BITWARDENCLI_APPDATA_DIR`)
     expect(serviceBwPaths('linux')).toBeNull()
   })
 })

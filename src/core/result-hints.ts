@@ -13,14 +13,14 @@ export const NEXT_STEP: Partial<Record<ResultCode, string>> = {
   vault_unavailable: 'Ask the user to run u-chan doctor.',
   chrome_unavailable: START_BROWSER,
   browser_unavailable: START_BROWSER,
-  needs_human: 'Ask the user to finish signing in by hand in the dedicated browser, then continue with Playwright. No further U-Chan call is needed.',
+  needs_human: 'Ask the user to sign in by hand in the dedicated browser, then continue with Playwright. No further U-Chan call is needed.',
   unsupported_form: 'Ask the user to sign in by hand in the dedicated browser, then continue with Playwright.',
   authentication_unconfirmed: 'Check the page with Playwright. If it is signed in, call request_allow again with success.url set to that page URL so future logins are confirmed.',
   destination_unconfirmed: CHECK_PAGE,
   session_transfer_failed: CHECK_PAGE,
   success_condition_failed: 'Ask the user whether the approved success condition is still correct; propose a new one with request_allow if not.',
   login_timeout: 'Retry login once; if it times out again, call status.',
-  unsupported_service: 'Ask the user to run u-chan update.',
+  unsupported_service: 'Ask the user to run u-chan update --check and follow its output; if the service is unreachable, ask them to run u-chan doctor.',
 }
 
 /** `[code] message`, plus a `Next:` line when the code has a hint. */

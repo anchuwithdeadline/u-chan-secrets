@@ -108,7 +108,7 @@ export class CoreService implements CoreApi {
       const refundUnused = async () => { if (!credsRequested && reserved.remainingUses !== undefined) await this.grants.refund(reserved) }
       let out
       try { out = await this.deps.login.run(entry, getCreds, { signal, browser, beforeTransfer: async () => { signal.throwIfAborted(); this.grants.check(entry, true) } }) }
-      catch (e) { await refundUnused(); throw e }
+      catch (e) { await refundUnused().catch(() => {}); throw e }
       if (out.status !== 'logged_in' && out.status !== 'already_logged_in') await refundUnused()
       if (out.status === 'logged_in') return { result: { ok: true, message: 'logged in' }, audit: 'ok' }
       if (out.status === 'already_logged_in') return { result: { ok: true, message: 'already logged in' }, audit: 'already' }

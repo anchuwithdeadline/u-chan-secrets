@@ -108,7 +108,7 @@ describe('e2e-core: MCP → IPC → service', () => {
       item: 'Example',
       selectors: { username: '#u' },
     })
-    expect(text(allow)).toBe('approved'+String.fromCharCode(10)+'Note: no success condition; login may return authentication_unconfirmed.')
+    expect(text(allow)).toBe('approved\nNote: no success condition in this request; login may return authentication_unconfirmed.')
     expect(allow.isError).toBe(false)
     expect(prompt.confirm).toHaveBeenCalledTimes(1)
     expect((await allowlist.get('example.com'))?.selectors).toEqual({ username: '#u' })

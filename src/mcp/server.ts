@@ -91,8 +91,7 @@ export function createMcpServer(core: CoreApi, version = '0.1.0', discord?: Disc
     ({ domain, login_url, item, selectors, grant, success }) =>
       run(async () => {
         const r = await (grant || success ? core.requestAllow(domain, login_url, item, selectors, { ...(grant ? { grant } : {}), ...(success ? { success } : {}) }) : selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))
-        return r.ok && !success ? { ...r, message: `${r.message}
-Note: no success condition; login may return authentication_unconfirmed.` } : r
+        return r.ok && !success ? { ...r, message: `${r.message}\nNote: no success condition in this request; login may return authentication_unconfirmed.` } : r
       }),
   )
 

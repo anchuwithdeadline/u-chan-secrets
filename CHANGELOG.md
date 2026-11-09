@@ -8,6 +8,7 @@
 - u-chan update and u-chan setup print readable summaries and an explicit restart line for Claude Code and Codex sessions; --json keeps the raw output.
 - Failed MCP results now carry a `Next:` hint line telling the AI what to do, and `request_allow` without a success condition adds a note.
 - `u-chan allow` now infers the domain from `--login-url` (its exact hostname) when no domain is given; an explicit domain still wins.
+- `u-chan update --json` now writes progress to stderr so stdout is pure JSON.
 
 ## 5.1.2
 

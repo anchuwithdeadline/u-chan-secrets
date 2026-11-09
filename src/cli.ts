@@ -21,7 +21,7 @@ import { configureWindowsCommand } from './client/windows-command.js'
 import { runDiscordCli } from './client/discord.js'
 import type { DiscordApi } from './discord/policy.js'
 import type { CoordinatedUpdateApi } from './service/update/protocol.js'
-import { runCoordinatedUpdate, trustedReinstallSteps } from './client/update.js'
+import { needsTrustedReinstall, runCoordinatedUpdate, trustedReinstallSteps } from './client/update.js'
 import { desktopUpdateAdapter } from './client/update-package.js'
 import { runGithubCli } from './client/github.js'
 import { ensureServiceBitwardenLogin, serviceBwPaths, serviceBwRunner } from './platform/service-bw-login.js'
@@ -44,7 +44,8 @@ export interface CliDeps {
   detectClients?: () => Promise<SetupClient[]>
   /** Opens a service client; `timeoutMs` undefined means the IpcClient default. */
   connect: (opts: { timeoutMs?: number }) => ControlApi & Pick<CoreApi, 'requestAllow'> & Partial<DiscordApi & CoordinatedUpdateApi & GithubApi>
-  update?: (checkOnly: boolean) => Promise<ToolResult>
+  /** Test seam for the coordinated update; `progress` is the line sink main chose for the flags. */
+  update?: (checkOnly: boolean, progress: (line: string) => void) => Promise<ToolResult>
   env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
   readFile: (path: string) => Promise<string>
@@ -72,16 +73,17 @@ export function formatUpdate(message: string, checkOnly: boolean): string {
   let j: any
   try { j = JSON.parse(message) } catch { return message }
   if (!j || typeof j !== 'object') return message
-  const NL = String.fromCharCode(10)
   if (checkOnly) {
     const t = j.target?.version
     const lines = [`Service: ${j.service?.version} -> ${t} (${j.decision})`, `Desktop: ${j.desktop?.version} -> ${t} (${j.desktopDecision})`]
-    if (j.compatible === false) lines.push(trustedReinstallSteps(String(t)))
-    else lines.push(j.decision === 'up_to_date' && j.desktopDecision === 'up_to_date' ? 'Up to date.' : 'Run u-chan update to apply.')
-    return lines.join(NL)
+    if (needsTrustedReinstall(j)) lines.push(trustedReinstallSteps(String(t)))
+    else if (j.compatible === false) lines.push(`Not applicable: ${j.reason ?? 'incompatible'}.`)
+    else if (j.decision === 'update_required' || j.desktopDecision === 'update_required') lines.push('Run u-chan update to apply.')
+    else if (j.decision === 'up_to_date' && j.desktopDecision === 'up_to_date') lines.push('Up to date.')
+    return lines.join('\n')
   }
   if (j.status !== 'complete') return message
-  return [`Update complete: ${j.service?.version}. Vault: ${j.vault}.`, ...(j.agentSessionRestartRequired ? [RESTART_LINE] : []), ...(j.manualSetupRequired ? ['Run u-chan setup --apply to repair AI client registrations.'] : [])].join(NL)
+  return [`Update complete: ${j.service?.version}. Vault: ${j.vault}.`, ...(j.agentSessionRestartRequired ? [RESTART_LINE] : []), ...(j.manualSetupRequired ? ['Run u-chan setup --apply to repair AI client registrations.'] : [])].join('\n')
 }
 
 /** Returns the process exit code: 0 on success, 1 on failure or bad usage. */
@@ -91,11 +93,15 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     if(result.ok)d.out(result.message);else d.err(result.message)
     return result.ok?0:1
   }
-  const update=(checkOnly:boolean,quiet=false)=>d.update?d.update(checkOnly):runCoordinatedUpdate({checkOnly},{client:d.connect({timeoutMs:180000}),desktop:desktopUpdateAdapter(d.env),progress:(phase,seconds)=>{if(!quiet)d.out(`Update: ${phase} (${seconds}s)`)}})
+  // --json keeps stdout pure JSON: progress then goes to stderr.
+  const update=(checkOnly:boolean,quiet=false,json=false)=>{
+    const progress=(line:string)=>{if(!quiet)(json?d.err:d.out)(line)}
+    return d.update?d.update(checkOnly,progress):runCoordinatedUpdate({checkOnly},{client:d.connect({timeoutMs:180000}),desktop:desktopUpdateAdapter(d.env),progress:(phase,seconds)=>progress(`Update: ${phase} (${seconds}s)`)})
+  }
   if(argv[0]==='update'){
     const flags=argv.slice(1),check=flags.includes('--check'),json=flags.includes('--json')
     if(flags.length!==new Set(flags).size||flags.some(f=>f!=='--check'&&f!=='--json')){d.err('usage: u-chan update [--check] [--json]');return 1}
-    const result=await update(check)
+    const result=await update(check,false,json)
     if(result.ok)d.out(json?result.message:formatUpdate(result.message,check));else d.err(result.message)
     return result.ok?0:1
   }
@@ -189,10 +195,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     // Daily routine: dedicated browser, vault unlock through the protected prompt, then a doctor summary.
     if (d.platform !== 'win32') { d.err('u-chan start supports Windows only; start the browser and run u-chan unlock manually.'); return 1 }
     // Apply a published compatible update first; an update restart keeps the vault unlocked.
-    let plan: { compatible?: boolean; reason?: string | null; target?: { version: string }; decision?: string; desktopDecision?: string } | undefined
+    let plan: { compatible?: boolean; reason?: string | null; target?: { version: string }; decision?: string; desktopDecision?: string; platform?: string } | undefined
     try { const r = await update(true, true); plan = r.ok ? JSON.parse(r.message) : undefined } catch { plan = undefined }
     if (plan && (plan.decision === 'update_required' || plan.desktopDecision === 'update_required')) {
-      if (!plan.compatible) d.err(`Update: available but ${plan.reason ?? 'incompatible'}.\n${trustedReinstallSteps(plan.target?.version ?? '<version>')}`)
+      if (!plan.compatible) d.err(`Update: available but ${plan.reason ?? 'incompatible'}.` + (needsTrustedReinstall(plan) ? `\n${trustedReinstallSteps(plan.target?.version ?? '<version>')}` : ''))
       else { const r = await update(false); if (r.ok) d.out('Update: installed.'); else d.err('Update: ' + r.message) }
     }
     const cfg = loadConfig(d.env, d.platform)

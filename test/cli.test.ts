@@ -211,9 +211,9 @@ describe('cli', () => {
   it('dispatches coordinated apply and read-only check', async () => {
     const update = vi.fn(async () => ({ok:true,message:'complete'}))
     expect((await run(['update'], {update})).code).toBe(0)
-    expect(update).toHaveBeenLastCalledWith(false)
+    expect(update).toHaveBeenLastCalledWith(false, expect.any(Function))
     expect((await run(['update','--check'], {update})).code).toBe(0)
-    expect(update).toHaveBeenLastCalledWith(true)
+    expect(update).toHaveBeenLastCalledWith(true, expect.any(Function))
     expect((await run(['update','--unknown'], {update})).code).toBe(1)
     expect(update).toHaveBeenCalledTimes(2)
   })
@@ -230,9 +230,9 @@ describe('cli', () => {
 })
 
 describe('cli update output', () => {
-  const NL = String.fromCharCode(10)
+  const NL = '\n'
   const lines = (out: string[]) => out.join(NL).split(NL)
-  const check = (o: Record<string, unknown> = {}) => JSON.stringify({ service: { version: '5.1.1', integrity: null }, target: { version: '5.1.2' }, decision: 'update_required', compatible: true, reason: null, desktop: { version: '5.1.1', integrity: null }, desktopDecision: 'update_required', readOnly: true, ...o })
+  const check = (o: Record<string, unknown> = {}) => JSON.stringify({ service: { version: '5.1.1', integrity: null }, target: { version: '5.1.2' }, decision: 'update_required', compatible: true, reason: null, desktop: { version: '5.1.1', integrity: null }, desktopDecision: 'update_required', platform: 'win32', readOnly: true, ...o })
   const stub = (message: string) => async () => ({ ok: true, message })
   it('update --check prints a plan summary', async () => {
     const r = await run(['update', '--check'], { update: stub(check()) })
@@ -252,6 +252,26 @@ describe('cli update output', () => {
     const r = await run(['update'], { update: stub(m) })
     expect(lines(r.out)).toEqual(['Update complete: 5.1.2. Vault: unlocked.', RESTART_LINE, 'Run u-chan setup --apply to repair AI client registrations.'])
   })
+  it('update --check with local_ahead prints no reinstall steps', async () => {
+    const r = await run(['update', '--check'], { update: stub(check({ decision: 'local_ahead', compatible: false, reason: 'local_ahead', desktopDecision: 'up_to_date' })) })
+    const text = r.out.join(NL)
+    expect(text).not.toContain('Trusted reinstall')
+    expect(text).not.toContain('Run u-chan update to apply.')
+    expect(lines(r.out).at(-1)).toBe('Not applicable: local_ahead.')
+  })
+  it('update --check on an unsupported platform prints no reinstall steps', async () => {
+    const r = await run(['update', '--check'], { update: stub(check({ platform: 'unsupported', compatible: false, reason: 'unsupported_platform' })) })
+    expect(r.out.join(NL)).not.toContain('Trusted reinstall')
+    expect(lines(r.out).at(-1)).toBe('Not applicable: unsupported_platform.')
+  })
+  it('update --json sends progress to stderr so stdout is pure JSON', async () => {
+    const m = JSON.stringify({ status: 'complete' })
+    const update = vi.fn(async (...a: unknown[]) => { (a[1] as (line: string) => void)('Update: checking (0s)'); return { ok: true, message: m } })
+    const json = await run(['update', '--json'], { update })
+    expect(json.out).toEqual([m]); expect(json.err).toEqual(['Update: checking (0s)'])
+    const plain = await run(['update'], { update })
+    expect(plain.out[0]).toBe('Update: checking (0s)'); expect(plain.err).toEqual([])
+  })
   it('--json prints raw output', async () => {
     const m = check()
     expect((await run(['update', '--check', '--json'], { update: stub(m) })).out).toEqual([m])
@@ -266,7 +286,7 @@ describe('cli update output', () => {
 })
 
 describe('cli setup restart line', () => {
-  const NL = String.fromCharCode(10)
+  const NL = '\n'
   const rep = (restartRequired: boolean) => ({ version: 1, state: 'ready', sharing: 'unobserved', restartRequired, checks: [], actions: [], client: 'unavailable', changed: false })
   const go = async (restartRequired: boolean, extra: string[] = []) => {
     const out: string[] = []

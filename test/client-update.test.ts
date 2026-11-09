@@ -26,6 +26,11 @@ describe('coordinated update client',()=>{
     const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
     expect(r.ok).toBe(false);expect(r.message).toContain('native_helpers_changed');expect(r.message).toContain(trustedReinstallSteps('5.2.0'));expect(r.message).toContain('no components changed')
   })
+  it('local_ahead service is never told to reinstall an older version',async()=>{
+    const f=fixture();f.client.planUpdate=async()=>({ok:true,message:JSON.stringify({service:{...target,version:'2.2.0'},target,decision:'local_ahead',compatible:false,reason:'local_ahead',platform:'win32',coordinator:1})})
+    const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
+    expect(r).toEqual({ok:false,message:'local_ahead; no components changed'});expect(r.message).not.toContain('Trusted reinstall');expect(f.calls).toEqual([])
+  })
   it('check is read-only and desktop-only updates never dispatch a service restart',async()=>{
     const check=fixture();expect((await runCoordinatedUpdate({checkOnly:true},check.deps)).ok).toBe(true);expect(check.calls).toEqual([])
     const desktop=fixture(false);expect((await runCoordinatedUpdate({checkOnly:false},desktop.deps)).ok).toBe(true);expect(desktop.calls).toEqual(['lock','prepare','install','release'])

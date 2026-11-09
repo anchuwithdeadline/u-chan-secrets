@@ -102,6 +102,10 @@ describe('next-step hints', () => {
     const c = await connect({ login: async () => ({ ok: false, code: 'needs_human', message: 'needs you' }) } as Partial<Core>)
     expect(await text(c, 'login', { domain: 'a.com' })).toBe('[needs_human] needs you\nNext: ' + NEXT_STEP.needs_human)
   })
+  it('unsupported_service hint points at update --check and doctor', async () => {
+    const c = await connect({ login: async () => ({ ok: false, code: 'unsupported_service', message: 'upgrade required' }) } as Partial<Core>)
+    expect(await text(c, 'login', { domain: 'a.com' })).toBe('[unsupported_service] upgrade required\nNext: Ask the user to run u-chan update --check and follow its output; if the service is unreachable, ask them to run u-chan doctor.')
+  })
   it('no hint for codes without one', async () => {
     const c = await connect({ login: async () => ({ ok: false, code: 'internal_error', message: 'x' }) } as Partial<Core>)
     expect(await text(c, 'login', { domain: 'a.com' })).toBe('[internal_error] x')
@@ -110,7 +114,7 @@ describe('next-step hints', () => {
     for (const code of RESULT_CODES) if (code !== 'invalid_policy' && code !== 'internal_error') expect(NEXT_STEP[code], code).toBeTruthy()
   })
   it('request_allow without success adds a note', async () => {
-    const note = '\nNote: no success condition; login may return authentication_unconfirmed.'
+    const note = '\nNote: no success condition in this request; login may return authentication_unconfirmed.'
     const args = { domain: 'a.com', login_url: 'https://a.com/l', item: 'A' }
     const c = await connect({})
     expect((await text(c, 'request_allow', args)).endsWith(note)).toBe(true)
