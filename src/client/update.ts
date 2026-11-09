@@ -21,7 +21,7 @@ interface Dependencies {
 export function trustedReinstallSteps(version:string):string{
   return [
     `Trusted reinstall required for ${version}.`,
-    `1. Elevated terminal, in a reviewed u-chan-secrets ${version} checkout: npm ci; npm run build; node dist/cli.js install`,
+    `1. Elevated terminal, in a reviewed u-chan-secrets ${version} checkout: npm.cmd ci; npm.cmd run build; node dist/cli.js install`,
     `2. Normal terminal: npm.cmd install --global u-chan-secrets@${version}; u-chan.cmd setup --apply; u-chan unlock`,
   ].join('\n')
 }
@@ -38,6 +38,9 @@ export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Depende
   const capabilities=async()=>{const r=await d.client.capabilities();if(!r.ok)throw new Error();return JSON.parse(r.message) as {protocol?:number;features?:string[];release?:ObservedIdentity}}
   try{
     progress('checking')
+    // An unreachable service is not a transaction problem; pass its own message (e.g. "not running — run u-chan install").
+    const reach=await d.client.capabilities()
+    if(!reach.ok)return failure(reach.message)
     const initial=await capabilities()
     if(initial.protocol!==3||!initial.features?.includes('coordinated_update')||!d.client.planUpdate||!d.client.beginUpdate||!d.client.updateStatus||!d.client.activateUpdate||!d.client.confirmUpdateReady){
       let version='<version>'

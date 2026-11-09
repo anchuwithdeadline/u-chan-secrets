@@ -67,3 +67,16 @@ describe('coordinated update client',()=>{
     expect(check.ok).toBe(true);expect(f.calls).toEqual(['lock','recover','repair','release'])
   })
 })
+
+describe('update messages',()=>{
+  it('reinstall steps use npm.cmd in the elevated step',()=>{
+    const steps=trustedReinstallSteps('5.2.1')
+    expect(steps).toContain('npm.cmd ci; npm.cmd run build; node dist/cli.js install')
+    expect(steps).not.toMatch(/(^|[\s;:])npm (ci|run)/)
+  })
+  it('unreachable service says so instead of transaction status',async()=>{
+    const f=fixture();f.client.capabilities=async()=>({ok:false,message:'U-Chan service is not running — run u-chan install'})
+    const r=await runCoordinatedUpdate({checkOnly:true},f.deps)
+    expect(r).toEqual({ok:false,message:'U-Chan service is not running — run u-chan install'})
+  })
+})

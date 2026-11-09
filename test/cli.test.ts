@@ -203,10 +203,10 @@ describe('cli', () => {
     expect(r.connect).toHaveBeenCalledWith({ timeoutMs: 180000 })
   })
   it('update prints error and exits 1 on failure', async () => {
-    const c = fakeClient(false)
+    const c = { ...fakeClient(false), capabilities: vi.fn(async () => ({ ok: false, message: 'U-Chan service is not running — run u-chan install' })) }
     const r = await run(['update'], c)
     expect(r.code).toBe(1)
-    expect(r.err).toEqual(['update check or preparation failed; inspect transaction status before retrying'])
+    expect(r.err).toEqual(['U-Chan service is not running — run u-chan install'])
   })
   it('dispatches coordinated apply and read-only check', async () => {
     const update = vi.fn(async () => ({ok:true,message:'complete'}))
