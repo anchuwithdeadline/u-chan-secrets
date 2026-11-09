@@ -324,6 +324,29 @@ describe('NpmPackageVerifier', () => {
     expect(await new NpmPackageVerifier({ npmPublicKey: '', fetcher }).verify(newVersion)).toMatchObject({ ok: false, error: 'registry signature verification failed' })
   })
 
+  it('reads the repository from the DSSE payload of npm trusted-publishing attestations', async () => {
+    const bytes = Buffer.from('signed package')
+    const integrity = 'sha512-' + crypto.createHash('sha512').update(bytes).digest('base64')
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const npmPublicKey = publicKey.export({ type: 'spki', format: 'pem' }).toString()
+    const sig = crypto.sign('sha256', Buffer.from(`u-chan-secrets@${newVersion}:${integrity}`), privateKey).toString('base64')
+    const envelope = (predicateType: string, predicate: unknown) => ({ predicateType, bundle: { dsseEnvelope: { payload: Buffer.from(JSON.stringify({ predicateType, predicate })).toString('base64') } } })
+    const attestations = (repository: string) => ({ attestations: [
+      envelope('https://github.com/npm/attestation/tree/main/specs/publish/v0.1', { name: 'u-chan-secrets', version: newVersion }),
+      envelope('https://slsa.dev/provenance/v1', { buildDefinition: { externalParameters: { workflow: { ref: 'refs/tags/v' + newVersion, repository, path: '.github/workflows/release.yml' } } } }),
+    ] })
+    const verifierFor = (repository: string) => new NpmPackageVerifier({ npmPublicKey, fetcher: vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('.tgz')) return { ok: true, arrayBuffer: async () => bytes } as unknown as Response
+      if (String(url).includes('attestations')) return { ok: true, json: async () => attestations(repository) } as unknown as Response
+      return { ok: true, json: async () => ({ versions: { [newVersion]: { dist: {
+        tarball: 'https://registry.npmjs.org/fixture.tgz', integrity, signatures: [{ keyid: 'k', sig }],
+        attestations: { url: 'https://registry.npmjs.org/-/npm/v1/attestations/fixture' },
+      } } } }) } as unknown as Response
+    }) })
+    expect(await verifierFor('https://github.com/anchuwithdeadline/u-chan-secrets').verify(newVersion)).toMatchObject({ ok: true })
+    expect(await verifierFor('https://github.com/attacker/u-chan-secrets').verify(newVersion)).toEqual({ ok: false, error: 'provenance repository mismatch' })
+  })
+
   it('compares numeric prerelease versions accurately', () => {
     expect(semverGt('2.0.0-dev.10', '2.0.0-dev.2')).toBe(true)
     expect(semverGt('2.0.0-dev.2', '2.0.0-dev.10')).toBe(false)
