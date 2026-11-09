@@ -6,6 +6,7 @@ import { aliasSchema, batchSchema, connectionRequestSchema, snowflake, type Disc
 import { testDiscordConnection } from '../client/discord.js'
 import { githubProposalSchema, githubReadSchema, githubCreateSchema, type GithubApi } from '../github/policy.js'
 import type { AgentUnlockApi } from '../core/types.js'
+import { resultText } from '../core/result-hints.js'
 
 async function run(fn: () => Promise<ToolResult>) {
   let r: ToolResult
@@ -14,7 +15,7 @@ async function run(fn: () => Promise<ToolResult>) {
   } catch {
     r = { ok: false, message: 'internal error' }
   }
-  return { content: [{ type: 'text' as const, text: r.code ? `[${r.code}] ${r.message}` : r.message }], isError: !r.ok }
+  return { content: [{ type: 'text' as const, text: resultText(r) }], isError: !r.ok }
 }
 
 const INSTRUCTIONS = [
@@ -23,7 +24,7 @@ const INSTRUCTIONS = [
   'Never ask the user for a password, and never type one into a form yourself.',
   'Flow: list_allowed -> login(domain) -> continue with the Playwright MCP tools in the same selected dedicated Chrome or Edge browser.',
   'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a U-Chan window.',
-  'If login fails, call status. For a locked vault during a user-requested task, call request_unlock once when available: the user enters their password only in the protected local window. Stop after cancellation, failure, or cooldown; never repeatedly request unlock. Older services require the user to run u-chan unlock. If login says "needs you", ask the user to sign in by hand.',
+  'If login fails, call status. For a locked vault during a user-requested task, call request_unlock once when available: the user enters their password only in the protected local window. Stop after cancellation, failure, or cooldown; never repeatedly request unlock. Older services require the user to run u-chan unlock. Follow the "Next:" line of a failed result.',
 ].join('\n')
 
 const PLAYWRIGHT_MSG: Record<PlaywrightCheck, string> = {
@@ -88,7 +89,11 @@ export function createMcpServer(core: CoreApi, version = '0.1.0', discord?: Disc
       inputSchema: { domain: z.string(), login_url: z.string(), item: z.string(), selectors: SELECTORS.optional(), grant: GRANT.optional(), success: SUCCESS.optional() },
     },
     ({ domain, login_url, item, selectors, grant, success }) =>
-      run(() => (grant || success ? core.requestAllow(domain, login_url, item, selectors, { ...(grant ? { grant } : {}), ...(success ? { success } : {}) }) : selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))),
+      run(async () => {
+        const r = await (grant || success ? core.requestAllow(domain, login_url, item, selectors, { ...(grant ? { grant } : {}), ...(success ? { success } : {}) }) : selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))
+        return r.ok && !success ? { ...r, message: `${r.message}
+Note: no success condition; login may return authentication_unconfirmed.` } : r
+      }),
   )
 
   server.registerTool(
