@@ -286,3 +286,23 @@ describe('WindowsProtectedPrompt', () => {
     })
   })
 })
+
+describe('WindowsProtectedPrompt.pick', () => {
+  const req = { title: 'Pick', phrase: 'p', lines: ['Domain: moji.example'], choices: ['A', 'B'] }
+  const withStdout = (stdout: string, capture?: string[][]) => new WindowsProtectedPrompt({
+    phrase: 'phrase', promptExePath: 'test.exe',
+    execFile: (_f, a, _o, callback) => { capture?.push([...a]); callback(null, stdout, '') },
+  })
+  it('pick passes choices and returns the index', async () => {
+    const seen: string[][] = []
+    expect(await withStdout('1', seen).pick(req)).toBe(1)
+    const a = seen[0]
+    expect(a[a.indexOf('--mode') + 1]).toBe('pick')
+    expect(a[a.indexOf('--choices') + 1]).toBe('["A","B"]')
+  })
+  it('pick rejects out-of-range output', async () => {
+    for (const out of ['2', 'x', '', '-1', '1\n2']) expect(await withStdout(out).pick(req)).toBeNull()
+    const broken = new WindowsProtectedPrompt({ phrase: 'p', promptExePath: 'test.exe', execFile: (_f, _a, _o, cb) => cb(new Error('boom'), '', '') })
+    expect(await broken.pick(req)).toBeNull()
+  })
+})

@@ -103,3 +103,21 @@ describe('SettingsStore', () => {
     await rm(dir, { recursive: true })
   })
 })
+
+describe('PolicyApprover.pick', () => {
+  it('pick shows the phrase and needs no password in hardcore', async () => {
+    const s = await setup({ mode: 'hardcore', phrase: 'my-phrase' })
+    const pick = vi.fn(async () => 1)
+    const approver = new PolicyApprover({ prompt: { ...s.prompt, pick } as ProtectedPrompt, checker: s.checker as MasterPasswordChecker, settings: s.settings, limiter: s.limiter, platform: 'win32' })
+    expect(await approver.pick!('t', ['l'], ['A', 'B'])).toBe(1)
+    expect(pick).toHaveBeenCalledWith({ title: 't', lines: ['l'], phrase: 'my-phrase', choices: ['A', 'B'] })
+    expect(s.prompt.askPassword).not.toHaveBeenCalled()
+    expect(s.checker.verify).not.toHaveBeenCalled()
+    await rm(s.dir, { recursive: true })
+  })
+  it('pick is undefined when the prompt has none', async () => {
+    const s = await setup()
+    expect(s.approver.pick).toBeUndefined()
+    await rm(s.dir, { recursive: true })
+  })
+})

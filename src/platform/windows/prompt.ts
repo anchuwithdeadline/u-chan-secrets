@@ -8,7 +8,8 @@ export interface PromptRunnerOutcome {
 }
 
 export type PromptRunner = (params: {
-  mode: 'confirm' | 'password' | 'manage'
+  mode: 'confirm' | 'password' | 'manage' | 'pick'
+  choices?: string[]
   domains?: string[]
   title: string
   lines: string[]
@@ -74,6 +75,17 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
     })
   }
 
+  pick(req: PromptRequest): Promise<number | null> {
+    return this.enqueue(async () => {
+      try {
+        const choices = req.choices ?? []
+        const r = await this.runner({ mode: 'pick', title: req.title, lines: req.lines, phrase: this.phrase || req.phrase, choices, timeoutMs: this.timeoutMs })
+        const index = r.ok && typeof r.password === 'string' && /^\d{1,2}$/.test(r.password) ? Number(r.password) : -1
+        return index >= 0 && index < choices.length ? index : null
+      } catch { return null }
+    })
+  }
+
   askPassword(req: PromptRequest): Promise<string | null> {
     return this.enqueue(async () => {
       try {
@@ -104,8 +116,9 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
   }
 
   private defaultRunner(params: {
-    mode: 'confirm' | 'password' | 'manage'
+    mode: 'confirm' | 'password' | 'manage' | 'pick'
     domains?: string[]
+    choices?: string[]
     title: string
     lines: string[]
     phrase: string
@@ -128,6 +141,7 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
         JSON.stringify(params.lines),
       ]
       if (params.mode === 'manage') args.push('--domains', JSON.stringify(params.domains ?? []))
+      if (params.mode === 'pick') args.push('--choices', JSON.stringify(params.choices ?? []))
 
       try {
         this.execFile(
@@ -146,7 +160,7 @@ export class WindowsProtectedPrompt implements ProtectedPrompt {
             }
             resolve({
               ok: true,
-              password: params.mode === 'password' ? stdout : undefined,
+              password: params.mode === 'password' || params.mode === 'pick' ? stdout : undefined,
             })
           }
         )

@@ -24,7 +24,11 @@ export interface VaultClient {
   unlock(password: string): Promise<boolean>
   lock(): Promise<void>
 }
-export interface Approver { ask(title: string, lines: string[]): Promise<boolean> }
+export interface Approver {
+  ask(title: string, lines: string[]): Promise<boolean>
+  /** A selection, not an authorization. Absent where the platform has no picker. */
+  pick?(title: string, lines: string[], choices: string[]): Promise<number | null>
+}
 export type AuditEvent = { action: 'login' | 'request_allow' | 'revoke' | 'unlock' | 'lock' | 'mode' | 'import' | 'update' | 'discord_allow' | 'discord_read' | 'discord_write' | 'discord_revoke' | 'github_allow' | 'github_read' | 'github_write' | 'github_revoke'; domain: string; result: string }
 export interface AgentUnlockApi { requestUnlock(): Promise<ToolResult> }
 export interface AuditRecord {
@@ -71,13 +75,15 @@ export interface ControlApi {
 export interface ServiceRestarter {
   restart(): Promise<void>
 }
-export interface PromptRequest { title: string; lines: string[]; phrase: string; domains?: string[] }
+export interface PromptRequest { title: string; lines: string[]; phrase: string; domains?: string[]; choices?: string[] }
 export type ManagementAction = { action: 'close' | 'refresh' | 'lock' | 'unlock' | 'revoke' | 'next' | 'previous'; domain?: string }
 /** Platform window owned by the service. Close, timeout or error → false / null. */
 export interface ProtectedPrompt {
   manage?(req: PromptRequest): Promise<ManagementAction | null>
   confirm(req: PromptRequest): Promise<boolean>
   askPassword(req: PromptRequest): Promise<string | null>
+  /** Index of the chosen `req.choices` entry; cancel, timeout or bad output → null. */
+  pick?(req: PromptRequest): Promise<number | null>
 }
 export interface MasterPasswordChecker { verify(password: string): Promise<boolean> }
 export interface SessionTarget {

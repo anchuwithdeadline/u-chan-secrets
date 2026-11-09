@@ -13,8 +13,12 @@ interface Deps {
 /** Easy: click to confirm. Hardcore (forced on macOS): master password, with lockout. One prompt at a time. */
 export class PolicyApprover implements Approver {
   private chain: Promise<unknown> = Promise.resolve()
+  readonly pick?: (title: string, lines: string[], choices: string[]) => Promise<number | null>
 
-  constructor(private readonly d: Deps) {}
+  constructor(private readonly d: Deps) {
+    const pick = d.prompt.pick?.bind(d.prompt)
+    if (pick) this.pick = (title, lines, choices) => this.serial(async () => pick({ title, lines, phrase: await this.phrase(), choices }))
+  }
 
   async effectiveMode(): Promise<ApprovalMode> {
     return this.d.platform === 'darwin' ? 'hardcore' : (await this.d.settings.get()).mode

@@ -38,6 +38,11 @@ public static class PromptLayoutFixture
                         preview.Save(output, System.Drawing.Imaging.ImageFormat.Png);
                     }
                     Check(form);
+                    if (scenario == "pick") {
+                        var picker = FindList(form);
+                        if (picker == null || !picker.Focused || picker.SelectedIndex != 0 || picker.Items.Count != 3) throw new System.Exception("Picker list changed");
+                        return;
+                    }
                     var input = FindPassword(form);
                     if (input == null || !input.UseSystemPasswordChar || input.MaxLength != 512) throw new System.Exception("Password masking changed");
                     if (!input.Focused) throw new System.Exception("Password field did not receive focus");
@@ -51,8 +56,11 @@ public static class PromptLayoutFixture
             };
             timer.Start();
             var type = System.Reflection.Assembly.LoadFrom(helper).GetType("UChan.Platform.Windows.Assets.PromptHelper");
-            var method = type.GetMethod("RunPasswordDialog", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-            int result = (int)method.Invoke(null, new object[] { "U-Chan Secrets - fixture", phrase, lines });
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            var choices = new System.Collections.Generic.List<string> { "Moji Admin — me@example.com", "Moji Admin — ops@example.com", "MongoDB Moji - admin — db" };
+            int result = scenario == "pick"
+                ? (int)type.GetMethod("RunPickDialog", flags).Invoke(null, new object[] { "U-Chan Secrets - fixture", phrase, new System.Collections.Generic.List<string> { "Domain: moji.example" }, choices })
+                : (int)type.GetMethod("RunPasswordDialog", flags).Invoke(null, new object[] { "U-Chan Secrets - fixture", phrase, lines });
             if (failure != null) throw failure;
             if (result != 1) throw new System.Exception("Cancel result changed");
         }
@@ -63,6 +71,15 @@ public static class PromptLayoutFixture
             var text = child as System.Windows.Forms.TextBox;
             if (text != null && text.UseSystemPasswordChar) return text;
             var nested = FindPassword(child); if (nested != null) return nested;
+        }
+        return null;
+    }
+    private static System.Windows.Forms.ListBox FindList(System.Windows.Forms.Control control)
+    {
+        foreach (System.Windows.Forms.Control child in control.Controls) {
+            var list = child as System.Windows.Forms.ListBox;
+            if (list != null) return list;
+            var nested = FindList(child); if (nested != null) return nested;
         }
         return null;
     }
@@ -83,10 +100,10 @@ const executable=join(directory,'prompt-fixture.exe')
 await compileCsharp(PROMPT_HELPER_CSHARP,executable,{outputType:'WindowsApplication',referencedAssemblies:['System.Windows.Forms.dll','System.Drawing.dll']})
 const renderer=join(directory,'render-fixture.exe')
 await compileCsharp(fixture,renderer,{outputType:'WindowsApplication',referencedAssemblies:['System.Windows.Forms.dll','System.Drawing.dll']})
-for(const scenario of ['unlock','long','scaled']){
+for(const scenario of ['unlock','long','scaled','pick']){
   const image=join(directory,scenario+'.png'),script=join(directory,scenario+'.ps1')
   const quote=value=>"'"+value.replaceAll("'","''")+"'"
   await writeFile(script,`$ErrorActionPreference = 'Stop'\n[Reflection.Assembly]::LoadFrom(${quote(renderer)}) | Out-Null\n[PromptLayoutFixture]::Render(${quote(image)},${quote(scenario)},${quote(executable)})\n`)
   await exec('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',script],{windowsHide:true,timeout:15000,maxBuffer:16384})
 }
-console.log(JSON.stringify({directory,scenarios:['unlock','long','scaled'],scope:'native WinForms layout, fake input, cancellation; excludes protected desktop/SYSTEM verification'}))
+console.log(JSON.stringify({directory,scenarios:['unlock','long','scaled','pick'],scope:'native WinForms layout, fake input, cancellation; excludes protected desktop/SYSTEM verification'}))

@@ -304,6 +304,13 @@ namespace UChan.Platform.Windows.Assets
                 return RunManagement(title, phrase, lines, domains);
             }
             if (mode == "password") return RunPasswordDialog(title, phrase, lines);
+            if (mode == "pick")
+            {
+                List<string> choices = new List<string>();
+                for (int i = 0; i + 1 < args.Length; i++)
+                    if (args[i] == "--choices") choices = ParseLines(args[i + 1]);
+                return RunPickDialog(title, phrase, lines, choices);
+            }
 
             Form form = new Form();
             form.Text = title;
@@ -595,6 +602,153 @@ namespace UChan.Platform.Windows.Assets
                 if (result == DialogResult.OK) Console.Write(txtPassword.Text);
                 txtPassword.Clear();
                 return result == DialogResult.OK ? 0 : 1;
+            }
+        }
+
+        private static int RunPickDialog(string title, string phrase, List<string> lines, List<string> choices)
+        {
+            using (Form form = new Form())
+            using (Timer timer = new Timer())
+            {
+                bool hc = SystemInformation.HighContrast;
+                Color navy = hc ? SystemColors.Highlight : Color.FromArgb(11, 31, 75);
+                Color onNavy = hc ? SystemColors.HighlightText : Color.White;
+                Color tint = hc ? SystemColors.Info : Color.FromArgb(238, 242, 250);
+                Color onTint = hc ? SystemColors.InfoText : Color.FromArgb(11, 31, 75);
+                Color muted = hc ? SystemColors.GrayText : Color.FromArgb(90, 101, 128);
+                int width = 420, inner = width - 40;
+
+                form.Text = title;
+                form.Font = new Font("Segoe UI", 9f);
+                form.AutoScaleDimensions = new SizeF(96f, 96f);
+                form.AutoScaleMode = AutoScaleMode.Dpi;
+                form.StartPosition = FormStartPosition.CenterScreen;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.MaximizeBox = false;
+                form.MinimizeBox = false;
+                form.TopMost = true;
+                form.BackColor = SystemColors.Window;
+                form.ClientSize = new Size(width, 300);
+
+                Panel header = new Panel();
+                header.Dock = DockStyle.Top;
+                header.Height = 52;
+                header.BackColor = navy;
+                Label heading = new Label();
+                heading.Text = "Choose Bitwarden item";
+                heading.Font = new Font("Segoe UI Semibold", 13f);
+                heading.AutoSize = true;
+                heading.ForeColor = onNavy;
+                heading.Location = new Point(18, 13);
+                header.Controls.Add(heading);
+
+                Panel body = new Panel();
+                body.Dock = DockStyle.Fill;
+                body.Padding = new Padding(20, 16, 20, 16);
+                TableLayoutPanel layout = new TableLayoutPanel();
+                layout.Dock = DockStyle.Top;
+                layout.AutoSize = true;
+                layout.ColumnCount = 1;
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                layout.RowCount = 4;
+                for (int row = 0; row < layout.RowCount; row++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+                Label verification = new Label();
+                verification.Text = "Verification phrase: " + phrase;
+                verification.AutoSize = true;
+                verification.MaximumSize = new Size(inner, 0);
+                verification.Dock = DockStyle.Fill;
+                verification.Padding = new Padding(10, 8, 10, 8);
+                verification.Margin = new Padding(0, 0, 0, 12);
+                verification.BackColor = tint;
+                verification.ForeColor = onTint;
+                verification.Font = new Font("Segoe UI Semibold", 9f);
+
+                Label context = new Label();
+                context.Text = string.Join(Environment.NewLine, lines.ToArray());
+                context.AutoSize = true;
+                context.MaximumSize = new Size(inner, 0);
+                context.Margin = new Padding(0, 0, 0, 8);
+
+                ListBox list = new ListBox();
+                list.Dock = DockStyle.Fill;
+                list.BorderStyle = BorderStyle.FixedSingle;
+                list.Font = new Font("Segoe UI", 10f);
+                list.IntegralHeight = false;
+                list.Height = Math.Min(8, Math.Max(3, choices.Count)) * 22 + 4;
+                list.Margin = new Padding(0, 0, 0, 16);
+                list.AccessibleName = "Bitwarden item";
+                foreach (string choice in choices) list.Items.Add(choice);
+                if (list.Items.Count > 0) list.SelectedIndex = 0;
+                list.TabIndex = 0;
+
+                TableLayoutPanel footer = new TableLayoutPanel();
+                footer.Dock = DockStyle.Fill;
+                footer.AutoSize = true;
+                footer.ColumnCount = 3;
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                footer.Margin = new Padding(0);
+                Label countdown = new Label();
+                countdown.AutoSize = true;
+                countdown.Anchor = AnchorStyles.Left;
+                countdown.ForeColor = muted;
+                countdown.Text = "Closes in 2:00";
+                Button cancel = new Button();
+                cancel.Text = "Cancel";
+                cancel.Size = new Size(84, 32);
+                cancel.Margin = new Padding(0, 0, 8, 0);
+                cancel.DialogResult = DialogResult.Cancel;
+                cancel.FlatStyle = FlatStyle.Flat;
+                cancel.UseVisualStyleBackColor = false;
+                cancel.BackColor = SystemColors.Window;
+                cancel.ForeColor = hc ? SystemColors.WindowText : navy;
+                cancel.TabIndex = 2;
+                Button submit = new Button();
+                submit.Text = "Use item";
+                submit.Size = new Size(92, 32);
+                submit.Margin = new Padding(0);
+                submit.DialogResult = DialogResult.OK;
+                submit.Enabled = list.Items.Count > 0;
+                submit.FlatStyle = FlatStyle.Flat;
+                submit.UseVisualStyleBackColor = false;
+                submit.BackColor = navy;
+                submit.ForeColor = onNavy;
+                submit.FlatAppearance.BorderColor = navy;
+                submit.Font = new Font("Segoe UI Semibold", 9f);
+                submit.TabIndex = 1;
+                list.DoubleClick += delegate { if (list.SelectedIndex >= 0) { form.DialogResult = DialogResult.OK; form.Close(); } };
+
+                footer.Controls.Add(countdown, 0, 0);
+                footer.Controls.Add(cancel, 1, 0);
+                footer.Controls.Add(submit, 2, 0);
+                layout.Controls.Add(verification, 0, 0);
+                layout.Controls.Add(context, 0, 1);
+                layout.Controls.Add(list, 0, 2);
+                layout.Controls.Add(footer, 0, 3);
+                body.Controls.Add(layout);
+                form.Controls.Add(body);
+                form.Controls.Add(header);
+                form.AcceptButton = submit;
+                form.CancelButton = cancel;
+                form.Load += delegate {
+                    layout.PerformLayout();
+                    form.ClientSize = new Size(form.ClientSize.Width, header.Height + layout.GetPreferredSize(new Size(layout.Width, 0)).Height + body.Padding.Vertical);
+                };
+                int remainingSeconds = 120;
+                timer.Interval = 1000;
+                timer.Tick += delegate {
+                    remainingSeconds--;
+                    countdown.Text = "Closes in " + (remainingSeconds / 60).ToString() + ":" + (remainingSeconds % 60).ToString("00");
+                    if (remainingSeconds <= 0) { form.DialogResult = DialogResult.Cancel; form.Close(); }
+                };
+                form.Shown += delegate { list.Focus(); timer.Start(); };
+                DialogResult result = form.ShowDialog();
+                timer.Stop();
+                if (result != DialogResult.OK || list.SelectedIndex < 0) return 1;
+                Console.Write(list.SelectedIndex.ToString());
+                return 0;
             }
         }
 
