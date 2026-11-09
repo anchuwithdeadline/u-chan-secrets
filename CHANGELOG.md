@@ -1,14 +1,17 @@
 # Changelog
 
-## Unreleased
+## 5.2.0
 
-- A once grant is no longer spent when login fails before the password is requested (for example a CAPTCHA page); it is consumed once credentials are requested. A revoked or replaced grant is never restored.
-- u-chan install now runs the service Bitwarden login itself when needed and locks it right after, so the printed session key is unusable.
-- Update failures that need a trusted reinstall now print the exact commands, with the version, instead of a generic message.
-- u-chan update and u-chan setup print readable summaries and an explicit restart line for Claude Code and Codex sessions; --json keeps the raw output.
-- Failed MCP results now carry a `Next:` hint line telling the AI what to do, and `request_allow` without a success condition adds a note.
-- `u-chan allow` now infers the domain from `--login-url` (its exact hostname) when no domain is given; an explicit domain still wins.
-- `u-chan update --json` now writes progress to stderr so stdout is pure JSON.
+**Upgrade:** `u-chan update` from 5.1.x (no reinstall: native helpers and dependencies unchanged). Restart Claude Code and Codex sessions afterwards so they load the new MCP hints. The `install` change below applies the next time you run `u-chan install`.
+
+**Script authors:** `u-chan update` and `u-chan update --check` now print readable text by default. Add `--json` to keep the previous JSON output; with `--json`, progress lines now go to stderr, so stdout is pure JSON.
+
+- `u-chan update --check` and `u-chan update` print a short summary (service and desktop versions, what to do next). Update failures that need a trusted reinstall print the exact commands with the version. A local build ahead of the published release is not told to downgrade.
+- `u-chan update` and `u-chan setup` print an explicit line telling you to restart Claude Code and Codex sessions when one is needed.
+- `u-chan install` runs the service Bitwarden login itself when the private store is not logged in, then locks it right away so the session key `bw login` prints is unusable. Without a terminal, it prints the manual command instead of waiting.
+- `u-chan allow` infers the domain from `--login-url` (its exact hostname) when no domain is given; an explicit domain still wins.
+- Failed MCP results carry a `Next:` line telling the AI what to do, for example to ask you to sign in by hand after a CAPTCHA. `request_allow` without a success condition adds a note.
+- A once grant is no longer spent when login fails before the password is requested (for example on a CAPTCHA page); it is consumed once credentials are requested. A revoked or replaced grant is never restored. The approval prompt states the new rule.
 
 ## 5.1.2
 
