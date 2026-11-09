@@ -35,7 +35,7 @@ export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Depende
     progress('checking')
     const initial=await capabilities()
     if(initial.protocol!==3||!initial.features?.includes('coordinated_update')||!d.client.planUpdate||!d.client.beginUpdate||!d.client.updateStatus||!d.client.activateUpdate||!d.client.confirmUpdateReady){
-      let version='the current release'
+      let version='<version>'
       try{version=observedIdentitySchema.parse(await d.desktop.identity()).version}catch{}
       return failure('coordinated updater bootstrap required; install the matching trusted service first\n'+trustedReinstallSteps(version))
     }

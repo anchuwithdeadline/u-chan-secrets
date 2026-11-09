@@ -16,6 +16,11 @@ describe('coordinated update client',()=>{
     const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
     expect(r.ok).toBe(false);expect(r.message.startsWith('coordinated updater bootstrap required')).toBe(true);expect(r.message).toContain(trustedReinstallSteps('5.1.2'))
   })
+  it('bootstrap failure falls back to a placeholder when desktop identity is unreadable',async()=>{
+    const f=fixture();f.client.capabilities=async()=>({ok:true,message:JSON.stringify({protocol:3,features:[]})});f.desktop.identity=async()=>{throw new Error('x')}
+    const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
+    expect(r.message).toContain(trustedReinstallSteps('<version>'))
+  })
   it('incompatible plan names target version and steps',async()=>{
     const f=fixture();f.client.planUpdate=async()=>({ok:true,message:JSON.stringify({service:source,target:{...target,version:'5.2.0'},decision:'update_required',compatible:false,reason:'native_helpers_changed',platform:'win32',coordinator:1})})
     const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
