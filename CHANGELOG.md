@@ -6,6 +6,7 @@
 - Update failures that need a trusted reinstall now print the exact commands, with the version, instead of a generic message.
 - u-chan update and u-chan setup print readable summaries and an explicit restart line for Claude Code and Codex sessions; --json keeps the raw output.
 - Failed MCP results now carry a `Next:` hint line telling the AI what to do, and `request_allow` without a success condition adds a note.
+- `u-chan allow` now infers the domain from `--login-url` (its exact hostname) when no domain is given; an explicit domain still wins.
 
 ## 5.1.2
 

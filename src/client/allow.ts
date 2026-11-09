@@ -6,8 +6,8 @@ function https(value: string): boolean {
   try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password } catch { return false }
 }
 export function parseAllowArgs(args: string[]): { domain: string; loginUrl: string; item: string; options: AllowOptions } | null {
-  const [domain, ...flags] = args
-  if (!domain || domain.length > 253 || clean(domain) !== domain || /[@:/\\?#\s]/.test(domain) || !normalizeDomain(domain)) return null
+  const explicit = args[0] !== undefined && !args[0].startsWith('--')
+  const flags = explicit ? args.slice(1) : args
   const seen = new Set<string>(), values = new Map<string, string>()
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i]
@@ -20,6 +20,8 @@ export function parseAllowArgs(args: string[]): { domain: string; loginUrl: stri
   }
   const loginUrl = values.get('--login-url'), item = values.get('--item')
   if (!loginUrl || !https(loginUrl) || !item?.trim() || item.length > 1000) return null
+  const domain = explicit ? args[0] : new URL(loginUrl).hostname
+  if (!domain || domain.length > 253 || clean(domain) !== domain || /[@:/\\?#\s]/.test(domain) || !normalizeDomain(domain)) return null
   if (['--once','--permanent','--minutes'].filter(f => seen.has(f)).length > 1) return null
   if (seen.has('--success-url') && seen.has('--success-selector')) return null
   const options: AllowOptions = { grant: { kind: 'once' } }

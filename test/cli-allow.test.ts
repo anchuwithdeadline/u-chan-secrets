@@ -9,8 +9,13 @@ it('defaults to once and accepts explicit grant policies and success conditions'
   expect(parseAllowArgs([...base, '--once','--success-selector', 'button[data-label="Sign out"]'])?.options.success).toEqual({ selector: 'button[data-label="Sign out"]' })
   expect(parseAllowArgs([...base, '--success-url', 'https://example.com/dashboard'])?.options.success).toEqual({ url: 'https://example.com/dashboard' })
 })
+it('infers the domain from the login URL host unless one is given', () => {
+  expect(parseAllowArgs(['--login-url', 'https://accounts.example.com/login', '--item', 'A'])?.domain).toBe('accounts.example.com')
+  expect(parseAllowArgs(base)?.domain).toBe('example.com')
+  expect(parseAllowArgs(['--item', 'A'])).toBeNull()
+})
 it('rejects malformed or conflicting arguments without IPC', async () => {
-  const bad = [[], [...base,'--minutes','0'], [...base,'--minutes','1441'], [...base,'--minutes','1.5'], [...base,'--minutes','1e2'], [...base,'--minutes'], [...base,'--once','--permanent'], [...base,'--once','--once'], [...base,'--item','another'], [...base,'--unknown'], [...base,'--success-url','https://example.com','--success-selector','main'], [...base,'--success-selector',' '], [...base,'--success-selector','x'.repeat(1001)], ['user:SECRET@example.com',...base.slice(1)], ['example.com','--login-url','http://example.com','--item','A'], ['example.com','--login-url','https://user:SECRET@example.com','--item','A'], [...base,'--success-url','https://user:SECRET@example.com']]
+  const bad = [[], [...base,'--minutes','0'], [...base,'--minutes','1441'], [...base,'--minutes','1.5'], [...base,'--minutes','1e2'], [...base,'--minutes'], [...base,'--once','--permanent'], [...base,'--once','--once'], [...base,'--item','another'], [...base,'--unknown'], [...base,'--success-url','https://example.com','--success-selector','main'], [...base,'--success-selector',' '], [...base,'--success-selector','x'.repeat(1001)], ['user:SECRET@example.com',...base.slice(1)], ['example.com','--login-url','http://example.com','--item','A'], ['example.com','--login-url','https://user:SECRET@example.com','--item','A'], [...base,'--success-url','https://user:SECRET@example.com'], ['--item','A'], ['--login-url','https://user:SECRET@example.com','--item','A']]
   for (const args of bad) {
     expect(parseAllowArgs(args)).toBeNull()
     const connect = vi.fn(), err = vi.fn()
