@@ -5,7 +5,7 @@ const START_BROWSER = 'Ask the user to run u-chan setup --start-browser, then re
 const CHECK_PAGE = 'Check the page with Playwright before continuing; do not retry login blindly.'
 
 export const NEXT_STEP: Partial<Record<ResultCode, string>> = {
-  grant_missing: 'Ask the user which Bitwarden item to use, then call request_allow.',
+  grant_missing: 'Call request_allow; leave item out unless the user named one, and the user picks it in a U-Chan window.',
   grant_expired: RETRY_GRANT,
   grant_exhausted: RETRY_GRANT,
   vault_locked: 'Call request_unlock once (or ask the user to run u-chan unlock), then retry login.',

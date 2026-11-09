@@ -125,3 +125,12 @@ describe('ipc', () => {
     expect(await c.status()).toEqual({ ok: false, message: 'U-Chan service timed out' })
   })
 })
+
+describe('ipc request_allow item', () => {
+  it('request_allow accepts an empty item', async () => {
+    const api = fakeApi()
+    const c = new IpcClient(await start(api))
+    expect(await c.requestAllow('a.com', 'https://a.com/l', '')).toEqual({ ok: true, message: 'requestAllow' })
+    expect(api.requestAllow).toHaveBeenCalledWith('a.com', 'https://a.com/l', '', undefined)
+  })
+})

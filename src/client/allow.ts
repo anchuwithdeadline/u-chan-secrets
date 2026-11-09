@@ -19,7 +19,7 @@ export function parseAllowArgs(args: string[]): { domain: string; loginUrl: stri
     values.set(flag, value)
   }
   const loginUrl = values.get('--login-url'), item = values.get('--item')
-  if (!loginUrl || !https(loginUrl) || !item?.trim() || item.length > 1000) return null
+  if (!loginUrl || !https(loginUrl) || (item !== undefined && (!item.trim() || item.length > 1000))) return null
   const domain = explicit ? args[0] : new URL(loginUrl).hostname
   if (!domain || domain.length > 253 || clean(domain) !== domain || /[@:/\\?#\s]/.test(domain) || !normalizeDomain(domain)) return null
   if (['--once','--permanent','--minutes'].filter(f => seen.has(f)).length > 1) return null
@@ -38,5 +38,6 @@ export function parseAllowArgs(args: string[]): { domain: string; loginUrl: stri
   }
   if (seen.has('--success-selector')) options.success = { selector: values.get('--success-selector')!.trim() }
   if (!validOptions(options)) return null
-  try { const entry = buildEntry(domain, loginUrl, item); return { domain: entry.domain, loginUrl, item, options } } catch { return null }
+  // No --item: the service lists matching vault items and the user picks one in a protected window.
+  try { const entry = buildEntry(domain, loginUrl, item ?? 'picked-by-service'); return { domain: entry.domain, loginUrl, item: item ?? '', options } } catch { return null }
 }

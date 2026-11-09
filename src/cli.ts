@@ -143,7 +143,7 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   const printDoctor = (r: DiagnosticReport) => d.out(r.checks.map(c => `${c.state.toUpperCase()} ${c.id}: ${c.message}${c.nextAction ? ' ' + c.nextAction : ''}`).join('\n'))
   if (cmd === 'allow') {
     const proposal = parseAllowArgs(argv.slice(1))
-    if (!proposal) { d.err('usage: u-chan allow [<domain>] --login-url <https-url> --item <label> [--once|--minutes <1..1440>|--permanent] [--success-url <https-url>|--success-selector <selector>]'); return 1 }
+    if (!proposal) { d.err('usage: u-chan allow [<domain>] --login-url <https-url> [--item <name|id>] [--once|--minutes <1..1440>|--permanent] [--success-url <https-url>|--success-selector <selector>]'); return 1 }
     const r = await d.connect({ timeoutMs: 180000 }).requestAllow(proposal.domain, proposal.loginUrl, proposal.item, undefined, proposal.options)
     if (r.ok) {
       d.out(r.message)

@@ -31,3 +31,7 @@ it('forwards one protected proposal and explains absent confirmation evidence', 
   expect(JSON.stringify(out.mock.calls)).toContain('authentication_unconfirmed')
   expect(connect).toHaveBeenCalledWith({ timeoutMs: 180000 })
 })
+it('allow without --item asks the service to pick', () => {
+  expect(parseAllowArgs(['--login-url', 'https://moji.example/admin'])).toEqual({ domain: 'moji.example', loginUrl: 'https://moji.example/admin', item: '', options: { grant: { kind: 'once' } } })
+  expect(parseAllowArgs(['--login-url', 'https://moji.example/admin', '--item', ''])).toBeNull()
+})

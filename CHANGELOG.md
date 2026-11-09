@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**Upgrade:** needs a trusted reinstall. The prompt helper changed, so `u-chan update` reports `native_helpers_changed`; follow the reinstall steps it prints. Restart Claude Code and Codex sessions afterwards.
+
+- `u-chan allow` and `request_allow` can leave out the Bitwarden item: the user picks it from the vault login items matching the login URL in a protected window (vault must be unlocked). One match is used directly; the stored item is its id.
+- The unlock and confirm windows are smaller, with a navy header.
+- Fixed: installing failed with `spawn ENAMETOOLONG` once the prompt helper source neared the Windows command-line limit.
+
 ## 5.2.0
 
 **Upgrade:** `u-chan update` from 5.1.x (no reinstall: native helpers and dependencies unchanged). Restart Claude Code and Codex sessions afterwards so they load the new MCP hints. The `install` change below applies the next time you run `u-chan install`.

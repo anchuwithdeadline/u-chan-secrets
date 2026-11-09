@@ -155,3 +155,14 @@ describe('withPlaywrightStatus', () => {
     expect(Object.keys(core).sort()).toEqual(['listAllowed', 'login', 'requestAllow', 'revoke', 'status'])
   })
 })
+
+describe('request_allow without item', () => {
+  it('request_allow without item sends an empty item', async () => {
+    let args: unknown[] = []
+    const c = await connect({ requestAllow: async (...a: unknown[]) => { args = a; return { ok: true, message: 'approved' } } } as Partial<Core>)
+    await c.callTool({ name: 'request_allow', arguments: { domain: 'a.com', login_url: 'https://a.com/l' } })
+    expect(args).toEqual(['a.com', 'https://a.com/l', ''])
+    expect(c.getInstructions()).not.toContain('ask the user which Bitwarden item')
+    expect(c.getInstructions()).toContain('leave item out unless the user named one')
+  })
+})

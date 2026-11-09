@@ -23,7 +23,7 @@ const INSTRUCTIONS = [
   'Use it whenever a site needs sign-in (admin pages, dashboards, a Playwright page showing a login form).',
   'Never ask the user for a password, and never type one into a form yourself.',
   'Flow: list_allowed -> login(domain) -> continue with the Playwright MCP tools in the same selected dedicated Chrome or Edge browser.',
-  'If the domain is not allowlisted, ask the user which Bitwarden item to use, then call request_allow; the user approves it in a U-Chan window.',
+  'If the domain is not allowlisted, call request_allow; leave item out unless the user named one, and the user picks the item and approves in a U-Chan window.',
   'If login fails, call status. For a locked vault during a user-requested task, call request_unlock once when available: the user enters their password only in the protected local window. Stop after cancellation, failure, or cooldown; never repeatedly request unlock. Older services require the user to run u-chan unlock. Follow the "Next:" line of a failed result.',
 ].join('\n')
 
@@ -84,12 +84,13 @@ export function createMcpServer(core: CoreApi, version = '0.1.0', discord?: Disc
     {
       description:
         'Ask to allowlist a site for login. Shows a U-Chan window that the user must approve. ' +
-        '`item` is the Bitwarden item name or id the user told you; never guess it. Prefer the item id (a name is a search and may match another item). ' +
+        '`item` (optional) is the Bitwarden item name or id. Leave it out and the user picks the item in a U-Chan window; pass it only when the user named one, never guess it. ' +
         '`selectors` (optional) are CSS selectors for the username, password, submit and otp fields when the form is unusual.',
-      inputSchema: { domain: z.string(), login_url: z.string(), item: z.string(), selectors: SELECTORS.optional(), grant: GRANT.optional(), success: SUCCESS.optional() },
+      inputSchema: { domain: z.string(), login_url: z.string(), item: z.string().max(1000).optional(), selectors: SELECTORS.optional(), grant: GRANT.optional(), success: SUCCESS.optional() },
     },
-    ({ domain, login_url, item, selectors, grant, success }) =>
+    ({ domain, login_url, item: named, selectors, grant, success }) =>
       run(async () => {
+        const item = named ?? ''
         const r = await (grant || success ? core.requestAllow(domain, login_url, item, selectors, { ...(grant ? { grant } : {}), ...(success ? { success } : {}) }) : selectors ? core.requestAllow(domain, login_url, item, selectors) : core.requestAllow(domain, login_url, item))
         return r.ok && !success ? { ...r, message: `${r.message}\nNote: no success condition in this request; login may return authentication_unconfirmed.` } : r
       }),

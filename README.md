@@ -184,7 +184,7 @@ In Windows PowerShell, use `u-chan.cmd` if execution policy blocks npm's `.ps1` 
 | `start` | Windows daily start: apply a compatible published update, dedicated browser, protected unlock if locked, doctor report |
 | `doctor [--json]` | Read-only diagnostic report and safe next actions |
 | `setup [--client codex\|claude\|all] [--browser chrome\|edge] [--apply] [--replace-existing] [--start-browser] [--json]` | Windows desktop inspection and explicit Codex and/or Claude Code/browser setup; without `--client`, configures every client CLI found on PATH |
-| `allow [<domain>] --login-url <https-url> --item <label> [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
+| `allow [<domain>] --login-url <https-url> [--item <name\|id>] [--once\|--minutes N\|--permanent] [--success-url URL\|--success-selector SELECTOR]` | Propose a scoped grant through protected approval |
 | `manage` | Native status, grant pages, recent activity, lock/unlock, and revocation |
 | `unlock` | Request the protected master-password prompt |
 | `lock` | Forget the service's vault session and request vault lock |
@@ -206,7 +206,7 @@ The five AI-facing tools remain:
 | Tool | Behavior |
 |---|---|
 | `status` | Vault state, approval mode, and observable Playwright sharing |
-| `request_allow(domain, login_url, item, selectors?, grant?, success?)` | Request protected approval of the complete entry and duration |
+| `request_allow(domain, login_url, item?, selectors?, grant?, success?)` | Request protected approval of the complete entry and duration. Without `item`, the user picks from the vault login items matching `login_url` in a protected window |
 | `login(domain)` | Check/reserve the grant, sign in privately, and transfer permitted session state |
 | `list_allowed` | Show authorized item/hosts and permanent, timed, expired, or exhausted grant state |
 | `revoke(domain)` | Remove a grant without another approval; waits behind an earlier login |
@@ -297,6 +297,7 @@ Propose a site grant with an explicit success condition:
 ```sh
 u-chan allow example.com --login-url https://example.com/login --item "Example account" --once --success-url https://example.com/dashboard
 u-chan allow --login-url https://example.com/login --item "Example account" --once
+u-chan allow --login-url https://example.com/login --once   # pick the item in a protected window (vault must be unlocked)
 u-chan allow example.com --login-url https://example.com/login --item "Example account" --minutes 30 --success-selector "button[data-action='sign-out']"
 ```
 
