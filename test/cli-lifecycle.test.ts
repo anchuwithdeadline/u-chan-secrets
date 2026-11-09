@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { main } from '../src/cli.js'
 import * as lifecycle from '../src/platform/darwin/lifecycle.js'
+import * as bwLogin from '../src/platform/service-bw-login.js'
 
 describe('cli darwin lifecycle', () => {
   it('dispatches install command to macosInstall on darwin', async () => {
@@ -9,6 +10,7 @@ describe('cli darwin lifecycle', () => {
       message: 'u-chan service installed successfully',
     })
 
+    const bwSpy = vi.spyOn(bwLogin, 'ensureServiceBitwardenLogin').mockResolvedValue('already')
     const out: string[] = []
     const err: string[] = []
     const code = await main(['install', '--phrase', 'green pine tree'], {
@@ -26,6 +28,8 @@ describe('cli darwin lifecycle', () => {
     expect(macosInstallSpy).toHaveBeenCalledWith(expect.objectContaining({
       phrase: 'green pine tree',
     }))
+    expect(bwSpy).toHaveBeenCalledOnce()
+    bwSpy.mockRestore()
     macosInstallSpy.mockRestore()
   })
 

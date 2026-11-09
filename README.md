@@ -67,7 +67,7 @@ node dist/cli.js install --mode hardcore
 
 Windows also supports `--mode easy`; omitting the mode uses the Windows installer default, easy. The installer generates a phrase unless one is supplied. Reinstall preserves existing owner/settings and grants rather than applying new mode/phrase arguments over them.
 
-For the one-time login to the service's private Bitwarden store, use the copied native executable in that same elevated terminal:
+`install` runs the one-time login to the service's private Bitwarden store itself when needed (interactive terminal required) and locks it right after. Manual fallback, in the same elevated terminal using the copied native executable:
 
 ```powershell
 $env:BITWARDENCLI_APPDATA_DIR = Join-Path $env:ProgramData 'u-chan-secrets\bw-data'
@@ -84,6 +84,11 @@ From the trusted checkout:
 
 ```bash
 sudo "$(command -v node)" dist/cli.js install
+```
+
+`install` runs the service Bitwarden login itself when needed (interactive terminal required) and locks it right after. Manual fallback:
+
+```bash
 sudo env -u BW_SESSION \
   BITWARDENCLI_APPDATA_DIR="/Library/Application Support/u-chan-secrets/bw-data" \
   "/Library/Application Support/u-chan-secrets/bin/bw" login

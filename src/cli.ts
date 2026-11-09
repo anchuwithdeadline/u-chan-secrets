@@ -24,6 +24,7 @@ import type { CoordinatedUpdateApi } from './service/update/protocol.js'
 import { runCoordinatedUpdate } from './client/update.js'
 import { desktopUpdateAdapter } from './client/update-package.js'
 import { runGithubCli } from './client/github.js'
+import { ensureServiceBitwardenLogin, serviceBwPaths, serviceBwRunner } from './platform/service-bw-login.js'
 import type { GithubApi } from './github/policy.js'
 
 const USAGE = 'usage: u-chan start | install [--mode <easy|hardcore>] [--phrase <phrase>] | uninstall | unlock | lock | mode <easy|hardcore> | import-v1 [path] | audit [limit] | update | doctor [--json] | manage'
@@ -300,7 +301,11 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
   const r = await call()
   if (r.ok) d.out(r.message)
   else d.err(r.message)
-  if (r.ok && cmd === 'install' && !d.install) printDoctor(await doctor())
+  if (r.ok && cmd === 'install' && !d.install) {
+    const p = serviceBwPaths(d.platform)
+    if (p) await ensureServiceBitwardenLogin({ run: serviceBwRunner(p.bwPath, p.dataDir, d.env), interactive: !!process.stdin.isTTY, manualCommand: p.manualCommand, out: d.out })
+    printDoctor(await doctor())
+  }
   return r.ok ? 0 : 1
 }
 

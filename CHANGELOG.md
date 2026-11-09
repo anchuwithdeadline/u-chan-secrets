@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- u-chan install now runs the service Bitwarden login itself when needed and locks it right after, so the printed session key is unusable.
+
 ## 5.1.2
 
 **Upgrade:** `u-chan update` from 5.1.0 or 5.1.1. This release is published without provenance so services that predate the fix can verify it by registry signature; later releases carry provenance again.
