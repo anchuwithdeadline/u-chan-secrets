@@ -18,6 +18,13 @@ interface Dependencies {
   now?:()=>number
   sleep?:(ms:number)=>Promise<void>
 }
+export function trustedReinstallSteps(version:string):string{
+  return [
+    `Trusted reinstall required for ${version}.`,
+    `1. Elevated terminal, in a reviewed u-chan-secrets ${version} checkout: npm ci; npm run build; node dist/cli.js install`,
+    `2. Normal terminal: npm.cmd install --global u-chan-secrets@${version}; u-chan.cmd setup --apply; u-chan unlock`,
+  ].join('\n')
+}
 export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Dependencies):Promise<ToolResult>{
   const now=d.now??(()=>performance.now()),sleep=d.sleep??(ms=>new Promise(r=>setTimeout(r,ms))),start=now()
   let release:(()=>Promise<void>)|null=null,serviceChanged=false,lastPhase='',lastPrinted=-1
@@ -27,14 +34,19 @@ export async function runCoordinatedUpdate(options:{checkOnly:boolean},d:Depende
   try{
     progress('checking')
     const initial=await capabilities()
-    if(initial.protocol!==3||!initial.features?.includes('coordinated_update')||!d.client.planUpdate||!d.client.beginUpdate||!d.client.updateStatus||!d.client.activateUpdate||!d.client.confirmUpdateReady)return failure('coordinated updater bootstrap required; install the matching trusted service first')
+    if(initial.protocol!==3||!initial.features?.includes('coordinated_update')||!d.client.planUpdate||!d.client.beginUpdate||!d.client.updateStatus||!d.client.activateUpdate||!d.client.confirmUpdateReady){
+      let version='the current release'
+      try{version=observedIdentitySchema.parse(await d.desktop.identity()).version}catch{}
+      return failure('coordinated updater bootstrap required; install the matching trusted service first\n'+trustedReinstallSteps(version))
+    }
     const response=await d.client.planUpdate()
     if(!response.ok)return response
     const plan=planSchema.parse(JSON.parse(response.message))
     let desktop=observedIdentitySchema.parse(await d.desktop.identity()),desktopDecision=planDecision(desktop,plan.target)
     if(options.checkOnly)return {ok:true,message:JSON.stringify({...plan,desktop,desktopDecision,readOnly:true})}
     if(plan.platform!=='win32')return failure('coordinated application requires Windows; no components changed')
-    if(!plan.compatible||['local_ahead','identity_unknown'].includes(plan.decision)||desktopDecision==='local_ahead'||(desktopDecision==='identity_unknown'&&!d.desktop.recover))return failure((plan.reason??'local build identity is unknown or ahead')+'; no components changed')
+    if(!plan.compatible)return failure((plan.reason??'incompatible update')+'; no components changed\n'+trustedReinstallSteps(plan.target.version))
+    if(['local_ahead','identity_unknown'].includes(plan.decision)||desktopDecision==='local_ahead'||(desktopDecision==='identity_unknown'&&!d.desktop.recover))return failure((plan.reason??'local build identity is unknown or ahead')+'; no components changed')
     release=await d.desktop.acquire()
     if(!release)return failure('another desktop update is running; reconnect after it finishes')
     let desktopRecovered=false

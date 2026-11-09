@@ -21,7 +21,7 @@ import { configureWindowsCommand } from './client/windows-command.js'
 import { runDiscordCli } from './client/discord.js'
 import type { DiscordApi } from './discord/policy.js'
 import type { CoordinatedUpdateApi } from './service/update/protocol.js'
-import { runCoordinatedUpdate } from './client/update.js'
+import { runCoordinatedUpdate, trustedReinstallSteps } from './client/update.js'
 import { desktopUpdateAdapter } from './client/update-package.js'
 import { runGithubCli } from './client/github.js'
 import { ensureServiceBitwardenLogin, serviceBwPaths, serviceBwRunner } from './platform/service-bw-login.js'
@@ -171,10 +171,10 @@ export async function main(argv: string[], d: CliDeps): Promise<number> {
     // Daily routine: dedicated browser, vault unlock through the protected prompt, then a doctor summary.
     if (d.platform !== 'win32') { d.err('u-chan start supports Windows only; start the browser and run u-chan unlock manually.'); return 1 }
     // Apply a published compatible update first; an update restart keeps the vault unlocked.
-    let plan: { compatible?: boolean; reason?: string | null; decision?: string; desktopDecision?: string } | undefined
+    let plan: { compatible?: boolean; reason?: string | null; target: { version: string }; decision?: string; desktopDecision?: string } | undefined
     try { const r = await update(true, true); plan = r.ok ? JSON.parse(r.message) : undefined } catch { plan = undefined }
     if (plan && (plan.decision === 'update_required' || plan.desktopDecision === 'update_required')) {
-      if (!plan.compatible) d.err(`Update: available but ${plan.reason ?? 'incompatible'}; a trusted reinstall is required.`)
+      if (!plan.compatible) d.err(`Update: available but ${plan.reason ?? 'incompatible'}.\n${trustedReinstallSteps(plan.target.version)}`)
       else { const r = await update(false); if (r.ok) d.out('Update: installed.'); else d.err('Update: ' + r.message) }
     }
     const cfg = loadConfig(d.env, d.platform)

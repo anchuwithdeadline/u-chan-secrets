@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runCoordinatedUpdate } from '../src/client/update.js'
+import { runCoordinatedUpdate, trustedReinstallSteps } from '../src/client/update.js'
 import { integrity } from './fixtures/update-release.js'
 import type { CoordinatedUpdateApi, UpdateJob } from '../src/service/update/protocol.js'
 const target={version:'2.1.0',integrity:integrity(Buffer.from('x'))},source={version:'2.0.0',integrity:null}
@@ -11,6 +11,16 @@ function fixture(serviceNew=true,desktopNew=true){
   return{client,desktop,calls,deps:{client,desktop,progress:()=>{},now:()=>now,sleep:async()=>{now+=1000}}}
 }
 describe('coordinated update client',()=>{
+  it('bootstrap failure names desktop version and steps',async()=>{
+    const f=fixture();f.client.capabilities=async()=>({ok:true,message:JSON.stringify({protocol:3,features:[]})});f.desktop.identity=async()=>({...source,version:'5.1.2'})
+    const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
+    expect(r.ok).toBe(false);expect(r.message.startsWith('coordinated updater bootstrap required')).toBe(true);expect(r.message).toContain(trustedReinstallSteps('5.1.2'))
+  })
+  it('incompatible plan names target version and steps',async()=>{
+    const f=fixture();f.client.planUpdate=async()=>({ok:true,message:JSON.stringify({service:source,target:{...target,version:'5.2.0'},decision:'update_required',compatible:false,reason:'native_helpers_changed',platform:'win32',coordinator:1})})
+    const r=await runCoordinatedUpdate({checkOnly:false},f.deps)
+    expect(r.ok).toBe(false);expect(r.message).toContain('native_helpers_changed');expect(r.message).toContain(trustedReinstallSteps('5.2.0'));expect(r.message).toContain('no components changed')
+  })
   it('check is read-only and desktop-only updates never dispatch a service restart',async()=>{
     const check=fixture();expect((await runCoordinatedUpdate({checkOnly:true},check.deps)).ok).toBe(true);expect(check.calls).toEqual([])
     const desktop=fixture(false);expect((await runCoordinatedUpdate({checkOnly:false},desktop.deps)).ok).toBe(true);expect(desktop.calls).toEqual(['lock','prepare','install','release'])

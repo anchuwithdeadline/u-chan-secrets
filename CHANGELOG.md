@@ -3,6 +3,7 @@
 ## Unreleased
 
 - u-chan install now runs the service Bitwarden login itself when needed and locks it right after, so the printed session key is unusable.
+- Update failures that need a trusted reinstall now print the exact commands, with the version, instead of a generic message.
 
 ## 5.1.2
 
