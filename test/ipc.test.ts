@@ -128,7 +128,7 @@ describe('ipc', () => {
 
 describe('ipc request_allow item', () => {
   it('request_allow accepts an empty item', async () => {
-    const api = fakeApi()
+    const api = { ...fakeApi(), capabilities: async () => ({ ok: true, message: '{"protocol":3,"features":["item_picker"]}' }) }
     const c = new IpcClient(await start(api))
     expect(await c.requestAllow('a.com', 'https://a.com/l', '')).toEqual({ ok: true, message: 'requestAllow' })
     expect(api.requestAllow).toHaveBeenCalledWith('a.com', 'https://a.com/l', '', undefined)
