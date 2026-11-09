@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.1.2
+
+**Upgrade:** `u-chan update` from 5.1.0 or 5.1.1. This release is published without provenance so services that predate the fix can verify it by registry signature; later releases carry provenance again.
+
+- Read the repository from the DSSE payload of npm trusted-publishing attestations. The update verifier previously rejected every provenance-bearing release with `provenance repository mismatch`, which is why `u-chan update` reported `update_check_failed` for 5.1.1.
+
 ## 5.1.1
 
 **Upgrade:** `u-chan update` from 5.1.0 (no reinstall: native helpers and dependencies unchanged). The service restart relocks the vault this one time; later updates keep it unlocked.

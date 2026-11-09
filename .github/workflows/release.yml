@@ -57,6 +57,7 @@ jobs:
       - if: steps.version.outputs.published != 'true'
         run: npm ci
       - if: steps.version.outputs.published != 'true'
-        run: npm publish --provenance --access public
+        # 5.1.2 only: services up to 5.1.1 cannot parse provenance; restore --provenance after 5.1.2.
+        run: npm publish --provenance=false --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

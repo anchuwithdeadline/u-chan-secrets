@@ -66,6 +66,11 @@ function extractRepoFromBundle(bundle: unknown): string | null {
   const obj = bundle as Record<string, unknown>
   if (typeof obj.repository === 'string') return obj.repository
   if (typeof obj.repo === 'string') return obj.repo
+  // npm attestation endpoint: { attestations: [{ predicateType, bundle: { dsseEnvelope: { payload: base64 in-toto statement } } }] }
+  const payload = (obj.bundle as { dsseEnvelope?: { payload?: unknown } } | undefined)?.dsseEnvelope?.payload
+  if (typeof payload === 'string') {
+    try { return extractRepoFromBundle(JSON.parse(Buffer.from(payload, 'base64').toString('utf8'))) } catch { return null }
+  }
   if (Array.isArray(obj.attestations)) {
     for (const a of obj.attestations) {
       const r = extractRepoFromBundle(a)
@@ -76,6 +81,8 @@ function extractRepoFromBundle(bundle: unknown): string | null {
     const p = obj.predicate as Record<string, unknown>
     if (typeof p.repository === 'string') return p.repository
     if (typeof p.repo === 'string') return p.repo
+    const workflow = (p.buildDefinition as { externalParameters?: { workflow?: { repository?: unknown } } } | undefined)?.externalParameters?.workflow?.repository
+    if (typeof workflow === 'string') return workflow
     const uri =
       (p.invocation as { configSource?: { uri?: unknown } } | undefined)?.configSource?.uri ??
       (p.buildDefinition as { externalParameters?: { source?: { uri?: unknown } } } | undefined)?.externalParameters?.source?.uri
